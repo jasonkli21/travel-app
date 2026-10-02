@@ -1,0 +1,98 @@
+# Personal Travel App
+
+A local-first personal travel planning application with a rich itinerary UI and an explicit integration boundary to `personal-ai-system`.
+
+The application owns authoritative travel state. `personal-ai-system` owns reusable AI capabilities such as research, memory, evidence-grounded synthesis, and—later—structured extraction/action proposals.
+
+## Current status
+
+**Scaffold only.** The repository establishes architecture, tooling, local development, initial relational models, health endpoints, and the AI-system client boundary. It intentionally does **not** implement the product phases beyond bootstrap.
+
+## Stack
+
+- **Web:** Next.js + React + TypeScript
+- **API:** Python + FastAPI + Pydantic
+- **ORM:** SQLAlchemy 2
+- **Migrations:** Alembic
+- **Local database:** PostgreSQL 16 via Docker Compose
+- **Initial cloud compute:** Google Cloud Run
+- **Initial cloud database:** Neon Postgres free tier
+- **Future blob storage:** Google Cloud Storage
+- **AI:** HTTP integration with `personal-ai-system`
+- **Tooling:** `uv`, `pnpm`, `pytest`, `ruff`, `mypy`, TypeScript/ESLint, GitHub Actions
+
+## Architecture
+
+```text
+                        personal-travel-app
+
+              +-------------------------------+
+              | Next.js / React / TypeScript  |
+              | itinerary / places / bookings |
+              +---------------+---------------+
+                              |
+                              v
+                    +-------------------+
+                    | FastAPI API       |
+                    | domain services   |
+                    +----+----------+---+
+                         |          |
+             authoritative state   | typed HTTP
+                         |          |
+                         v          v
+                    PostgreSQL   personal-ai-system
+                                    |
+                                    +-- research
+                                    +-- memory
+                                    +-- evidence
+                                    +-- models
+```
+
+## Quick start
+
+Prerequisites:
+
+- Python 3.12+
+- `uv`
+- Node.js 22+
+- `pnpm` (or Corepack)
+- Docker / Docker Compose
+
+```bash
+cp .env.example .env
+docker compose up -d postgres
+
+cd backend
+uv sync
+uv run alembic upgrade head
+uv run uvicorn personal_travel.main:app --reload --port 8000
+
+# second terminal
+cd frontend
+corepack pnpm install
+corepack pnpm dev
+```
+
+Then open `http://localhost:3000`.
+
+## Documentation
+
+Start with:
+
+1. [`AGENTS.md`](AGENTS.md)
+2. [`docs/01-product-brief.md`](docs/01-product-brief.md)
+3. [`docs/02-product-design.md`](docs/02-product-design.md)
+4. [`docs/03-architecture.md`](docs/03-architecture.md)
+5. [`docs/04-data-model.md`](docs/04-data-model.md)
+6. [`docs/05-technology-choices.md`](docs/05-technology-choices.md)
+7. [`docs/06-ai-integration.md`](docs/06-ai-integration.md)
+8. [`docs/07-local-development.md`](docs/07-local-development.md)
+9. [`docs/08-cloud-deployment.md`](docs/08-cloud-deployment.md)
+10. [`docs/09-implementation-plan.md`](docs/09-implementation-plan.md)
+11. [`docs/10-codex-handoff.md`](docs/10-codex-handoff.md)
+
+Architecture decisions are under [`docs/decisions/`](docs/decisions/).
+
+## Guiding rule
+
+> Build a strong travel application first. AI augments the application; it does not become the application's database, business-rule engine, or only user interface.
