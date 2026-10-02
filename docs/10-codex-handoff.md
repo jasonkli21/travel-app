@@ -47,7 +47,13 @@ Infrastructure:
 - Dockerfiles for API/web.
 - GCP/Neon deployment documented but not implemented.
 
-## First task: assess scaffold before feature work
+## Scaffold verification before feature work
+
+The October 2 Phase 0 review and corrections are recorded in
+[`releases/phase-0-scaffold.md`](releases/phase-0-scaffold.md). Locked installs,
+backend/frontend checks, production startup, and a real local PostgreSQL 16
+migration round trip have been verified. Docker images/Compose and hosted CI
+remain unverified in that environment. The application is still Phase 0.
 
 Before modifying code, verify:
 
@@ -59,7 +65,10 @@ Before modifying code, verify:
 6. CI configuration,
 7. environment-file loading from repository root/backend working directories.
 
-Fix bootstrap defects before starting Phase 1.
+The identified lint/typecheck, environment-loading, Alembic URL escaping, and
+AI health error-boundary defects have been corrected. Preserve the committed
+dependency locks and use frozen installs. Recheck remaining environment-specific
+gaps when Docker is available; do not treat documented cloud targets as deployed.
 
 Record what was actually run.
 

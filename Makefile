@@ -7,25 +7,25 @@ db-down:
 	docker compose down
 
 backend-install:
-	cd backend && uv sync
+	cd backend && uv sync --locked
 
 backend-test:
-	cd backend && uv run pytest
+	cd backend && uv run --locked pytest
 
 backend-lint:
-	cd backend && uv run ruff check . && uv run ruff format --check .
+	cd backend && uv run --locked ruff check . && uv run --locked ruff format --check .
 
 backend-typecheck:
-	cd backend && uv run mypy src
+	cd backend && uv run --locked mypy src
 
 migrate:
-	cd backend && uv run alembic upgrade head
+	cd backend && uv run --locked alembic upgrade head
 
 api:
-	cd backend && uv run uvicorn personal_travel.main:app --reload --port 8000
+	cd backend && uv run --locked uvicorn personal_travel.main:app --reload --port 8000
 
 frontend-install:
-	cd frontend && corepack pnpm install
+	cd frontend && corepack pnpm install --frozen-lockfile
 
 frontend-check:
 	cd frontend && corepack pnpm lint && corepack pnpm typecheck

@@ -13,7 +13,10 @@ class ItineraryItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "itinerary_items"
 
     trip_day_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("trip_days.id", ondelete="CASCADE"), nullable=False, index=True
+        UUID(as_uuid=True),
+        ForeignKey("trip_days.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     place_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("places.id", ondelete="SET NULL"), nullable=True, index=True
@@ -35,5 +38,7 @@ class ItineraryItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "status IN ('tentative','planned','booked','completed','cancelled')",
             name="valid_status",
         ),
-        CheckConstraint("ends_at IS NULL OR starts_at IS NULL OR starts_at <= ends_at", name="valid_time_range"),
+        CheckConstraint(
+            "ends_at IS NULL OR starts_at IS NULL OR starts_at <= ends_at", name="valid_time_range"
+        ),
     )

@@ -36,5 +36,17 @@ class PersonalAIClient:
         except httpx.HTTPError as exc:
             raise PersonalAIError("personal-ai-system is unavailable") from exc
 
-        payload = response.json()
-        return PersonalAIHealth(status=str(payload.get("status", "unknown")), service=payload.get("service"))
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise PersonalAIError("personal-ai-system returned invalid health JSON") from exc
+
+        if not isinstance(payload, dict):
+            raise PersonalAIError("personal-ai-system returned an invalid health response")
+
+        status = payload.get("status")
+        service = payload.get("service")
+        if not isinstance(status, str) or (service is not None and not isinstance(service, str)):
+            raise PersonalAIError("personal-ai-system returned an invalid health response")
+
+        return PersonalAIHealth(status=status, service=service)

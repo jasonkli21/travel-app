@@ -55,25 +55,31 @@ Prerequisites:
 - Python 3.12+
 - `uv`
 - Node.js 22+
-- `pnpm` (or Corepack)
+- `pnpm` 10.17.1 (or Corepack)
 - Docker / Docker Compose
 
 ```bash
 cp .env.example .env
+cp frontend/.env.example frontend/.env.local
 docker compose up -d postgres
 
 cd backend
-uv sync
-uv run alembic upgrade head
-uv run uvicorn personal_travel.main:app --reload --port 8000
+uv sync --locked
+uv run --locked alembic upgrade head
+uv run --locked uvicorn personal_travel.main:app --reload --port 8000
 
-# second terminal
+# second terminal, from the repository root
 cd frontend
-corepack pnpm install
+corepack pnpm install --frozen-lockfile
 corepack pnpm dev
 ```
 
 Then open `http://localhost:3000`.
+
+The backend reads the root `.env`; Next.js reads `frontend/.env.local`.
+Set `TRAVEL_API_URL` there when using a nondefault backend address.
+Use [`docs/07-local-development.md`](docs/07-local-development.md) for production
+build/start commands and lockfile maintenance.
 
 ## Documentation
 

@@ -7,19 +7,40 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: travel
+          POSTGRES_USER: travel
+          POSTGRES_PASSWORD: travel
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U travel -d travel"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     defaults:
       run:
         working-directory: backend
+    env:
+      DATABASE_URL: postgresql+psycopg://travel:travel@localhost:5432/travel
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.12"
-      - run: uv sync
-      - run: uv run ruff check .
-      - run: uv run ruff format --check .
-      - run: uv run mypy src
-      - run: uv run pytest
+      - run: uv sync --locked
+      - run: uv run --locked ruff check .
+      - run: uv run --locked ruff format --check .
+      - run: uv run --locked mypy src
+      - run: uv run --locked pytest
+      - run: uv build --out-dir /tmp/personal-travel-api-dist
+      - run: uv run --locked alembic upgrade head
+      - run: uv run --locked alembic check
+      - run: uv run --locked alembic downgrade base
+      - run: uv run --locked alembic upgrade head
 
   frontend:
     runs-on: ubuntu-latest
@@ -33,6 +54,7 @@ jobs:
           node-version: "22"
       - run: corepack enable
       - run: corepack prepare pnpm@10.17.1 --activate
-      - run: pnpm install --no-frozen-lockfile
+      - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm typecheck
+      - run: pnpm build
