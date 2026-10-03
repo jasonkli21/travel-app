@@ -28,7 +28,7 @@ frontend-install:
 	cd frontend && corepack pnpm install --frozen-lockfile
 
 frontend-check:
-	cd frontend && corepack pnpm lint && corepack pnpm typecheck && corepack pnpm test:proxy
+	cd frontend && corepack pnpm lint && corepack pnpm typecheck && corepack pnpm test
 
 web:
 	cd frontend && corepack pnpm dev

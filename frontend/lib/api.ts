@@ -2,6 +2,7 @@ export type ItemType = "activity" | "food" | "lodging" | "transport" | "flight" 
 export type ItemStatus = "tentative" | "planned" | "booked" | "completed" | "cancelled";
 export type ReservationType = "lodging" | "flight" | "train" | "car_rental" | "activity" | "dining" | "other";
 export type ReservationStatus = "tentative" | "confirmed" | "cancelled";
+export type LogisticsMode = "walk" | "drive" | "bicycle" | "transit";
 
 export interface PlaceSummary {
   id: string;
@@ -12,6 +13,62 @@ export interface PlaceSummary {
   website_url: string | null;
   latitude: number | null;
   longitude: number | null;
+  provider: string | null;
+  provider_place_id: string | null;
+  provider_source_name: string | null;
+  provider_source_attribution: string | null;
+  provider_source_license: string | null;
+  provider_source_url: string | null;
+}
+
+export interface PlaceSearchResult {
+  provider: "geoapify";
+  provider_place_id: string;
+  name: string;
+  address: string | null;
+  category: string | null;
+  latitude: number;
+  longitude: number;
+  provider_source_name: string;
+  provider_source_attribution: string;
+  provider_source_license: string | null;
+  provider_source_url: string | null;
+}
+
+export interface ImportPlaceInput {
+  provider_place_id: string;
+  name: string;
+  address: string | null;
+  category: string | null;
+  latitude: number;
+  longitude: number;
+  provider_source_name: string;
+  provider_source_attribution: string;
+  provider_source_license: string | null;
+  provider_source_url: string | null;
+  note: string | null;
+}
+
+export interface LogisticsLeg {
+  origin_item_id: string;
+  origin_title: string;
+  destination_item_id: string;
+  destination_title: string;
+  duration_seconds: number;
+  distance_meters: number;
+  available_gap_seconds: number;
+  buffer_minutes: number;
+  warning: boolean;
+  geometry: [number, number][];
+}
+
+export interface LogisticsEstimate {
+  provider: "geoapify";
+  day_id: string;
+  mode: LogisticsMode;
+  buffer_minutes: number;
+  generated_at: string;
+  legs: LogisticsLeg[];
 }
 
 export interface ReservationSummary {
@@ -243,6 +300,23 @@ export const travelApi = {
       body: JSON.stringify({ title }),
     }),
   listPlaces: () => request<PlaceSummary[]>("/places"),
+  searchPlaces: (tripId: string, query: string, limit = 10) =>
+    request<PlaceSearchResult[]>(
+      `/trips/${tripId}/places/search?q=${encodeURIComponent(query)}&limit=${limit}`,
+    ),
+  importPlace: (tripId: string, input: ImportPlaceInput) =>
+    request<SavedPlace>(`/trips/${tripId}/saved-places/import`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  estimateLogistics: (
+    tripId: string,
+    input: { day_id: string; mode: LogisticsMode; buffer_minutes: number },
+  ) =>
+    request<LogisticsEstimate>(`/trips/${tripId}/logistics/estimate`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
   createPlace: (input: CreatePlaceInput) =>
     request<PlaceSummary>("/places", { method: "POST", body: JSON.stringify(input) }),
   updatePlace: (placeId: string, input: UpdatePlaceInput) =>

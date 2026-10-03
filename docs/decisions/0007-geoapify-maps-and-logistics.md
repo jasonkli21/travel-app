@@ -23,8 +23,9 @@ availability guarantee, so they are not the application's runtime provider.
   road/walking/bicycle/transit route estimates. Keep requests behind the
   travel API except map-tile requests, which the browser must make to render
   the interactive map.
-- Use **Leaflet** as the frontend map renderer with the Geoapify `osm-carto`
-  raster tile style. Keep the map component client-only.
+- Use an in-repository, client-only XYZ tile renderer with Geoapify's
+  `osm-carto` raster tile style. Keep the map component dependency-free and
+  limit its behavior to tile pan/zoom, markers, and route lines.
 - Configure a server-only `GEOAPIFY_API_KEY` for search and routing. Configure
   a separate browser-visible `NEXT_PUBLIC_GEOAPIFY_API_KEY` for map tiles;
   restrict keys by API and localhost/deployed HTTP origin in Geoapify. Never
@@ -40,8 +41,10 @@ availability guarantee, so they are not the application's runtime provider.
   known result reuses its existing place and trip candidate relationship
   rather than overwriting user edits.
 - Store provider identity in the existing `places.provider` and
-  `places.provider_place_id` columns. Do not add a migration solely for Phase 3.
-  Preserve existing manual metadata on repeat imports.
+  `places.provider_place_id` columns. Add nullable source name, exact source
+  attribution, license, and source URL columns so attribution remains available
+  away from the search response. Preserve existing manual metadata and stored
+  attribution on repeat imports.
 - Use Geoapify's Routing API for estimates between consecutive itinerary
   items on one day. Support `walk`, `drive`, `bicycle`, and `transit` modes.
   Include a configurable transfer buffer in the deterministic warning rule.

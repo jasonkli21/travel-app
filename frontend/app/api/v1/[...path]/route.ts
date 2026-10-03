@@ -22,7 +22,7 @@ async function proxy(request: Request, context: RouteContext): Promise<Response>
       headers,
       body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.text(),
       cache: "no-store",
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(45_000),
     });
     const responseHeaders = new Headers();
     const upstreamContentType = response.headers.get("content-type");

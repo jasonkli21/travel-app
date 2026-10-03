@@ -34,8 +34,6 @@ h3 { margin: 3px 0 0; }
 .nav { display: grid; gap: 6px; flex: 1; align-content: start; }
 .nav a, .navDisabled { color: var(--muted); padding: 10px 12px; text-decoration: none; border-radius: 8px; }
 .nav a.active { color: var(--accent); background: var(--accent-soft); font-weight: 700; }
-.navDisabled { display: flex; justify-content: space-between; }
-.navDisabled small { color: #a5a99f; font-size: 10px; text-transform: uppercase; }
 .status { color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 8px; }
 .dot { width: 8px; height: 8px; background: var(--accent); border-radius: 50%; }
 .topbar, .dayHeading, .sectionHeading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
@@ -51,6 +49,67 @@ h3 { margin: 3px 0 0; }
 .linkButton { display: inline-block; text-decoration: none; }
 .days { display: grid; gap: 18px; margin-top: 28px; }
 .itinerarySection, .reservationSection { scroll-margin-top: 20px; }
+.mapSection { margin-top: 38px; scroll-margin-top: 20px; }
+.mapControls { display: grid; grid-template-columns: repeat(3, minmax(120px, 1fr)) auto; align-items: end; gap: 10px; margin-top: 18px; }
+.mapControls > button { min-height: 40px; }
+.mapFrame { display: grid; gap: 12px; margin-top: 14px; }
+.tripMap { position: relative; width: 100%; height: 440px; min-height: 320px; overflow: hidden; border: 1px solid var(--line); border-radius: 13px; background: #e7e9e2; }
+.tripMapReady { cursor: grab; touch-action: none; }
+.tripMapReady:active { cursor: grabbing; }
+.mapTiles, .mapRouteLayer { position: absolute; inset: 0; }
+.mapTiles { overflow: hidden; pointer-events: none; }
+.mapTile { position: absolute; max-width: none; user-select: none; }
+.mapRouteLayer { z-index: 1; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.mapRoute { fill: none; stroke: #2f664e; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; opacity: 0.82; vector-effect: non-scaling-stroke; }
+.mapRouteWarning { fill: none; stroke: #a13d32; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; opacity: 0.88; vector-effect: non-scaling-stroke; }
+.mapMarker { position: absolute; z-index: 2; transform: translate(-50%, -50%); width: 30px; height: 30px; border: 2px solid white; border-radius: 50%; background: var(--accent); box-shadow: 0 2px 7px rgba(0,0,0,.3); color: white; font-size: 11px; font-weight: 800; padding: 0; }
+.mapMarker-itinerary, .mapListNumber-itinerary { background: #2f664e; }
+.mapMarker-reservation, .mapListNumber-reservation { background: #a16a21; }
+.mapMarker-candidate, .mapListNumber-candidate { background: #496b91; }
+.mapMarker-search, .mapListNumber-search { background: #75609a; }
+.mapMarkerSelected { outline: 3px solid #f1c75b; z-index: 4; }
+.mapMarkerPopup { position: absolute; z-index: 5; transform: translate(-50%, calc(-100% - 22px)); display: grid; gap: 3px; min-width: 140px; max-width: 230px; border: 1px solid var(--line); border-radius: 8px; background: white; box-shadow: var(--shadow); padding: 8px 10px; pointer-events: none; }
+.mapMarkerPopup strong { font-size: 12px; }
+.mapMarkerPopup span { color: var(--muted); font-size: 11px; }
+.mapZoomControls { position: absolute; z-index: 6; top: 12px; left: 12px; display: grid; gap: 4px; }
+.mapZoomControls button { width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 7px; background: white; box-shadow: 0 1px 4px rgba(0,0,0,.15); color: var(--ink); font-size: 20px; font-weight: 700; line-height: 1; }
+.mapAttribution { position: absolute; z-index: 6; right: 5px; bottom: 4px; border-radius: 4px; background: rgba(255,255,255,.9); color: #3d443e; padding: 3px 5px; font-size: 10px; line-height: 1.3; }
+.mapAttribution a { text-decoration: none; }
+.mapAttribution a:hover { text-decoration: underline; }
+.mapMissingKey { display: grid; place-content: center; justify-items: center; gap: 8px; width: 100%; height: 100%; padding: 24px; color: var(--muted); text-align: center; }
+.mapMissingKey strong { color: var(--ink); }
+.mapMissingKey span { max-width: 450px; font-size: 13px; line-height: 1.4; }
+.mapEmptyOverlay { position: absolute; z-index: 3; inset: 0; display: grid; place-content: center; justify-items: center; gap: 6px; padding: 24px; background: rgba(255,255,255,.68); text-align: center; }
+.mapEmptyOverlay strong { font-size: 15px; }
+.mapEmptyOverlay span { max-width: 400px; color: var(--muted); font-size: 12px; line-height: 1.4; }
+.mapLocationList { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; list-style: none; margin: 0; padding: 0; }
+.mapLocationList li { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.mapLocationList li > span:last-child { display: grid; gap: 2px; min-width: 0; }
+.mapLocationList strong { font-size: 12px; }
+.mapLocationList small { color: var(--muted); font-size: 11px; }
+.mapListNumber { display: grid; flex: 0 0 22px; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: white; font-size: 10px; font-weight: 800; }
+.locationTools { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 14px; margin-top: 18px; }
+.placeSearchPanel, .logisticsPanel { display: grid; gap: 10px; min-width: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 16px; }
+.placeSearchPanel .eyebrow, .logisticsPanel .eyebrow { margin-bottom: -7px; }
+.placeSearchPanel h3, .logisticsPanel h3 { margin: 0; font-size: 18px; }
+.placeSearchPanel > .secondary { justify-self: start; }
+.providerAttribution { color: var(--muted); font-size: 11px; margin: 0; }
+.providerAttribution a { color: var(--accent); }
+.searchResultList { display: grid; gap: 8px; }
+.searchResult { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid var(--line); padding-top: 9px; }
+.searchResult > div { display: grid; gap: 3px; min-width: 0; }
+.searchResult strong { font-size: 13px; }
+.searchResult span { color: var(--muted); font-size: 11px; line-height: 1.35; }
+.searchResult button { flex: 0 0 auto; white-space: nowrap; }
+.locationError { border: 1px solid #e2b9b1; border-radius: 8px; background: #fff8f5; margin: 12px 0 0; padding: 9px 11px; }
+.logisticsPanel > .muted { margin: 0; font-size: 13px; }
+.logisticsLegList { display: grid; gap: 8px; list-style: none; margin: 0; padding: 0; }
+.logisticsLeg, .logisticsWarning { display: grid; gap: 4px; border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+.logisticsLeg strong, .logisticsWarning strong { font-size: 12px; }
+.logisticsLeg span, .logisticsWarning span { color: var(--muted); font-size: 11px; }
+.logisticsWarning { border-color: #e2b9b1; background: #fff8f5; color: var(--danger); }
+.logisticsWarning span, .logisticsWarning em { color: var(--danger); }
+.logisticsWarning em { font-size: 11px; font-style: normal; font-weight: 700; }
 .overviewPanel { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; margin-top: 22px; }
 .overviewStat { display: grid; gap: 3px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 12px; }
 .overviewStat strong { font-size: 22px; }
@@ -135,6 +194,7 @@ input:focus, select:focus, textarea:focus, button:focus-visible, a:focus-visible
 @media (max-width: 1050px) {
   .shell { grid-template-columns: 190px minmax(0, 1fr); }
   .aiPanel { border-left: 0; border-top: 1px solid var(--line); display: flex; grid-column: 1 / -1; }
+  .locationTools { grid-template-columns: 1fr; }
 }
 @media (max-width: 1150px) { .overviewPanel { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 720px) {
@@ -146,6 +206,10 @@ input:focus, select:focus, textarea:focus, button:focus-visible, a:focus-visible
   .topActions { width: 100%; }
   .topActions button { flex: 1; }
   .overviewPanel { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mapControls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mapControls > button { grid-column: 1 / -1; width: 100%; }
+  .tripMap { height: 360px; }
+  .mapLocationList { grid-template-columns: 1fr; }
   .itemSummary { grid-template-columns: 50px minmax(0, 1fr); }
   .itemActions { grid-column: 1 / -1; justify-content: flex-start; }
   .formGrid { grid-template-columns: 1fr; }
@@ -153,4 +217,6 @@ input:focus, select:focus, textarea:focus, button:focus-visible, a:focus-visible
   .inlineForm button { width: 100%; }
   .reservationHeader { flex-direction: column; }
   .reservationBadges { justify-content: flex-start; }
+  .searchResult { align-items: stretch; flex-direction: column; }
+  .searchResult button { width: 100%; }
 }

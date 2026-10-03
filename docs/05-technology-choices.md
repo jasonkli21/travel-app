@@ -156,7 +156,10 @@ Keep object metadata in PostgreSQL and bytes in the blob store.
 
 ## Maps/provider choice
 
-Deferred.
+Selected for Phase 3 in ADR 0007: Geoapify provides `osm-carto` raster tiles,
+submitted free-text geocoding, and on-demand route estimates. The frontend
+uses an in-repository XYZ tile renderer without a map-rendering package.
+Revisit the provider before public deployment or a material usage increase.
 
 Do not select Google Maps/Places merely because compute is on GCP.
 
@@ -180,6 +183,7 @@ Likely candidates later:
 - shadcn/ui,
 - TanStack Query,
 - drag/drop library,
-- map component/provider.
+- a richer map renderer only if concrete interaction requirements exceed the
+  small current pan/zoom/marker/route feature set.
 
 Choose when Phase 1 UI requirements are concrete.

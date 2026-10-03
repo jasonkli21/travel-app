@@ -9,6 +9,7 @@
     "start": "node scripts/start-standalone.mjs",
     "lint": "eslint .",
     "typecheck": "next typegen && tsc --noEmit",
+    "test": "node --test scripts/*.test.mjs",
     "test:proxy": "node --test scripts/proxy-response.test.mjs"
   },
   "dependencies": {

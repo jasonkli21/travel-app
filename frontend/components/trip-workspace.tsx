@@ -13,7 +13,10 @@ import {
   type ItemStatus,
   type ItemType,
   type ItineraryItem,
+  type LogisticsEstimate,
+  type LogisticsMode,
   type PlaceSummary,
+  type PlaceSearchResult,
   type Reservation,
   type ReservationStatus,
   type ReservationType,
@@ -24,6 +27,7 @@ import {
   type UpdateReservationInput,
   travelApi,
 } from "../lib/api";
+import TripMap, { type TripMapMarker, type TripMapRoute } from "./trip-map";
 
 const itemTypes: ItemType[] = ["activity", "food", "lodging", "transport", "flight", "note"];
 const itemStatuses: ItemStatus[] = ["tentative", "planned", "booked", "completed", "cancelled"];
@@ -58,6 +62,35 @@ function reservationSchedule(reservation: Reservation): string {
   const start = `${reservation.start_date} ${reservation.start_time}`;
   if (!reservation.end_date || !reservation.end_time) return start;
   return `${start} → ${reservation.end_date} ${reservation.end_time}`;
+}
+
+function formatDuration(seconds: number): string {
+  const totalMinutes = Math.ceil(Math.max(0, seconds) / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return hours > 0 ? `${hours} hr ${minutes} min` : `${minutes} min`;
+}
+
+function formatDistance(meters: number): string {
+  return meters < 1000 ? `${Math.round(meters)} m` : `${(meters / 1000).toFixed(1)} km`;
+}
+
+function formatAvailableGap(seconds: number): string {
+  return seconds < 0
+    ? `overlapping by ${formatDuration(-seconds)}`
+    : `${formatDuration(seconds)} available`;
+}
+
+function PlaceAttribution({ place }: { place: PlaceSummary | null }) {
+  if (place?.provider !== "geoapify") return null;
+  return (
+    <span className="providerAttribution">
+      {place.provider_source_attribution ?? "Source attribution unavailable"}
+      {place.provider_source_license ? ` · ${place.provider_source_license}` : ""}
+      {place.provider_source_url ? <> · <a href={place.provider_source_url} target="_blank" rel="noreferrer">Source</a></> : null}
+      {" · "}<a href="https://www.geoapify.com/" target="_blank" rel="noreferrer">Powered by Geoapify</a>
+    </span>
+  );
 }
 
 type ItemFormProps = {
@@ -456,6 +489,17 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
   const [showPlaceForm, setShowPlaceForm] = useState(false);
   const [tripForm, setTripForm] = useState({ title: "", start_date: "", end_date: "", timezone: "UTC" });
   const [showTripEditor, setShowTripEditor] = useState(false);
+  const [mapDay, setMapDay] = useState("all");
+  const [placeSearchQuery, setPlaceSearchQuery] = useState("");
+  const [lastSearchedPlaceQuery, setLastSearchedPlaceQuery] = useState<string | null>(null);
+  const [placeSearchResults, setPlaceSearchResults] = useState<PlaceSearchResult[]>([]);
+  const [placeSearchPending, setPlaceSearchPending] = useState(false);
+  const [importingPlaceId, setImportingPlaceId] = useState<string | null>(null);
+  const [logisticsMode, setLogisticsMode] = useState<LogisticsMode>("walk");
+  const [bufferMinutes, setBufferMinutes] = useState(15);
+  const [logistics, setLogistics] = useState<LogisticsEstimate | null>(null);
+  const [logisticsPending, setLogisticsPending] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
 
   const refresh = useCallback(async (): Promise<boolean> => {
     setError(null);
@@ -470,6 +514,7 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
     }
 
     setTrip(nextTrip);
+    setLogistics(null);
     setTripForm({ title: nextTrip.title, start_date: nextTrip.start_date, end_date: nextTrip.end_date, timezone: nextTrip.timezone });
     try {
       const [nextPlaces, nextReservations, nextSavedPlaces] = await Promise.all([
@@ -517,6 +562,82 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
     return place;
   };
 
+  const searchProviderPlaces = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const query = placeSearchQuery.trim();
+    if (query.length < 2) {
+      setLocationError("Enter at least two characters to search.");
+      return;
+    }
+    setLocationError(null);
+    setPlaceSearchPending(true);
+    setLastSearchedPlaceQuery(query);
+    setPlaceSearchResults([]);
+    try {
+      setPlaceSearchResults(await travelApi.searchPlaces(tripId, query));
+    } catch (nextError) {
+      setLocationError(errorMessage(nextError));
+    } finally {
+      setPlaceSearchPending(false);
+    }
+  };
+
+  const importSearchResult = async (result: PlaceSearchResult) => {
+    if (pending !== null) return;
+    setLocationError(null);
+    setPending(`provider-import-${result.provider_place_id}`);
+    setImportingPlaceId(result.provider_place_id);
+    try {
+      await travelApi.importPlace(tripId, {
+        provider_place_id: result.provider_place_id,
+        name: result.name,
+        address: result.address,
+        category: result.category,
+        latitude: result.latitude,
+        longitude: result.longitude,
+        provider_source_name: result.provider_source_name,
+        provider_source_attribution: result.provider_source_attribution,
+        provider_source_license: result.provider_source_license,
+        provider_source_url: result.provider_source_url,
+        note: null,
+      });
+      setPlaceSearchResults((current) =>
+        current.filter((candidate) => candidate.provider_place_id !== result.provider_place_id),
+      );
+      setLastSearchedPlaceQuery(null);
+      await refresh();
+    } catch (nextError) {
+      setLocationError(errorMessage(nextError));
+    } finally {
+      setImportingPlaceId(null);
+      setPending(null);
+    }
+  };
+
+  const estimateDayLogistics = async () => {
+    if (mapDay === "all") {
+      setLocationError("Choose one itinerary day to estimate travel between its scheduled items.");
+      return;
+    }
+    setLocationError(null);
+    setPending("logistics-estimate");
+    setLogisticsPending(true);
+    try {
+      const estimate = await travelApi.estimateLogistics(tripId, {
+        day_id: mapDay,
+        mode: logisticsMode,
+        buffer_minutes: bufferMinutes,
+      });
+      setLogistics(estimate);
+    } catch (nextError) {
+      setLogistics(null);
+      setLocationError(errorMessage(nextError));
+    } finally {
+      setLogisticsPending(false);
+      setPending(null);
+    }
+  };
+
   const deleteTrip = () => {
     if (!window.confirm("Permanently delete this trip, reservations, candidates, and itinerary items?")) return;
     void run("trip-delete", async () => {
@@ -537,6 +658,87 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
   const tentativeReservations = reservations.filter((reservation) => reservation.status === "tentative").length;
   const conflictCount = reservations.reduce((total, reservation) => total + reservation.conflicts.length, 0);
   const savedPlaceIds = new Set(savedPlaces.map((savedPlace) => savedPlace.place.id));
+
+  const mapMarkers = (() => {
+    const byPlaceId = new Map<string, TripMapMarker>();
+    const addPlace = (place: PlaceSummary | null, kind: TripMapMarker["kind"], detail: string) => {
+      if (!place || place.latitude === null || place.longitude === null) return;
+      const existing = byPlaceId.get(place.id);
+      if (existing) {
+        const mergedDetail = existing.detail.includes(detail)
+          ? existing.detail
+          : `${existing.detail}; ${detail}`;
+        const mergedKind = existing.kind === "candidate" && kind === "itinerary" ? kind : existing.kind;
+        byPlaceId.set(place.id, { ...existing, kind: mergedKind, detail: mergedDetail });
+        return;
+      }
+      byPlaceId.set(place.id, {
+        id: place.id,
+        name: place.name,
+        latitude: place.latitude,
+        longitude: place.longitude,
+        kind,
+        detail,
+        sourceAttribution: place.provider_source_attribution,
+        sourceLicense: place.provider_source_license,
+        sourceUrl: place.provider_source_url,
+      });
+    };
+
+    const reservationById = new Map(reservations.map((reservation) => [reservation.id, reservation]));
+    const selectedDays = mapDay === "all" ? trip.days : trip.days.filter((day) => day.id === mapDay);
+    for (const day of selectedDays) {
+      for (const item of day.items) {
+        if (item.status === "cancelled") continue;
+        const reservation = item.reservation ? reservationById.get(item.reservation.id) : undefined;
+        addPlace(item.place ?? reservation?.place ?? null, "itinerary", `Day ${day.day_index} · ${item.title}`);
+      }
+      for (const reservation of reservations) {
+        if (reservation.status === "cancelled" || !reservation.place) continue;
+        const coversDay = reservation.start_date !== null
+          && reservation.start_date <= day.date
+          && (reservation.end_date === null || reservation.end_date >= day.date);
+        if (coversDay) {
+          addPlace(reservation.place, "reservation", `Day ${day.day_index} · ${reservation.provider_name}`);
+        }
+      }
+    }
+    if (mapDay === "all") {
+      for (const reservation of reservations) {
+        if (reservation.status !== "cancelled") {
+          addPlace(reservation.place, "reservation", `Reservation · ${reservation.provider_name}`);
+        }
+      }
+    }
+    for (const savedPlace of savedPlaces) {
+      addPlace(savedPlace.place, "candidate", "Saved trip candidate");
+    }
+    for (const result of placeSearchResults) {
+      const alreadyImported = places.some((place) => place.provider_place_id === result.provider_place_id);
+      if (alreadyImported) continue;
+      byPlaceId.set(`search:${result.provider_place_id}`, {
+        id: `search:${result.provider_place_id}`,
+        name: result.name,
+        latitude: result.latitude,
+        longitude: result.longitude,
+        kind: "search",
+        detail: result.category ?? "Search result",
+        sourceAttribution: result.provider_source_attribution,
+        sourceLicense: result.provider_source_license,
+        sourceUrl: result.provider_source_url,
+      });
+    }
+    return [...byPlaceId.values()];
+  })();
+
+  const mapRoutes: TripMapRoute[] = (() => {
+    if (!logistics || logistics.day_id !== mapDay) return [];
+    return logistics.legs.map((leg) => ({
+      id: `${leg.origin_item_id}-${leg.destination_item_id}`,
+      geometry: leg.geometry,
+      warning: leg.warning,
+    }));
+  })();
 
   const saveTrip = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -582,9 +784,9 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
         <nav className="nav" aria-label="Trip navigation">
           <a href="#overview">Overview</a>
           <a className="active" href="#itinerary">Itinerary</a>
+          <a href="#map">Map</a>
           <a href="#reservations">Reservations</a>
           <a href="#saved-places">Saved places</a>
-          <span className="navDisabled">Map <small>Later</small></span>
         </nav>
         <div className="status"><span className="dot" />Local PostgreSQL planner</div>
       </aside>
@@ -627,6 +829,130 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
           </form>
         ) : null}
 
+        <section className="mapSection" id="map">
+          <div className="sectionHeading">
+            <div>
+              <p className="eyebrow">PLACES AND TRANSFERS</p>
+              <h2>Map and logistics</h2>
+              <p className="muted">View trip locations, find a place, and check travel time between scheduled stops.</p>
+            </div>
+          </div>
+          <div className="mapControls">
+            <label>
+              Locations
+              <select value={mapDay} onChange={(event) => { setMapDay(event.target.value); setLogistics(null); setLocationError(null); }}>
+                <option value="all">All trip days</option>
+                {trip.days.map((day) => <option key={day.id} value={day.id}>Day {day.day_index} · {formatDate(day.date)}</option>)}
+              </select>
+            </label>
+            <label>
+              Travel mode
+              <select value={logisticsMode} onChange={(event) => { setLogisticsMode(event.target.value as LogisticsMode); setLogistics(null); }}>
+                <option value="walk">Walking</option>
+                <option value="drive">Driving</option>
+                <option value="bicycle">Bicycle</option>
+                <option value="transit">Transit estimate</option>
+              </select>
+            </label>
+            <label>
+              Transfer buffer
+              <select value={bufferMinutes} onChange={(event) => { setBufferMinutes(Number(event.target.value)); setLogistics(null); }}>
+                {[0, 5, 10, 15, 20, 30].map((minutes) => <option key={minutes} value={minutes}>{minutes} min</option>)}
+              </select>
+            </label>
+            <button
+              className="primary"
+              type="button"
+              onClick={() => void estimateDayLogistics()}
+              disabled={logisticsPending || mapDay === "all"}
+            >
+              {logisticsPending ? "Estimating…" : "Estimate day logistics"}
+            </button>
+          </div>
+          {mapDay === "all" ? <p className="formHint">Select a day to estimate transfers between its consecutive scheduled items.</p> : null}
+          <TripMap markers={mapMarkers} routes={mapRoutes} label="Trip map and place markers" />
+          <p className="formHint">Route times are estimates based on provider map data. They do not include live traffic or guarantee transit schedules.</p>
+
+          {locationError ? <p className="formError locationError" role="alert">{locationError}</p> : null}
+
+          <div className="locationTools">
+            <form className="placeSearchPanel" onSubmit={(event) => void searchProviderPlaces(event)}>
+              <p className="eyebrow">PLACE SEARCH</p>
+              <h3>Find a place to save</h3>
+              <label>
+                Place or address
+                <input
+                  value={placeSearchQuery}
+                  onChange={(event) => {
+                    setPlaceSearchQuery(event.target.value);
+                    setLastSearchedPlaceQuery(null);
+                    setPlaceSearchResults([]);
+                  }}
+                  minLength={2}
+                  maxLength={160}
+                  placeholder="Museum, restaurant, or address · include a city"
+                />
+              </label>
+              <button className="secondary" type="submit" disabled={placeSearchPending || pending !== null || placeSearchQuery.trim().length < 2}>
+                {placeSearchPending ? "Searching…" : "Search places"}
+              </button>
+              <p className="formHint">Search runs after submission and returns up to ten results. Nothing is saved until you choose a result.</p>
+              {placeSearchResults.length > 0 ? (
+                <>
+                  <div className="searchResultList">
+                    {placeSearchResults.map((result) => (
+                      <article className="searchResult" key={result.provider_place_id}>
+                        <div>
+                          <strong>{result.name}</strong>
+                          <span>{[result.category, result.address].filter(Boolean).join(" · ")}</span>
+                          <span className="providerAttribution">
+                            {result.provider_source_attribution}
+                            {result.provider_source_license ? ` · ${result.provider_source_license}` : ""}
+                            {result.provider_source_url ? <> · <a href={result.provider_source_url} target="_blank" rel="noreferrer">Source</a></> : null}
+                            {" · "}<a href="https://www.geoapify.com/" target="_blank" rel="noreferrer">Powered by Geoapify</a>
+                          </span>
+                        </div>
+                        <button
+                          className="iconButton"
+                          type="button"
+                          onClick={() => void importSearchResult(result)}
+                          disabled={pending !== null || importingPlaceId !== null}
+                        >
+                          {importingPlaceId === result.provider_place_id ? "Saving…" : "Save candidate"}
+                        </button>
+                      </article>
+                    ))}
+                  </div>
+                </>
+              ) : lastSearchedPlaceQuery && lastSearchedPlaceQuery === placeSearchQuery.trim() && !placeSearchPending ? (
+                <p className="emptyText">No places found for “{lastSearchedPlaceQuery}”. Try adding a nearby city or area.</p>
+              ) : null}
+            </form>
+
+            <section className="logisticsPanel" aria-labelledby="logistics-heading">
+              <p className="eyebrow">SCHEDULE CHECK</p>
+              <h3 id="logistics-heading">Travel between stops</h3>
+              {!logistics ? <p className="muted">Choose a day and estimate its route legs. Estimates are on demand and are not saved as trip data.</p> : (
+                <>
+                  <p className="providerAttribution">Geoapify · {logistics.mode} · Generated {new Date(logistics.generated_at).toLocaleTimeString()}</p>
+                  {logistics.legs.length === 0 ? <p className="emptyText">No consecutive scheduled items with coordinates were found for this day.</p> : (
+                    <ol className="logisticsLegList">
+                      {logistics.legs.map((leg) => (
+                        <li className={leg.warning ? "logisticsWarning" : "logisticsLeg"} key={`${leg.origin_item_id}-${leg.destination_item_id}`}>
+                          <strong>{leg.origin_title} <span aria-hidden="true">→</span> {leg.destination_title}</strong>
+                          <span>About {formatDuration(leg.duration_seconds)} · {formatDistance(leg.distance_meters)}</span>
+                          <span>{formatAvailableGap(leg.available_gap_seconds)} between scheduled items</span>
+                          {leg.warning ? <em>Allow about {formatDuration(leg.duration_seconds + leg.buffer_minutes * 60)} including the selected buffer.</em> : null}
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </>
+              )}
+            </section>
+          </div>
+        </section>
+
         <section className="itinerarySection" id="itinerary">
           <div className="sectionHeading"><div><p className="eyebrow">AUTHORITATIVE PLAN</p><h2>Day-by-day itinerary</h2></div></div>
           <div className="days">
@@ -648,6 +974,7 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
                         <div className="itemBody">
                           <div className="itemTitle"><strong>{item.title}</strong><span className={`badge badge-${item.status}`}>{item.status}</span>{item.reservation ? <span className={`badge badge-${item.reservation.status}`}>{item.reservation.provider_name}</span> : null}{item.reservation && item.reservation.conflict_count > 0 ? <span className="conflictInline">Conflict</span> : null}</div>
                           <p className="itemMeta">{item.item_type}{item.place ? ` · ${item.place.name}` : ""}{item.reservation ? ` · ${item.reservation.confirmation_code ?? "reserved"}` : ""}</p>
+                          {item.place ? <PlaceAttribution place={item.place} /> : null}
                           {item.notes ? <p className="itemNotes">{item.notes}</p> : null}
                         </div>
                         <div className="itemActions">
@@ -684,6 +1011,7 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
                 <p className="reservationSchedule">{reservationSchedule(reservation)}</p>
                 <div className="reservationDetails">
                   {reservation.place ? <span>Place: {reservation.place.name}</span> : null}
+                  {reservation.place ? <PlaceAttribution place={reservation.place} /> : null}
                   {reservation.source_reference ? <a href={reservation.source_reference} target="_blank" rel="noreferrer">Open source ↗</a> : null}
                 </div>
                 {reservation.notes ? <p className="itemNotes">{reservation.notes}</p> : null}
@@ -714,14 +1042,14 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
           <div className="placeList">
             {places.length === 0 ? <p className="emptyText">No places yet.</p> : places.map((place) => {
               const saved = savedPlaceIds.has(place.id);
-              return <div className="placeRow" key={place.id}><strong>{place.name}</strong>{place.category || place.address ? <span>{[place.category, place.address].filter(Boolean).join(" · ")}</span> : null}{place.phone || place.website_url ? <span>{[place.phone, place.website_url].filter(Boolean).join(" · ")}</span> : null}<div className="placeActions"><button className="iconButton" type="button" onClick={() => { setEditingPlace((current) => current === place.id ? null : place.id); setShowPlaceForm(false); }} disabled={pending !== null}>{editingPlace === place.id ? "Close" : "Edit"}</button><button className="iconButton" type="button" onClick={() => void run(`save-place-${place.id}`, async () => { if (!saved) await travelApi.createSavedPlace(trip.id, { place_id: place.id, note: null }); })} disabled={pending !== null || saved}>{saved ? "Saved" : "Save"}</button></div></div>;
+              return <div className="placeRow" key={place.id}><strong>{place.name}</strong>{place.category || place.address ? <span>{[place.category, place.address].filter(Boolean).join(" · ")}</span> : null}<PlaceAttribution place={place} />{place.phone || place.website_url ? <span>{[place.phone, place.website_url].filter(Boolean).join(" · ")}</span> : null}<div className="placeActions"><button className="iconButton" type="button" onClick={() => { setEditingPlace((current) => current === place.id ? null : place.id); setShowPlaceForm(false); }} disabled={pending !== null}>{editingPlace === place.id ? "Close" : "Edit"}</button><button className="iconButton" type="button" onClick={() => void run(`save-place-${place.id}`, async () => { if (!saved) await travelApi.createSavedPlace(trip.id, { place_id: place.id, note: null }); })} disabled={pending !== null || saved}>{saved ? "Saved" : "Save"}</button></div></div>;
             })}
           </div>
         </div>
         <div className="placeGroup">
           <p className="sectionLabel">This trip’s candidates</p>
           <div className="placeList">
-            {savedPlaces.length === 0 ? <p className="emptyText">No saved candidates yet.</p> : savedPlaces.map((savedPlace) => <div className="placeRow" key={savedPlace.id}><strong>{savedPlace.place.name}</strong>{savedPlace.place.category ? <span>{savedPlace.place.category}</span> : null}<SavedPlaceNoteForm savedPlace={savedPlace} pending={pending === `saved-place-${savedPlace.id}`} disabled={pending !== null} onSave={(note) => run(`saved-place-${savedPlace.id}`, async () => { await travelApi.updateSavedPlace(trip.id, savedPlace.id, { note }); })} /><button className="iconButton dangerText" type="button" onClick={() => void run(`remove-saved-place-${savedPlace.id}`, async () => { await travelApi.deleteSavedPlace(trip.id, savedPlace.id); })} disabled={pending !== null}>Remove candidate</button></div>)}
+            {savedPlaces.length === 0 ? <p className="emptyText">No saved candidates yet.</p> : savedPlaces.map((savedPlace) => <div className="placeRow" key={savedPlace.id}><strong>{savedPlace.place.name}</strong>{savedPlace.place.category ? <span>{savedPlace.place.category}</span> : null}<PlaceAttribution place={savedPlace.place} /><SavedPlaceNoteForm savedPlace={savedPlace} pending={pending === `saved-place-${savedPlace.id}`} disabled={pending !== null} onSave={(note) => run(`saved-place-${savedPlace.id}`, async () => { await travelApi.updateSavedPlace(trip.id, savedPlace.id, { note }); })} /><button className="iconButton dangerText" type="button" onClick={() => void run(`remove-saved-place-${savedPlace.id}`, async () => { await travelApi.deleteSavedPlace(trip.id, savedPlace.id); })} disabled={pending !== null}>Remove candidate</button></div>)}
           </div>
         </div>
         <div className="aiBoundary"><span>Planned boundary</span><code>travel-api → personal-ai-system</code><p>Research and provider evidence remain separate from these authoritative manual records.</p></div>

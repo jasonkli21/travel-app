@@ -1,6 +1,6 @@
 # Phase 3 implementation plan — maps and travel logistics
 
-**Status:** ready for implementation
+**Status:** implemented locally; see [release record](releases/phase-3-maps-logistics.md)
 **Date:** 2026-10-03
 **Roadmap:** [`09-implementation-plan.md`](09-implementation-plan.md)
 **Baseline:** Phase 2 reservations and saved places delivered locally
@@ -46,7 +46,8 @@ changes and keeps provider observations separate from durable app state.
 ## Product and provider decisions
 
 Use Geoapify for map tiles, submitted free-text location search, and route
-estimates, with Leaflet rendering the provider's `osm-carto` raster tiles.
+estimates. An in-repository XYZ tile renderer displays the provider's
+`osm-carto` raster tiles, so Phase 3 does not add a map-rendering dependency.
 Use a backend-only key for search/routing and a separate referrer-restricted
 browser key for map tiles. Keep keys out of source control and show map
 attribution `© OpenStreetMap contributors` and `Powered by Geoapify`. Keep
@@ -71,11 +72,12 @@ See ADR 0007 for the terms and decision record. Official pages checked on
 
 ## Data and API contracts
 
-No schema migration is expected: `places` already has nullable `provider` and
-`provider_place_id` columns with an owner/provider/id uniqueness constraint.
-Expose those fields in place responses so the UI can identify provider-backed
-records. Imported Geoapify data uses `provider="geoapify"` and Geoapify's
-returned place identifier. Re-import must not replace manually edited fields.
+Add a reversible migration for nullable source attribution fields on `places`:
+source name, exact source attribution, license, and source URL. The existing
+`provider`, `provider_place_id`, and owner/provider/id uniqueness constraint
+identify imported records. Expose these fields in place responses and preserve
+the exact attribution returned for each imported result. Re-import must not
+replace manually edited fields or attribution already stored on that place.
 
 Add typed contracts:
 
@@ -83,7 +85,7 @@ Add typed contracts:
 | --- | --- | --- |
 | `GET` | `/v1/trips/{trip_id}/places/search?q=...&limit=...` | Validate the owner-scoped trip; submit a bounded query to Geoapify; return normalized results with external id, name, address, category, and coordinates. Bias to known trip coordinates when available. Search does not write travel state. |
 | `POST` | `/v1/trips/{trip_id}/saved-places/import` | Accept one selected normalized Geoapify result and optional note; validate fields/coordinate pair; owner-scope and transactionally upsert by provider identity plus create/reuse the trip's saved-place relationship. Return the saved-place response. Never overwrite existing place edits. |
-| `POST` | `/v1/trips/{trip_id}/logistics/estimate` | Accept `day_id`, `mode` (`walk`, `drive`, `bicycle`, `transit`), and `buffer_minutes` (default 15, bounded 0–120). Return generated time and per-leg item ids, duration, distance, GeoJSON line, available time gap, and warning flag. Do not persist results. |
+| `POST` | `/v1/trips/{trip_id}/logistics/estimate` | Accept `day_id`, `mode` (`walk`, `drive`, `bicycle`, `transit`), and `buffer_minutes` (default 15, bounded 0–120). Return generated time and per-leg item ids, duration, distance, route-line coordinates, available time gap, and warning flag. Do not persist results. |
 
 For logistics, inspect consecutive items in `sort_order` on the requested day.
 Estimate a leg only if both items are active, both have coordinates (from their
@@ -107,7 +109,7 @@ coordinate bias.
 ## Frontend behavior
 
 - Replace the disabled Map navigation entry with a working map anchor.
-- Render a responsive, client-only Leaflet map. Include markers for places
+- Render a responsive, client-only XYZ tile map. Include markers for places
   attached to selected-day items and reservations, plus trip-saved candidates;
   avoid duplicate markers when one place is used by several records. Provide a
   corresponding accessible list so the map is not the only way to inspect
@@ -152,8 +154,10 @@ coordinate bias.
 
 ### P3.3 — Map, search, and logistics UI
 
-- Add Leaflet and its types as the only map-rendering dependency; load it
-  client-side and use the configured Geoapify tile key.
+- Add an in-repository XYZ tile component with pointer panning, bounded zoom,
+  wrapped world coordinates, markers, route geometry, map attribution, and a
+  screen-reader-accessible location list. Use only the configured Geoapify
+  tile key; do not add a package dependency for the map.
 - Add the map, accessible location list, search/import flow, day and mode
   controls, logistics summary/warnings, route polylines, attribution, and
   graceful missing-key states.
@@ -218,5 +222,5 @@ make frontend-check
 cd frontend && corepack pnpm build
 ```
 
-Migration tests should confirm that Phase 3 does not require a schema revision
-and that a clean Phase 2 database still upgrades to head.
+Migration checks should confirm that the new attribution columns apply and
+revert cleanly, and that a clean Phase 2 database upgrades to head.
