@@ -1,3 +1,6 @@
+import { request } from "./api-request.mjs";
+export { ApiError } from "./api-request.mjs";
+
 export type ItemType = "activity" | "food" | "lodging" | "transport" | "flight" | "note";
 export type ItemStatus = "tentative" | "planned" | "booked" | "completed" | "cancelled";
 export type ReservationType = "lodging" | "flight" | "train" | "car_rental" | "activity" | "dining" | "other";
@@ -267,51 +270,6 @@ export interface ApiErrorPayload {
     message?: string;
     details?: Record<string, unknown> | null;
   };
-}
-
-export class ApiError extends Error {
-  readonly code: string;
-  readonly details: Record<string, unknown> | null;
-
-  constructor(message: string, code = "request_failed", details: Record<string, unknown> | null = null) {
-    super(message);
-    this.name = "ApiError";
-    this.code = code;
-    this.details = details;
-  }
-}
-
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  let response: Response;
-  try {
-    response = await fetch(`/api/v1${path}`, {
-      ...init,
-      headers: {
-        ...(init.body ? { "Content-Type": "application/json" } : {}),
-        ...init.headers,
-      },
-      cache: "no-store",
-      signal: init.signal ?? AbortSignal.timeout(65_000),
-    });
-  } catch {
-    throw new ApiError("The travel API could not be reached. Is the local backend running?", "network_error");
-  }
-
-  if (response.status === 204) {
-    return undefined as T;
-  }
-
-  const payload = (await response.json().catch(() => null)) as ApiErrorPayload | T | null;
-  if (!response.ok) {
-    const errorPayload = payload as ApiErrorPayload | null;
-    throw new ApiError(
-      errorPayload?.error?.message ?? `The travel API returned HTTP ${response.status}.`,
-      errorPayload?.error?.code ?? "request_failed",
-      errorPayload?.error?.details ?? null,
-    );
-  }
-  if (payload === null) throw new ApiError("The travel API returned an invalid response.", "invalid_response");
-  return payload as T;
 }
 
 export const travelApi = {

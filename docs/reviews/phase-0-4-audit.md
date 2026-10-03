@@ -161,7 +161,13 @@ records describe their original checks; this record supplies current evidence.
     downgrade/rollback, destination DST moves, concurrency, safe boundaries,
     oversized/trickling upstream responses and context/link rules. The real
     production browser check found the internal-host proxy mismatch that a
-    pure unit suite missed; that case now has a regression.
+   pure unit suite missed; that case now has a regression.
+31. Transport/5xx failures were treated as definitely failed manual writes,
+    although a commit may have succeeded before its response was lost. Trip,
+    itinerary/reservation/place/candidate/import writes now block resubmission
+    until reload/reconciliation and explicitly describe the unknown outcome.
+    Trip creation also has a synchronous guard through navigation. Validation
+    failures remain editable without that recovery step.
 
 ## Migration and compatibility
 
@@ -187,8 +193,8 @@ behavior are preserved. Phase 4 still stores no AI sessions/evidence.
 | Migrations | Clean head, ORM parity, downgrade to base/re-upgrade, legacy repair and DST-repair rollback covered |
 | Python packaging | Offline uv build produces wheel and sdist |
 | Frontend | ESLint, Next type generation, strict TypeScript and production standalone build pass |
-| Frontend Node tests | 11 passed: map geometry, response handling, proxy security/body/error/request ID, internal-host origin, research context and safe links |
-| Production smoke | API + standalone Next against a separate migrated database; same-origin creation, browser item creation/move, coordinate place/candidate save, reload persistence and disabled research error |
+| Frontend Node tests | 14 passed: map geometry, response handling, proxy security/body/error/request ID, internal-host origin, research context, safe links and actual HTTP-client uncertain mutation outcomes |
+| Production smoke | API + standalone Next against a separate migrated database; same-origin creation, browser item creation/move, coordinate place/candidate save, reload persistence, disabled research error and controlled backend-outage/reload recovery |
 | Dependency advisories | pip-audit reports no known vulnerabilities in installed Python dependencies; the unpublished local package is not auditable on PyPI. pnpm production audit reports zero advisories across 93 dependencies |
 
 The Make targets' underlying installed executables were used because this

@@ -78,7 +78,7 @@ export default function ItemForm({
         reservation_id: reservationId || null,
       });
       if (!saved) {
-        setFormError("The change was not saved. Review the error above and try again.");
+        setFormError("Review the workspace message before retrying this change.");
       }
     } catch (error) {
       setFormError(errorMessage(error));
@@ -158,4 +158,3 @@ export default function ItemForm({
     </form>
   );
 }
-

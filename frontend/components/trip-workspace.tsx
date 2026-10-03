@@ -24,6 +24,7 @@ import {
 import TripMap, { type TripMapMarker, type TripMapRoute } from "./trip-map";
 import TripResearchPanel from "./trip-research-panel";
 import { errorMessage } from "../lib/errors";
+import { uncertainMutationError } from "../lib/mutation-outcome.mjs";
 import { safeHttpUrl } from "../lib/urls.mjs";
 import ItemForm from "./trip-workspace/item-form";
 import DayTitleForm from "./trip-workspace/day-title-form";
@@ -170,11 +171,20 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
       // the create form open invites duplicate reservations/items on retry.
       return true;
     } catch (nextError) {
-      setError(errorMessage(nextError));
+      mutationError(nextError);
       return false;
     } finally {
       mutationInFlight.current = false;
       setPending(null);
+    }
+  };
+
+  const mutationError = (nextError: unknown) => {
+    if (uncertainMutationError(nextError)) {
+      setStale(true);
+      setError("The change could not be confirmed. Reload and check the workspace before submitting again.");
+    } else {
+      setError(errorMessage(nextError));
     }
   };
 
@@ -186,6 +196,9 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
       const place = await travelApi.createPlace({ name });
       setPlaces((current) => [...current, place].sort((left, right) => left.name.localeCompare(right.name)));
       return place;
+    } catch (nextError) {
+      mutationError(nextError);
+      throw nextError;
     } finally {
       mutationInFlight.current = false;
       setPending(null);
@@ -243,6 +256,7 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
       setLastSearchedPlaceQuery(null);
       await refresh();
     } catch (nextError) {
+      mutationError(nextError);
       setLocationError(errorMessage(nextError));
     } finally {
       setImportingPlaceId(null);

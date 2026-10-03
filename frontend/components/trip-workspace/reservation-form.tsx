@@ -65,7 +65,7 @@ export default function ReservationForm({
         source_reference: sourceReference.trim() || null,
         notes: notes.trim() || null,
       });
-      if (!saved) setFormError("The reservation was not saved. Review the error above and try again.");
+      if (!saved) setFormError("Review the workspace message before retrying this reservation.");
     } catch (error) {
       setFormError(errorMessage(error));
     }
@@ -137,4 +137,3 @@ export default function ReservationForm({
     </form>
   );
 }
-

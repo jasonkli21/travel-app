@@ -98,7 +98,7 @@ Infrastructure:
 ## Phase 1–3 verification
 
 Current review evidence: 86 backend tests passed with PostgreSQL 16.15 and zero
-skips, 11 frontend Node tests passed, Ruff/mypy/ESLint/TypeScript/build/package
+skips, 14 frontend Node tests passed, Ruff/mypy/ESLint/TypeScript/build/package
 checks passed, plus an isolated standalone browser smoke check. Live providers,
 Docker execution, hosted CI and cloud deployment were not verified. Historical
 release records below retain the checks actually performed at their release.

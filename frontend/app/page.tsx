@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { FormEvent } from "react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { type CreateTripInput, type TripSummary, travelApi } from "../lib/api";
 
 import { errorMessage } from "../lib/errors";
+import { uncertainMutationError } from "../lib/mutation-outcome.mjs";
 
 export default function Home() {
   const router = useRouter();
@@ -15,6 +16,8 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const createInFlight = useRef(false);
+  const [uncertain, setUncertain] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<CreateTripInput>({ title: "", start_date: "", end_date: "", timezone: "UTC" });
 
@@ -22,6 +25,7 @@ export default function Home() {
     setError(null);
     try {
       setTrips(await travelApi.listTrips());
+      setUncertain(false);
     } catch (nextError) {
       setError(errorMessage(nextError));
     } finally {
@@ -35,14 +39,21 @@ export default function Home() {
 
   const createTrip = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (createInFlight.current || uncertain) return;
+    createInFlight.current = true;
     setCreating(true);
     setError(null);
     try {
       const trip = await travelApi.createTrip(form);
       router.push(`/trips/${trip.id}`);
     } catch (nextError) {
-      setError(errorMessage(nextError));
-    } finally {
+      if (uncertainMutationError(nextError)) {
+        setUncertain(true);
+        setError("Trip creation could not be confirmed. Reload and check your trips before submitting again.");
+      } else {
+        setError(errorMessage(nextError));
+      }
+      createInFlight.current = false;
       setCreating(false);
     }
   };
@@ -69,7 +80,7 @@ export default function Home() {
         {error ? <><p className="errorBanner" role="alert">{error}</p><button className="secondary" type="button" onClick={() => void loadTrips()}>Reload trips</button></> : null}
         {showForm ? (
           <form className="panel createTripForm" onSubmit={createTrip}>
-            <fieldset disabled={creating}><div className="formGrid">
+            <fieldset disabled={creating || uncertain}><div className="formGrid">
               <label>Trip title<input maxLength={200} value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="Japan in spring" required /></label>
               <label>Timezone<input maxLength={64} value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })} placeholder="Asia/Tokyo" required /></label>
               <label>Start date<input type="date" value={form.start_date} onChange={(event) => setForm({ ...form, start_date: event.target.value })} required /></label>

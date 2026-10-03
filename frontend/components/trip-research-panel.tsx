@@ -133,7 +133,7 @@ export default function TripResearchPanel({
         note: candidate.note.trim() || null,
       });
       if (!saved) {
-        setError("The candidate was not saved. Review the trip error and try again.");
+        setError("Review the trip message before retrying this candidate.");
         return;
       }
       setCandidate(EMPTY_CANDIDATE);

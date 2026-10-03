@@ -44,7 +44,7 @@ export default function PlaceForm({
         phone: phone.trim() || null,
         website_url: websiteUrl.trim() || null,
       });
-      if (!saved) setFormError("The place was not saved. Review the error above and try again.");
+      if (!saved) setFormError("Review the workspace message before retrying this place.");
     } catch (error) {
       setFormError(errorMessage(error));
     }
@@ -74,4 +74,3 @@ export default function PlaceForm({
     </form>
   );
 }
-
