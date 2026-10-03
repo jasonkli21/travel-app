@@ -6,6 +6,7 @@ from personal_travel.api.routes import (
     location,
     places,
     reservations,
+    research,
     saved_places,
     trips,
 )
@@ -17,4 +18,5 @@ api_router.include_router(itinerary.router, prefix="/v1")
 api_router.include_router(places.router, prefix="/v1")
 api_router.include_router(reservations.router, prefix="/v1")
 api_router.include_router(saved_places.router, prefix="/v1")
+api_router.include_router(research.router, prefix="/v1")
 api_router.include_router(location.router, prefix="/v1")

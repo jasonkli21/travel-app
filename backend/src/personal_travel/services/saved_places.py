@@ -1,8 +1,10 @@
+from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from personal_travel.api.schemas import SavedPlaceCreate, SavedPlaceUpdate
+from personal_travel.api.schemas import ManualSavedPlaceCreate, SavedPlaceCreate, SavedPlaceUpdate
+from personal_travel.models.place import Place
 from personal_travel.models.reservation import SavedPlace
 from personal_travel.models.trip import Trip
 from personal_travel.repositories.places import SqlAlchemyPlaceRepository
@@ -42,6 +44,33 @@ class SavedPlaceService:
                 note=data.note,
             )
             saved_place.place = place
+            self._saved_places.add(saved_place)
+            self._session.flush()
+            return saved_place
+
+    def create_manual(self, trip_id: UUID, data: ManualSavedPlaceCreate) -> SavedPlace:
+        with self._session.begin():
+            trip = self._get_trip(trip_id, for_update=True)
+            place = Place(
+                owner_id=self._owner_id,
+                name=data.name,
+                address=data.address,
+                category=data.category,
+                phone=data.phone,
+                website_url=data.website_url,
+                latitude=Decimal(str(data.latitude)) if data.latitude is not None else None,
+                longitude=Decimal(str(data.longitude)) if data.longitude is not None else None,
+            )
+            self._places.add(place)
+            self._session.flush()
+            saved_place = SavedPlace(
+                owner_id=self._owner_id,
+                trip_id=trip.id,
+                place_id=place.id,
+                note=data.note,
+            )
+            saved_place.place = place
+            trip.saved_places.append(saved_place)
             self._saved_places.add(saved_place)
             self._session.flush()
             return saved_place

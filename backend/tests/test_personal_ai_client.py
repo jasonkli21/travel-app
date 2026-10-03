@@ -1,4 +1,7 @@
 import asyncio
+import json
+from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -78,3 +81,187 @@ def test_personal_ai_health_reports_invalid_payload_shape(
 
     with pytest.raises(PersonalAIError, match="invalid health response"):
         asyncio.run(client.health())
+
+
+def _research_session(
+    session_id: str, state: str, *, answer: str | None = None
+) -> dict[str, object]:
+    expires_at = (datetime.now(UTC) + timedelta(days=1)).isoformat()
+    payload: dict[str, object] = {
+        "schema_version": "research-v1",
+        "id": session_id,
+        "state": state,
+        "expires_at": expires_at,
+        "failure_code": None,
+        "answer": answer,
+        "citations": [],
+    }
+    if state == "completed":
+        payload["citations"] = [
+            {
+                "number": 1,
+                "evidence_id": str(uuid4()),
+                "source_observation_id": str(uuid4()),
+                "url": "https://example.test/source",
+                "title": "Example source",
+                "observed_at": datetime.now(UTC).isoformat(),
+                "expires_at": expires_at,
+            }
+        ]
+    return payload
+
+
+def test_personal_ai_research_creates_runs_and_reads_cited_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session_id = str(uuid4())
+    key = uuid4()
+    requests: list[httpx.Request] = []
+    terminal = {
+        "schema_version": "research-v1",
+        "session_id": session_id,
+        "state": "completed",
+        "failure_code": None,
+    }
+    stream = (
+        "event: research.started\n"
+        f'data: {{"schema_version":"research-v1","session_id":"{session_id}",'
+        '"state":"running"}\n\n'
+        "event: research.terminal\n"
+        f"data: {json.dumps(terminal)}\n\n"
+    )
+    result_payload = _research_session(session_id, "completed", answer="A cited answer.")
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path == "/v1/research" and request.method == "POST":
+            return httpx.Response(
+                201,
+                json=_research_session(session_id, "pending"),
+                request=request,
+            )
+        if request.url.path.endswith("/run"):
+            return httpx.Response(200, text=stream, request=request)
+        if request.url.path == f"/v1/research/{session_id}" and request.method == "GET":
+            return httpx.Response(200, json=result_payload, request=request)
+        return httpx.Response(404, request=request)
+
+    client = _client_with_transport(monkeypatch, httpx.MockTransport(handle))
+    result = asyncio.run(
+        client.research(
+            question="Trip context: Kyoto\nQuestion: Find a quiet dinner",
+            freshness="current",
+            idempotency_key=key,
+        )
+    )
+
+    assert result.state == "completed"
+    assert result.answer == "A cited answer."
+    assert result.citations[0].url == "https://example.test/source"
+    assert [request.method for request in requests] == ["POST", "POST", "GET"]
+    assert json.loads(requests[0].content)["idempotency_key"] == str(key)
+
+
+def test_personal_ai_research_rejects_wrong_session_sse_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session_id = str(uuid4())
+    wrong_session_id = str(uuid4())
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/research":
+            return httpx.Response(
+                201,
+                json=_research_session(session_id, "pending"),
+                request=request,
+            )
+        if request.url.path.endswith("/run"):
+            return httpx.Response(
+                200,
+                text=(
+                    "event: research.terminal\n"
+                    f'data: {{"schema_version":"research-v1","session_id":"{wrong_session_id}",'
+                    '"state":"failed","failure_code":"upstream_error"}\n\n'
+                ),
+                request=request,
+            )
+        return httpx.Response(200, json=_research_session(session_id, "failed"), request=request)
+
+    client = _client_with_transport(monkeypatch, httpx.MockTransport(handle))
+    with pytest.raises(PersonalAIError, match="mismatched research event"):
+        asyncio.run(
+            client.research(
+                question="Question",
+                freshness="general",
+                idempotency_key=uuid4(),
+            )
+        )
+
+
+def test_personal_ai_research_accepts_durable_result_when_terminal_frame_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session_id = str(uuid4())
+    detail = _research_session(session_id, "completed", answer="Durable cited result.")
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/research":
+            return httpx.Response(
+                201,
+                json=_research_session(session_id, "pending"),
+                request=request,
+            )
+        if request.url.path.endswith("/run"):
+            return httpx.Response(
+                200,
+                text=(
+                    "event: research.started\n"
+                    f'data: {{"schema_version":"research-v1","session_id":"{session_id}",'
+                    '"state":"running"}\n\n'
+                ),
+                request=request,
+            )
+        return httpx.Response(200, json=detail, request=request)
+
+    client = _client_with_transport(monkeypatch, httpx.MockTransport(handle))
+    result = asyncio.run(
+        client.research(
+            question="Question",
+            freshness="general",
+            idempotency_key=uuid4(),
+        )
+    )
+
+    assert result.state == "completed"
+    assert result.answer == "Durable cited result."
+
+
+def test_personal_ai_research_rejects_oversized_sse_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session_id = str(uuid4())
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/research":
+            return httpx.Response(
+                201,
+                json=_research_session(session_id, "pending"),
+                request=request,
+            )
+        if request.url.path.endswith("/run"):
+            return httpx.Response(
+                200,
+                text=f"event: research.started\ndata: {'x' * 16_500}\n\n",
+                request=request,
+            )
+        return httpx.Response(200, json=_research_session(session_id, "failed"), request=request)
+
+    client = _client_with_transport(monkeypatch, httpx.MockTransport(handle))
+    with pytest.raises(PersonalAIError, match="oversized research stream"):
+        asyncio.run(
+            client.research(
+                question="Question",
+                freshness="general",
+                idempotency_key=uuid4(),
+            )
+        )

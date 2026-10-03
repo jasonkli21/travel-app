@@ -14,7 +14,8 @@ class Settings(BaseSettings):
     owner_id: str = "local"
     database_url: str = "postgresql+psycopg://travel:travel@localhost:5432/travel"
     personal_ai_base_url: AnyHttpUrl = AnyHttpUrl("http://localhost:8001")
-    personal_ai_timeout_seconds: float = 15.0
+    personal_ai_timeout_seconds: float = Field(default=45.0, gt=0, le=60)
+    personal_ai_research_enabled: bool = False
     cors_origins: str = "http://localhost:3000"
     geoapify_api_key: SecretStr | None = None
     geoapify_timeout_seconds: float = Field(default=8.0, gt=0, le=60)

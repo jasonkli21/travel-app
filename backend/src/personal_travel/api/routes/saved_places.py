@@ -5,6 +5,7 @@ from fastapi import APIRouter, Response, status
 from personal_travel.api.dependencies import OwnerDependency, SessionDependency
 from personal_travel.api.schemas import (
     COMMON_ERROR_RESPONSES,
+    ManualSavedPlaceCreate,
     SavedPlaceCreate,
     SavedPlaceResponse,
     SavedPlaceUpdate,
@@ -41,6 +42,21 @@ def create_saved_place(
     owner_id: OwnerDependency,
 ) -> SavedPlaceResponse:
     saved_place = SavedPlaceService(session, owner_id).create(trip_id, payload)
+    return serialize_saved_place(saved_place)
+
+
+@router.post(
+    "/saved-places/manual",
+    response_model=SavedPlaceResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_manual_saved_place(
+    trip_id: UUID,
+    payload: ManualSavedPlaceCreate,
+    session: SessionDependency,
+    owner_id: OwnerDependency,
+) -> SavedPlaceResponse:
+    saved_place = SavedPlaceService(session, owner_id).create_manual(trip_id, payload)
     return serialize_saved_place(saved_place)
 
 

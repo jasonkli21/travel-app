@@ -17,6 +17,8 @@ ItemStatus = Literal["tentative", "planned", "booked", "completed", "cancelled"]
 ReservationType = Literal["lodging", "flight", "train", "car_rental", "activity", "dining", "other"]
 ReservationStatus = Literal["tentative", "confirmed", "cancelled"]
 GeoapifyRouteMode = Literal["walk", "drive", "bicycle", "transit"]
+ResearchFreshness = Literal["general", "current"]
+ResearchState = Literal["pending", "running", "completed", "insufficient", "failed", "expired"]
 LocalTime = Annotated[
     str,
     StringConstraints(pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$"),
@@ -105,6 +107,15 @@ class PlaceCreate(BaseModel):
     @field_validator("category", "phone", "website_url")
     @classmethod
     def normalize_optional_metadata(cls, value: str | None) -> str | None:
+        return _trim_optional(value)
+
+
+class ManualSavedPlaceCreate(PlaceCreate):
+    note: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("note")
+    @classmethod
+    def normalize_note(cls, value: str | None) -> str | None:
         return _trim_optional(value)
 
 
@@ -448,6 +459,60 @@ class SavedPlaceResponse(BaseModel):
     place: PlaceSummaryResponse
     created_at: datetime
     updated_at: datetime
+
+
+class TripResearchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    day_id: UUID
+    question: str = Field(min_length=1, max_length=300)
+    freshness: ResearchFreshness = "current"
+    idempotency_key: UUID
+
+    @field_validator("question")
+    @classmethod
+    def normalize_question(cls, value: str) -> str:
+        normalized = " ".join(value.split())
+        if not normalized or any(ord(char) < 32 for char in normalized):
+            raise ValueError("question must contain printable text")
+        return normalized
+
+
+class ResearchCitationResponse(BaseModel):
+    number: int = Field(ge=1)
+    evidence_id: UUID
+    source_observation_id: UUID
+    url: str = Field(min_length=1, max_length=2048)
+    title: str | None = Field(default=None, max_length=500)
+    observed_at: datetime
+    expires_at: datetime
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, value: str) -> str:
+        try:
+            parsed = urlsplit(value)
+            hostname = parsed.hostname
+        except ValueError:
+            raise ValueError("citation URL must be HTTP or HTTPS") from None
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not hostname
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
+            raise ValueError("citation URL must be HTTP or HTTPS")
+        return value
+
+
+class TripResearchResponse(BaseModel):
+    schema_version: Literal["trip-research-v1"] = "trip-research-v1"
+    session_id: UUID
+    state: ResearchState
+    answer: str | None = Field(default=None, max_length=20000)
+    failure_code: str | None = Field(default=None, max_length=80)
+    expires_at: datetime
+    citations: list[ResearchCitationResponse] = Field(default_factory=list, max_length=144)
 
 
 class TripDayResponse(BaseModel):
