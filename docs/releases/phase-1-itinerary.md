@@ -30,8 +30,7 @@ cloud deployment, and provider integrations remain deferred.
 2. `f7f4b68` — `feat: add trip and itinerary API`
 3. `478f922` — `feat: build responsive manual itinerary planner`
 4. `97965e8` — `docs: record Phase 1 itinerary release`
-5. The independent-review fixes are included in the final review-fix commit
-   reported with this release.
+5. `05285dd` — `fix: address Phase 1 review findings`
 
 ## Verification performed
 
