@@ -32,6 +32,12 @@ def serialize_place(place: Place | None) -> PlaceSummaryResponse | None:
         website_url=place.website_url,
         latitude=float(place.latitude) if place.latitude is not None else None,
         longitude=float(place.longitude) if place.longitude is not None else None,
+        provider=place.provider,
+        provider_place_id=place.provider_place_id,
+        provider_source_name=place.provider_source_name,
+        provider_source_attribution=place.provider_source_attribution,
+        provider_source_license=place.provider_source_license,
+        provider_source_url=place.provider_source_url,
     )
 
 

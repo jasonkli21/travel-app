@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import AnyHttpUrl
+from pydantic import AnyHttpUrl, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     personal_ai_base_url: AnyHttpUrl = AnyHttpUrl("http://localhost:8001")
     personal_ai_timeout_seconds: float = 15.0
     cors_origins: str = "http://localhost:3000"
+    geoapify_api_key: SecretStr | None = None
+    geoapify_timeout_seconds: float = Field(default=8.0, gt=0, le=60)
 
     @property
     def cors_origin_list(self) -> list[str]:

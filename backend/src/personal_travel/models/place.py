@@ -27,6 +27,10 @@ class Place(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     website_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     provider: Mapped[str | None] = mapped_column(String(64), nullable=True)
     provider_place_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    provider_source_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    provider_source_attribution: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    provider_source_license: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    provider_source_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     items: Mapped[list[ItineraryItem]] = relationship("ItineraryItem", back_populates="place")
     reservations: Mapped[list[Reservation]] = relationship("Reservation", back_populates="place")

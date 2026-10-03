@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from typing import Annotated, Any, Literal
+from urllib.parse import urlsplit
 from uuid import UUID
 
 from pydantic import (
@@ -15,6 +16,7 @@ ItemType = Literal["activity", "food", "lodging", "transport", "flight", "note"]
 ItemStatus = Literal["tentative", "planned", "booked", "completed", "cancelled"]
 ReservationType = Literal["lodging", "flight", "train", "car_rental", "activity", "dining", "other"]
 ReservationStatus = Literal["tentative", "confirmed", "cancelled"]
+GeoapifyRouteMode = Literal["walk", "drive", "bicycle", "transit"]
 LocalTime = Annotated[
     str,
     StringConstraints(pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$"),
@@ -267,6 +269,83 @@ class PlaceSummaryResponse(BaseModel):
     website_url: str | None
     latitude: float | None
     longitude: float | None
+    provider: str | None
+    provider_place_id: str | None
+    provider_source_name: str | None
+    provider_source_attribution: str | None
+    provider_source_license: str | None
+    provider_source_url: str | None
+
+
+class PlaceSearchResult(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    provider_place_id: str = Field(min_length=1, max_length=256)
+    name: str = Field(min_length=1, max_length=240)
+    address: str | None = Field(default=None, max_length=500)
+    category: str | None = Field(default=None, max_length=120)
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    provider_source_name: str = Field(min_length=1, max_length=128)
+    provider_source_attribution: str = Field(min_length=1, max_length=500)
+    provider_source_license: str | None = Field(default=None, max_length=255)
+    provider_source_url: str | None = Field(default=None, max_length=500)
+
+    @field_validator("provider_source_url")
+    @classmethod
+    def validate_provider_source_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            parsed = urlsplit(value)
+        except ValueError:
+            raise ValueError("provider_source_url must be an HTTP or HTTPS URL") from None
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("provider_source_url must be an HTTP or HTTPS URL")
+        return value
+
+
+class PlaceSearchResponse(PlaceSearchResult):
+    provider: Literal["geoapify"] = "geoapify"
+
+
+class PlaceImportRequest(PlaceSearchResult):
+    note: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("note")
+    @classmethod
+    def normalize_note(cls, value: str | None) -> str | None:
+        return _trim_optional(value)
+
+
+class LogisticsEstimateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    day_id: UUID
+    mode: GeoapifyRouteMode = "walk"
+    buffer_minutes: int = Field(default=15, ge=0, le=120)
+
+
+class LogisticsLegResponse(BaseModel):
+    origin_item_id: UUID
+    origin_title: str
+    destination_item_id: UUID
+    destination_title: str
+    duration_seconds: int = Field(ge=0)
+    distance_meters: float = Field(ge=0)
+    available_gap_seconds: int
+    buffer_minutes: int = Field(ge=0)
+    warning: bool
+    geometry: list[list[float]] = Field(min_length=2)
+
+
+class LogisticsEstimateResponse(BaseModel):
+    provider: Literal["geoapify"] = "geoapify"
+    day_id: UUID
+    mode: GeoapifyRouteMode
+    buffer_minutes: int = Field(ge=0)
+    generated_at: datetime
+    legs: list[LogisticsLegResponse]
 
 
 class ReservationSummaryResponse(BaseModel):

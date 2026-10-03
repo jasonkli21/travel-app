@@ -9,6 +9,9 @@ from personal_travel.models.place import Place
 
 class PlaceRepository(Protocol):
     def get(self, *, owner_id: str, place_id: uuid.UUID) -> Place | None: ...
+    def get_by_provider_identity(
+        self, *, owner_id: str, provider: str, provider_place_id: str
+    ) -> Place | None: ...
     def list(self, *, owner_id: str) -> list[Place]: ...
     def add(self, place: Place) -> Place: ...
 
@@ -19,6 +22,16 @@ class SqlAlchemyPlaceRepository:
 
     def get(self, *, owner_id: str, place_id: uuid.UUID) -> Place | None:
         statement = select(Place).where(Place.owner_id == owner_id, Place.id == place_id)
+        return self._session.scalar(statement)
+
+    def get_by_provider_identity(
+        self, *, owner_id: str, provider: str, provider_place_id: str
+    ) -> Place | None:
+        statement = select(Place).where(
+            Place.owner_id == owner_id,
+            Place.provider == provider,
+            Place.provider_place_id == provider_place_id,
+        )
         return self._session.scalar(statement)
 
     def list(self, *, owner_id: str) -> list[Place]:

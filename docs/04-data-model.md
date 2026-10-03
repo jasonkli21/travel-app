@@ -1,12 +1,13 @@
 # Data model
 
-Status: Phase 2 relational vocabulary delivered locally
-Date: 2026-10-02
+Status: Phase 3 relational vocabulary delivered locally
+Date: 2026-10-03
 
 The initial migration implements the core itinerary graph. Phase 1 adds
 application services and ordering constraints; Phase 2 adds manual reservations,
-trip-scoped saved-place candidates, richer place metadata, and reservation links.
-Attachments and AI proposals remain planned rather than implemented.
+trip-scoped saved-place candidates, richer place metadata, reservation links,
+and retained source attribution for provider-imported places. Attachments and
+AI proposals remain planned rather than implemented.
 
 ## Implemented scaffold tables
 
@@ -59,13 +60,18 @@ phone?
 website_url?
 provider?
 provider_place_id?
+provider_source_name?
+provider_source_attribution?
+provider_source_license?
+provider_source_url?
 created_at
 updated_at
 ```
 
-External provider identity is optional.
-
-No map/place provider is selected yet.
+External provider identity and source attribution are optional. Phase 3 stores
+the source attribution, license, and source link returned for a provider-backed
+place so the required credit stays available in search results and saved app
+records.
 
 ### `itinerary_items`
 
@@ -230,7 +236,11 @@ together, and four nulls clear the schedule.
 
 Store latitude/longitude as ordinary numeric columns initially.
 
-Do not require PostGIS in Phase 1 or Phase 2.
+Do not require PostGIS in Phase 1, Phase 2, or Phase 3.
+
+Phase 3 migration `0004` adds nullable provider source name, attribution,
+license, and URL fields to `places`. This is a reversible additive change;
+manual places keep these fields null.
 
 If later workloads genuinely require server-side spatial queries, add a dedicated ADR and revisit AWS/Aurora DSQL portability.
 

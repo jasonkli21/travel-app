@@ -33,6 +33,10 @@ class SqlAlchemyTripRepository:
                 selectinload(Trip.days)
                 .selectinload(TripDay.items)
                 .selectinload(ItineraryItem.reservation),
+                selectinload(Trip.days)
+                .selectinload(TripDay.items)
+                .selectinload(ItineraryItem.reservation)
+                .selectinload(Reservation.place),
                 selectinload(Trip.reservations).selectinload(Reservation.place),
                 selectinload(Trip.saved_places).selectinload(SavedPlace.place),
             )
@@ -53,6 +57,10 @@ class SqlAlchemyTripRepository:
                 selectinload(Trip.days)
                 .selectinload(TripDay.items)
                 .selectinload(ItineraryItem.reservation),
+                selectinload(Trip.days)
+                .selectinload(TripDay.items)
+                .selectinload(ItineraryItem.reservation)
+                .selectinload(Reservation.place),
                 selectinload(Trip.reservations).selectinload(Reservation.place),
                 selectinload(Trip.saved_places).selectinload(SavedPlace.place),
             )
