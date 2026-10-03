@@ -1,10 +1,16 @@
+from __future__ import annotations
+
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Numeric, String, UniqueConstraint
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from personal_travel.db.base import Base
 from personal_travel.models.common import TimestampMixin, UUIDPrimaryKeyMixin
+
+if TYPE_CHECKING:
+    from personal_travel.models.itinerary import ItineraryItem
 
 
 class Place(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -17,6 +23,8 @@ class Place(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     address: Mapped[str | None] = mapped_column(String(500), nullable=True)
     provider: Mapped[str | None] = mapped_column(String(64), nullable=True)
     provider_place_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
+
+    items: Mapped[list[ItineraryItem]] = relationship("ItineraryItem", back_populates="place")
 
     __table_args__ = (
         UniqueConstraint(

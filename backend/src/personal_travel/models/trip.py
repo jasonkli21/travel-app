@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import uuid
 from datetime import date
+from typing import TYPE_CHECKING
 
 from sqlalchemy import CheckConstraint, Date, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
@@ -7,6 +10,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from personal_travel.db.base import Base
 from personal_travel.models.common import TimestampMixin, UUIDPrimaryKeyMixin
+
+if TYPE_CHECKING:
+    from personal_travel.models.itinerary import ItineraryItem
 
 
 class Trip(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -18,7 +24,7 @@ class Trip(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
     timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="UTC")
 
-    days: Mapped[list["TripDay"]] = relationship(
+    days: Mapped[list[TripDay]] = relationship(
         back_populates="trip", cascade="all, delete-orphan", order_by="TripDay.day_index"
     )
 
@@ -39,8 +45,15 @@ class TripDay(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     title: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     trip: Mapped[Trip] = relationship(back_populates="days")
+    items: Mapped[list[ItineraryItem]] = relationship(
+        "ItineraryItem",
+        back_populates="trip_day",
+        cascade="all, delete-orphan",
+        order_by="ItineraryItem.sort_order",
+    )
 
     __table_args__ = (
+        CheckConstraint("day_index >= 1", name="valid_day_index"),
         UniqueConstraint("trip_id", "day_index", name="uq_trip_days_trip_day_index"),
         UniqueConstraint("trip_id", "date", name="uq_trip_days_trip_date"),
     )

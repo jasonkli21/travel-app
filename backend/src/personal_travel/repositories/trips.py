@@ -2,15 +2,17 @@ import uuid
 from typing import Protocol
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
-from personal_travel.models.trip import Trip
+from personal_travel.models.itinerary import ItineraryItem
+from personal_travel.models.trip import Trip, TripDay
 
 
 class TripRepository(Protocol):
     def get(self, *, owner_id: str, trip_id: uuid.UUID) -> Trip | None: ...
     def list(self, *, owner_id: str) -> list[Trip]: ...
     def add(self, trip: Trip) -> Trip: ...
+    def delete(self, trip: Trip) -> None: ...
 
 
 class SqlAlchemyTripRepository:
@@ -18,7 +20,15 @@ class SqlAlchemyTripRepository:
         self._session = session
 
     def get(self, *, owner_id: str, trip_id: uuid.UUID) -> Trip | None:
-        statement = select(Trip).where(Trip.owner_id == owner_id, Trip.id == trip_id)
+        statement = (
+            select(Trip)
+            .where(Trip.owner_id == owner_id, Trip.id == trip_id)
+            .options(
+                selectinload(Trip.days)
+                .selectinload(TripDay.items)
+                .selectinload(ItineraryItem.place)
+            )
+        )
         return self._session.scalar(statement)
 
     def list(self, *, owner_id: str) -> list[Trip]:
@@ -26,9 +36,17 @@ class SqlAlchemyTripRepository:
             select(Trip)
             .where(Trip.owner_id == owner_id)
             .order_by(Trip.start_date.desc(), Trip.created_at.desc())
+            .options(
+                selectinload(Trip.days)
+                .selectinload(TripDay.items)
+                .selectinload(ItineraryItem.place)
+            )
         )
         return list(self._session.scalars(statement))
 
     def add(self, trip: Trip) -> Trip:
         self._session.add(trip)
         return trip
+
+    def delete(self, trip: Trip) -> None:
+        self._session.delete(trip)
