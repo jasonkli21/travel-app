@@ -75,6 +75,9 @@ AI. The delivered implementation and verification evidence are recorded in
 
 ## Phase 2 — Reservations and saved places
 
+The task-level plan is recorded in
+[`phase-2-implementation-plan.md`](phase-2-implementation-plan.md).
+
 Build reservation schema, saved-place relationship, booking/tentative distinction, richer place metadata, trip overview/reservation view, links between itinerary items and reservations, and deterministic conflict indicators.
 
 **Outcome:** the application can represent booked anchors and optional candidates separately.
