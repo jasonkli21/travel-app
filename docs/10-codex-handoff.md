@@ -20,6 +20,26 @@ fixes and verification. Migration `0005` is the current head and requires
 online legacy-data inspection/repair and a pre-upgrade backup. See local
 development and ADR 0009 before changing concurrency or local HTTP boundaries.
 
+## Next implementation work
+
+Detailed [Phase 5](phase-5-implementation-plan.md),
+[Phase 6](phase-6-implementation-plan.md),
+[Phase 7](phase-7-implementation-plan.md),
+[Phase 8](phase-8-implementation-plan.md) and
+[Phase 9](phase-9-implementation-plan.md) plans are now recorded against
+`56c0cbf`. They do not mark any later capability delivered. Begin with Phase
+5's accepted upstream contract/policy and revisions for every manual mutation
+and independent shared-place dependency. Keep generation gated until the
+contract is accepted; do not invent upstream APIs in this repository.
+
+Phase 6 establishes verified identity before private imports, with explicit
+local-owner migration and one secure source/blob lifecycle reused by Phase 8.
+Phase 7 requires category/evidence/rights contracts and consented preference
+projection. Phase 8 adds private document access and explicit static snapshots,
+not offline synchronization. Phase 9 proves auth, quotas, SQL/blob restore and
+release/deployment controls; it does not defer basic security until then.
+Cloud actions continue to require separate authorization.
+
 ## Read first
 
 1. root `AGENTS.md`

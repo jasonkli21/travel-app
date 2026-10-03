@@ -15,6 +15,11 @@
 | `phase-2-implementation-plan.md` | Task-level Phase 2 reservations and saved places plan |
 | `phase-3-implementation-plan.md` | Task-level Phase 3 maps and logistics plan |
 | `phase-4-implementation-plan.md` | Task-level bounded AI research consumer plan |
+| `phase-5-implementation-plan.md` | Planned versioned proposals, preview and atomic apply |
+| `phase-6-implementation-plan.md` | Planned verified identity, secure manual sources and booking import |
+| `phase-7-implementation-plan.md` | Planned typed rich research, constraints and consented preferences |
+| `phase-8-implementation-plan.md` | Planned private attachments, snapshot exports and travel view |
+| `phase-9-implementation-plan.md` | Planned security/cost/recovery/release and controlled deployment proof |
 | `reviews/phase-0-4-audit.md` | Comprehensive plan/code findings, remediation and current verification |
 | `decisions/0009-local-boundaries-and-integrity.md` | Local browser boundary, SQL integrity, bounded work and portability qualification |
 | `decisions/0007-geoapify-maps-and-logistics.md` | Geoapify provider, attribution, and usage decision |

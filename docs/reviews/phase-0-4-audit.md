@@ -2,6 +2,8 @@
 
 **Date:** 2026-10-03
 **Reviewed baseline:** da51ec63006570d6b931b2da3119f57f35203141
+**Remediation commits:** `56e52bf` (audit/integrity/boundaries) and `56c0cbf`
+(uncertain-write recovery/client regressions)
 **Scope:** completed local Phases 0–4; remediation does not implement Phases 5–9.
 
 ## Conclusion and scope

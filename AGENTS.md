@@ -117,3 +117,7 @@ The comprehensive current review and verification are recorded in
 `docs/reviews/phase-0-4-audit.md`. PostgreSQL checks require `TEST_DATABASE_URL`;
 CI must execute them without skips. Migration `0005` requires online inspection
 and a backup before legacy data repair.
+Detailed plans for unimplemented Phases 5–9 are under
+`docs/phase-5-implementation-plan.md` through `docs/phase-9-implementation-plan.md`.
+Start later feature work from its contract/dependency gates; documentation
+alone does not mark a capability implemented or authorize cloud deployment.

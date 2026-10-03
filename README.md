@@ -132,6 +132,9 @@ Start with:
 11. [`docs/10-codex-handoff.md`](docs/10-codex-handoff.md)
 
 Architecture decisions are under [`docs/decisions/`](docs/decisions/).
+Detailed plans for the remaining Phases 5–9 are linked from the
+[roadmap](docs/09-implementation-plan.md) and [documentation index](docs/README.md).
+They are planned work, not implemented capabilities.
 The Phase 4 task plan, consumer decision, and release record are in
 [`docs/phase-4-implementation-plan.md`](docs/phase-4-implementation-plan.md),
 [`docs/decisions/0008-personal-ai-research-context.md`](docs/decisions/0008-personal-ai-research-context.md),

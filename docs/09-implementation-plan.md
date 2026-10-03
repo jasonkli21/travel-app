@@ -135,6 +135,12 @@ and [`releases/phase-4-ai-research.md`](releases/phase-4-ai-research.md).
 
 ## Phase 5 — Structured AI proposals
 
+Detailed plan: [Phase 5](phase-5-implementation-plan.md). Planned, not delivered.
+Prerequisites include an accepted upstream proposal contract and revisions for
+all manual mutations/shared place dependencies. The first removal operation
+requires an explicit user-selected removable-item allowlist; status alone
+does not establish optionality.
+
 Build:
 
 - versioned itinerary-patch contract,
@@ -149,6 +155,11 @@ Example operations: add candidate item, move item, update time, remove optional 
 AI suggestions remain proposals.
 
 ## Phase 6 — Booking/document import
+
+Detailed plan: [Phase 6](phase-6-implementation-plan.md). Planned, not delivered.
+Authentication is the first work package before any private input. This phase
+introduces only the minimum secure local source/blob lifecycle needed for
+manual pasted text/PDF import; Phase 8 extends the same lifecycle.
 
 Prerequisites:
 
@@ -165,9 +176,16 @@ Build incrementally:
 - review/confirm UI,
 - idempotency/deduplication.
 
-Gmail automation should come after manual import proves the schema/workflow.
+Gmail automation remains outside the first Phase 6 slice and requires a
+separate connector/consent plan after manual import proves the workflow.
 
 ## Phase 7 — Rich travel research
+
+Detailed plan: [Phase 7](phase-7-implementation-plan.md). Planned, not delivered.
+Start with accepted food/activity/neighborhood/day-trip categories. Hotel,
+flight and transit comparison require separately verified category contracts.
+Typed money/date/availability constraints are deterministic; optional memory
+retrieval requires verified ownership, consent and a narrow projection.
 
 Expand only after the shared AI research platform supports it.
 
@@ -195,6 +213,11 @@ Hard constraints remain deterministic.
 
 ## Phase 8 — Attachments, exports, travel mode
 
+Detailed plan: [Phase 8](phase-8-implementation-plan.md). Planned, not delivered.
+Reuse Phase 6 authentication/blob lifecycle, add trip/reservation attachment
+access and explicit revision-stamped ICS/printable/static/JSON snapshots.
+GCS requires separate authorization; local storage remains first-class.
+
 Potential work:
 
 - GCS-backed documents,
@@ -207,6 +230,12 @@ A full offline-sync/mobile architecture is still not implied.
 
 ## Phase 9 — Operational hardening
 
+Detailed plan: [Phase 9](phase-9-implementation-plan.md). Planned, not delivered.
+This reviews established authentication and basic local operability; it does
+not postpone those prerequisites. Prove resource/cost controls, SQL/blob
+restore, locked releases/migration jobs and separately authorized hosted smoke
+before claiming production readiness.
+
 - auth/authorization review,
 - backup/export/delete tools,
 - logging/observability,
@@ -215,6 +244,24 @@ A full offline-sync/mobile architecture is still not implied.
 - data migration/versioning,
 - security review,
 - deployment runbook.
+
+## Remaining-phase sequencing
+
+```text
+Reviewed 0–4
+  -> 5: revisions + accepted proposal contract + preview/apply
+  -> 6: verified identity first -> secure sources -> reviewed imports
+  -> 7: accepted rich categories + constraints/consented preferences
+  -> 8: reuse identity/blob lifecycle -> attachments and static exports
+  -> 9: recovery/security/cost/release proof -> authorized hosted smoke
+```
+
+Phase 8 exports do not depend on completing every Phase 7 research category.
+External contract/credential gates must be reported explicitly; local
+groundwork or fake-backed tests alone do not complete an enabled integration.
+The five detailed plans use the reviewed `56c0cbf` baseline and specify goals,
+boundaries, contracts, work packages, failure matrices, commits and exit gates.
+They are plans only; no Phase 5–9 feature is implemented by this documentation.
 
 ## Later ideas
 
