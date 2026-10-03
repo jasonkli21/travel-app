@@ -1,91 +1,94 @@
-const days = [
-  {
-    date: "Dec 9",
-    location: "Chiang Mai",
-    items: ["Morning coffee + Old City", "Flexible lunch", "Night market"]
-  },
-  {
-    date: "Dec 10",
-    location: "Chiang Mai",
-    items: ["Open itinerary slot", "Saved places"]
-  },
-  {
-    date: "Dec 11",
-    location: "Chiang Mai",
-    items: ["Day plan placeholder", "Travel notes"]
-  }
-];
+"use client";
+
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import type { FormEvent } from "react";
+import { useCallback, useEffect, useState } from "react";
+
+import { ApiError, type CreateTripInput, type TripSummary, travelApi } from "../lib/api";
+
+function errorMessage(error: unknown): string {
+  return error instanceof ApiError ? error.message : "Something went wrong. Try again.";
+}
 
 export default function Home() {
+  const router = useRouter();
+  const [trips, setTrips] = useState<TripSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState<CreateTripInput>({ title: "", start_date: "", end_date: "", timezone: "UTC" });
+
+  const loadTrips = useCallback(async () => {
+    setError(null);
+    try {
+      setTrips(await travelApi.listTrips());
+    } catch (nextError) {
+      setError(errorMessage(nextError));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void Promise.resolve().then(loadTrips);
+  }, [loadTrips]);
+
+  const createTrip = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setCreating(true);
+    setError(null);
+    try {
+      const trip = await travelApi.createTrip(form);
+      router.push(`/trips/${trip.id}`);
+    } catch (nextError) {
+      setError(errorMessage(nextError));
+    } finally {
+      setCreating(false);
+    }
+  };
+
   return (
-    <main className="shell">
+    <main className="shell homeShell">
       <aside className="sidebar">
         <div>
           <p className="eyebrow">PERSONAL TRAVEL</p>
-          <h1>Thailand 2026</h1>
-          <p className="muted">Scaffold preview — authoritative trip state will live here.</p>
+          <h1>Trip workspace</h1>
+          <p className="muted">A local-first planner for authoritative, editable travel state.</p>
         </div>
-
-        <nav className="nav" aria-label="Trip navigation">
-          <a className="active" href="#itinerary">Itinerary</a>
-          <a href="#map">Map</a>
-          <a href="#reservations">Reservations</a>
-          <a href="#saved">Saved places</a>
-          <a href="#documents">Documents</a>
-        </nav>
-
-        <div className="status"><span className="dot" />Local-first architecture</div>
+        <div className="status"><span className="dot" />AI optional · PostgreSQL first</div>
       </aside>
-
-      <section className="content" id="itinerary">
+      <section className="content homeContent">
         <header className="topbar">
           <div>
-            <p className="eyebrow">DEC 8–23 · THAILAND</p>
-            <h2>Day-by-day itinerary</h2>
+            <p className="eyebrow">YOUR TRIPS</p>
+            <h2>Plan the trip itself</h2>
+            <p className="muted">Create a trip, shape each day, and keep the itinerary useful even when AI is offline.</p>
           </div>
-          <button className="secondary" type="button">+ Add day item</button>
+          <button className="primary" type="button" onClick={() => setShowForm((current) => !current)}>{showForm ? "Close" : "+ New trip"}</button>
         </header>
-
-        <div className="days">
-          {days.map((day) => (
-            <article className="day" key={day.date}>
-              <div className="dayHeading">
-                <div>
-                  <p className="date">{day.date}</p>
-                  <h3>{day.location}</h3>
-                </div>
-                <button className="iconButton" type="button" aria-label={`More options for ${day.date}`}>•••</button>
-              </div>
-              <div className="items">
-                {day.items.map((item, index) => (
-                  <div className="item" key={item}>
-                    <span className="time">{index === 0 ? "09:00" : index === 1 ? "13:00" : "18:00"}</span>
-                    <span>{item}</span>
-                  </div>
-                ))}
-              </div>
-            </article>
-          ))}
-        </div>
+        {error ? <p className="errorBanner" role="alert">{error}</p> : null}
+        {showForm ? (
+          <form className="panel createTripForm" onSubmit={createTrip}>
+            <div className="formGrid">
+              <label>Trip title<input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="Japan in spring" required /></label>
+              <label>Timezone<input value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })} placeholder="Asia/Tokyo" required /></label>
+              <label>Start date<input type="date" value={form.start_date} onChange={(event) => setForm({ ...form, start_date: event.target.value })} required /></label>
+              <label>End date<input type="date" value={form.end_date} onChange={(event) => setForm({ ...form, end_date: event.target.value })} required /></label>
+            </div>
+            <button className="primary" type="submit" disabled={creating}>{creating ? "Creating…" : "Create trip"}</button>
+          </form>
+        ) : null}
+        {loading ? <div className="centerState"><p>Loading trips…</p></div> : trips.length === 0 ? (
+          <div className="emptyPanel"><h3>No trips yet</h3><p className="muted">Start with a date range. Days are generated automatically and can be titled as your plan takes shape.</p><button className="secondary" type="button" onClick={() => setShowForm(true)}>Create your first trip</button></div>
+        ) : (
+          <div className="tripGrid">
+            {trips.map((trip) => <Link className="tripCard" key={trip.id} href={`/trips/${trip.id}`}><div className="tripCardTop"><p className="date">{trip.start_date} → {trip.end_date}</p><span className="arrow">→</span></div><h3>{trip.title}</h3><p className="muted">{trip.day_count} {trip.day_count === 1 ? "day" : "days"} · {trip.item_count} {trip.item_count === 1 ? "item" : "items"}</p><span className="tripCardAction">Open itinerary</span></Link>)}
+          </div>
+        )}
       </section>
-
-      <aside className="aiPanel">
-        <div>
-          <p className="eyebrow">AI / RESEARCH</p>
-          <h2>Trip assistant</h2>
-          <p className="muted">This panel will call personal-ai-system. It does not own itinerary state.</p>
-        </div>
-
-        <div className="promptCard">
-          <p>Try later:</p>
-          <strong>“Find dinner near where I’ll be Tuesday evening.”</strong>
-        </div>
-
-        <div className="aiBoundary">
-          <span>Planned boundary</span>
-          <code>travel-api → personal-ai-system</code>
-        </div>
-      </aside>
+      <aside className="aiPanel"><div><p className="eyebrow">PHASE 1</p><h2>Manual first</h2><p className="muted">The planner owns trips, days, items, places, ordering, and validation. Shared AI remains a typed external boundary.</p></div><div className="aiBoundary"><span>Future boundary</span><code>travel-api → personal-ai-system</code></div></aside>
     </main>
   );
 }
