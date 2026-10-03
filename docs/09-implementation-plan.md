@@ -1,6 +1,6 @@
 # Phased implementation plan
 
-Status: active roadmap; Phase 1 delivered
+Status: active roadmap; Phase 2 delivered locally
 Date: 2026-10-02
 
 Each phase should produce a useful, testable vertical slice.
@@ -73,12 +73,15 @@ A single local user can build and reopen a complete day-by-day itinerary without
 AI. The delivered implementation and verification evidence are recorded in
 [`releases/phase-1-itinerary.md`](releases/phase-1-itinerary.md).
 
-## Phase 2 — Reservations and saved places
+## Phase 2 — Reservations and saved places (delivered)
 
 The task-level plan is recorded in
 [`phase-2-implementation-plan.md`](phase-2-implementation-plan.md).
 
 Build reservation schema, saved-place relationship, booking/tentative distinction, richer place metadata, trip overview/reservation view, links between itinerary items and reservations, and deterministic conflict indicators.
+
+The delivered implementation and verification evidence are recorded in
+[`releases/phase-2-reservations.md`](releases/phase-2-reservations.md).
 
 **Outcome:** the application can represent booked anchors and optional candidates separately.
 

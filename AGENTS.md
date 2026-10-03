@@ -19,9 +19,9 @@ When working on AI integration, also read `docs/06-ai-integration.md`.
 
 ## Current implementation status
 
-The repository is at **Phase 1 — manual itinerary vertical slice delivered locally**.
+The repository is at **Phase 2 — reservations and saved places delivered locally**.
 
-The delivered scaffold and Phase 1 implementation include:
+The delivered scaffold, Phase 1 implementation, and Phase 2 implementation include:
 
 - Next.js frontend shell.
 - FastAPI application and health endpoint.
@@ -31,11 +31,16 @@ The delivered scaffold and Phase 1 implementation include:
 - Deterministic inclusive trip-day reconciliation and transactional item ordering.
 - Responsive manual itinerary UI and a typed same-origin API proxy.
 - `PersonalAIClient` HTTP boundary.
+- Owner-scoped manual reservations with tentative/confirmed/cancelled states,
+  trip-local scheduling, itinerary links, and deterministic conflict indicators.
+- Trip-scoped saved-place candidates and richer manual place metadata.
 - Docker Compose Postgres for local development.
 - CI skeleton.
-- product/design/architecture/implementation documentation.
+- product/design/architecture/implementation/release documentation.
 
 Do not claim later phases are implemented because they appear in planning docs.
+External booking imports, maps, AI research/proposals, authentication, cloud
+deployment, and attachments remain planned rather than implemented.
 
 ## Architectural invariants
 

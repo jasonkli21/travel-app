@@ -1,12 +1,12 @@
 # Data model
 
-Status: initial relational vocabulary  
+Status: Phase 2 relational vocabulary delivered locally
 Date: 2026-10-02
 
 The initial migration implements the core itinerary graph. Phase 1 adds
-application services and an additive ordering-constraint migration around that
-schema; reservations, attachments, saved places, and AI proposals remain
-planned rather than implemented.
+application services and ordering constraints; Phase 2 adds manual reservations,
+trip-scoped saved-place candidates, richer place metadata, and reservation links.
+Attachments and AI proposals remain planned rather than implemented.
 
 ## Implemented scaffold tables
 
@@ -53,6 +53,9 @@ name
 latitude?
 longitude?
 address?
+category?
+phone?
+website_url?
 provider?
 provider_place_id?
 created_at
@@ -69,6 +72,7 @@ No map/place provider is selected yet.
 id UUID PK
 trip_day_id FK -> trip_days
 place_id? FK -> places
+reservation_id? FK -> reservations
 item_type
 title
 notes?
@@ -82,13 +86,11 @@ updated_at
 
 Current scaffold enums are represented as checked strings to keep migration behavior explicit.
 
-These values may evolve before Phase 1 is considered stable.
-
-## Planned tables, not implemented
+## Implemented Phase 2 tables
 
 ### `reservations`
 
-Likely normalized base reservation fields:
+Normalized manual reservation fields:
 
 ```text
 id
@@ -102,10 +104,39 @@ starts_at?
 ends_at?
 place_id?
 source_reference?
-structured_details JSON?
+notes?
+created_at
+updated_at
 ```
 
-Avoid creating one giant unvalidated JSON booking document. Use JSON only for provider/type-specific tail data after stable common fields are modeled.
+`reservation_type` is one of `lodging`, `flight`, `train`, `car_rental`,
+`activity`, `dining`, or `other`. `status` is `tentative`, `confirmed`, or
+`cancelled`. Scheduled values are stored as timezone-aware instants; the API
+round-trips local date/time fields in the owning trip timezone. An unscheduled
+reservation has all four local schedule fields null and does not produce a
+conflict warning.
+
+An itinerary item links to at most one reservation through `reservation_id`; a
+reservation may anchor multiple itinerary items. The service validates that
+both records belong to the same owner and trip. Deleting a reservation clears
+item links.
+
+### `saved_places`
+
+```text
+id UUID PK
+owner_id
+trip_id FK -> trips
+place_id FK -> places
+note?
+created_at
+updated_at
+```
+
+The `(owner_id, trip_id, place_id)` pair is unique. Saving/removing the
+relationship does not mutate or delete the reusable owner-scoped place.
+
+## Planned tables, not implemented
 
 ### `attachments`
 
@@ -123,15 +154,6 @@ created_at
 ```
 
 Blob bytes live outside Postgres.
-
-### `saved_places`
-
-May either be:
-
-- a trip/place join table with state/notes, or
-- a first-class candidate entity if research workflows require more metadata.
-
-Delay the choice until the saved-place UX is designed.
 
 ### `ai_proposals`
 
@@ -154,7 +176,8 @@ The requirement is auditability and stale-proposal detection, not storing arbitr
 
 ## Ordering
 
-`sort_order` is a contiguous, zero-based integer within each day in Phase 1.
+`sort_order` is a contiguous, zero-based integer within each day in Phase 1 and
+remains unchanged by Phase 2 reservation/candidate operations.
 Create appends, delete compacts, and move removes/reinserts and renumbers both
 affected days in one transaction. The database rejects negative values and the
 service validates destination positions.
@@ -189,13 +212,19 @@ Do not silently convert a date-only plan into a fixed UTC instant.
 Phase 1 accepts local `HH:MM` values relative to the owning trip day and IANA
 timezone. Timed items are persisted as timezone-aware instants and rendered back
 as local times. Daylight-saving gaps and ambiguous folds are rejected, as are
-cross-midnight ranges. Date-only items keep both time values null.
+cross-midnight item ranges. Date-only items keep both time values null.
+
+Phase 2 reservation schedules use local date/time pairs in the owning trip
+timezone. A reservation may cross midnight, but a scheduled value must have a
+start date/time and an end date requires an end time. DST gaps and folds are
+rejected. Conflict calculation compares the resulting instants and excludes
+the intentionally linked item, cancelled records, and boundary-only equality.
 
 ## Places and geospatial behavior
 
 Store latitude/longitude as ordinary numeric columns initially.
 
-Do not require PostGIS in Phase 1.
+Do not require PostGIS in Phase 1 or Phase 2.
 
 If later workloads genuinely require server-side spatial queries, add a dedicated ADR and revisit AWS/Aurora DSQL portability.
 
@@ -203,15 +232,17 @@ If later workloads genuinely require server-side spatial queries, add a dedicate
 
 Initial FK behavior:
 
-- deleting a trip cascades trip days and itinerary items,
+- deleting a trip cascades trip days, itinerary items, reservations, and saved-place relationships,
 - deleting a day cascades its itinerary items,
-- deleting a place sets itinerary `place_id` to null.
+- deleting a place sets itinerary `place_id` and reservation `place_id` to null
+  and removes saved-place relationships.
 
-Phase 1 makes trip and itinerary-item deletion permanent. The API requires an
+Phase 1 and Phase 2 make trip, itinerary-item, and reservation deletion
+permanent. The API requires an
 explicit confirmation in the UI before deleting a trip; the existing database
 cascades remove its days/items, and an item delete compacts its day's order.
-Soft deletion, archival, and audited deletion events remain future product
-decisions for later entities.
+Cancelled reservations remain as manual history, while soft deletion, archival,
+and audited deletion events remain future product decisions for later entities.
 
 The database cascade is therefore an implementation detail of the Phase 1
 permanent-delete policy, not a general rule for future product entities.

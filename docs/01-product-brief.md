@@ -120,11 +120,23 @@ Phase 1 should produce a usable non-AI itinerary planner:
 
 AI-system integration remains a health/client boundary until a stable research/extraction API exists.
 
+## Phase 2 product scope
+
+Phase 2 extends the manual planner with booked anchors and optional candidates:
+
+- record tentative, confirmed, and cancelled reservations manually;
+- link a reservation to one or more itinerary items through the trip domain;
+- surface deterministic overlap warnings without automatically changing plans;
+- maintain richer manual place metadata and save a place as a trip candidate.
+
+External booking import, live provider evidence, maps, AI research, and
+authentication remain outside this local-first phase.
+
 ## Explicit non-goals for early phases
 
 - Gmail ingestion,
 - live hotel/flight booking,
-- automatic purchases/reservations,
+- automatic booking imports, purchases, or reservation monitoring,
 - broad autonomous agents,
 - offline mobile app,
 - collaborative/multi-user trips,

@@ -17,3 +17,4 @@
 | `decisions/` | Architecture decision records |
 | `releases/phase-0-scaffold.md` | Verification actually performed on the bootstrap |
 | `releases/phase-1-itinerary.md` | Phase 1 implementation and verification record |
+| `releases/phase-2-reservations.md` | Phase 2 implementation and verification record |

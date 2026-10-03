@@ -115,6 +115,7 @@ All routes remain under `/v1` and use the existing owner/session dependencies.
 | `GET` | `/v1/trips/{trip_id}/saved-places` | List trip candidates with place metadata and saved notes. |
 | `POST` | `/v1/trips/{trip_id}/saved-places` | Save an existing owner place to the trip with an optional note; reject duplicates deterministically. |
 | `DELETE` | `/v1/trips/{trip_id}/saved-places/{saved_place_id}` | Remove the trip relationship without deleting the reusable place. |
+| `PATCH` | `/v1/trips/{trip_id}/saved-places/{saved_place_id}` | Edit the optional candidate note without changing the place. |
 | `PATCH` | `/v1/places/{place_id}` | Edit owner-scoped manual place metadata and optional coordinates. |
 
 Extend the existing item create/update contracts with nullable
