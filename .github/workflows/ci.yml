@@ -25,6 +25,7 @@ jobs:
       run:
         working-directory: backend
     env:
+      TEST_DATABASE_URL: postgresql+psycopg://travel:travel@localhost:5432/travel
       DATABASE_URL: postgresql+psycopg://travel:travel@localhost:5432/travel
     steps:
       - uses: actions/checkout@v4
@@ -57,4 +58,5 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm typecheck
+      - run: pnpm test
       - run: pnpm build

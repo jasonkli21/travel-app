@@ -5,11 +5,9 @@ import { useRouter } from "next/navigation";
 import type { FormEvent } from "react";
 import { useCallback, useEffect, useState } from "react";
 
-import { ApiError, type CreateTripInput, type TripSummary, travelApi } from "../lib/api";
+import { type CreateTripInput, type TripSummary, travelApi } from "../lib/api";
 
-function errorMessage(error: unknown): string {
-  return error instanceof ApiError ? error.message : "Something went wrong. Try again.";
-}
+import { errorMessage } from "../lib/errors";
 
 export default function Home() {
   const router = useRouter();
@@ -68,16 +66,16 @@ export default function Home() {
           </div>
           <button className="primary" type="button" onClick={() => setShowForm((current) => !current)}>{showForm ? "Close" : "+ New trip"}</button>
         </header>
-        {error ? <p className="errorBanner" role="alert">{error}</p> : null}
+        {error ? <><p className="errorBanner" role="alert">{error}</p><button className="secondary" type="button" onClick={() => void loadTrips()}>Reload trips</button></> : null}
         {showForm ? (
           <form className="panel createTripForm" onSubmit={createTrip}>
-            <div className="formGrid">
-              <label>Trip title<input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="Japan in spring" required /></label>
-              <label>Timezone<input value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })} placeholder="Asia/Tokyo" required /></label>
+            <fieldset disabled={creating}><div className="formGrid">
+              <label>Trip title<input maxLength={200} value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="Japan in spring" required /></label>
+              <label>Timezone<input maxLength={64} value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })} placeholder="Asia/Tokyo" required /></label>
               <label>Start date<input type="date" value={form.start_date} onChange={(event) => setForm({ ...form, start_date: event.target.value })} required /></label>
               <label>End date<input type="date" value={form.end_date} onChange={(event) => setForm({ ...form, end_date: event.target.value })} required /></label>
             </div>
-            <button className="primary" type="submit" disabled={creating}>{creating ? "Creating…" : "Create trip"}</button>
+            <button className="primary" type="submit" disabled={creating}>{creating ? "Creating…" : "Create trip"}</button></fieldset>
           </form>
         ) : null}
         {loading ? <div className="centerState"><p>Loading trips…</p></div> : trips.length === 0 ? (
@@ -88,7 +86,7 @@ export default function Home() {
           </div>
         )}
       </section>
-      <aside className="aiPanel"><div><p className="eyebrow">PHASE 1</p><h2>Manual first</h2><p className="muted">The planner owns trips, days, items, places, ordering, and validation. Shared AI remains a typed external boundary.</p></div><div className="aiBoundary"><span>Future boundary</span><code>travel-api → personal-ai-system</code></div></aside>
+      <aside className="aiPanel"><div><p className="eyebrow">YOUR WORKSPACE</p><h2>Manual first</h2><p className="muted">The planner owns trips, days, items, places, ordering, and validation. Shared AI remains a typed external boundary.</p></div><div className="aiBoundary"><span>Optional research</span><code>travel-api → personal-ai-system</code></div></aside>
     </main>
   );
 }

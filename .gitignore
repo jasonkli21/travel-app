@@ -15,6 +15,7 @@ frontend/.next/
 *.tsbuildinfo
 npm-debug.log*
 pnpm-debug.log*
+.pnpm-store/
 
 # Environment / secrets
 .env

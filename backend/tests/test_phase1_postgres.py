@@ -1,62 +1,24 @@
-from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from os import environ
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, delete
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from personal_travel.api.dependencies import session_dependency
 from personal_travel.api.schemas import ItemCreate, PlaceCreate, TripCreate
-from personal_travel.db.base import Base
-from personal_travel.main import app
-from personal_travel.models.itinerary import ItineraryItem
-from personal_travel.models.place import Place
-from personal_travel.models.trip import Trip, TripDay
 from personal_travel.services.itinerary import ItineraryService
 from personal_travel.services.places import PlaceService
 from personal_travel.services.trips import TripService
 
 TEST_DATABASE_URL = environ.get("TEST_DATABASE_URL")
-pytestmark = pytest.mark.skipif(
-    TEST_DATABASE_URL is None,
-    reason="set TEST_DATABASE_URL to run PostgreSQL-backed Phase 1 tests",
-)
-
-
-@pytest.fixture(scope="session")
-def database_engine() -> Iterator[Engine]:
-    assert TEST_DATABASE_URL is not None
-    engine = create_engine(TEST_DATABASE_URL, pool_pre_ping=True)
-    Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
-    yield engine
-    Base.metadata.drop_all(engine)
-    engine.dispose()
-
-
-@pytest.fixture(autouse=True)
-def clean_database(database_engine: Engine) -> Iterator[None]:
-    with database_engine.begin() as connection:
-        connection.execute(delete(ItineraryItem))
-        connection.execute(delete(TripDay))
-        connection.execute(delete(Trip))
-        connection.execute(delete(Place))
-    yield
-
-
-@pytest.fixture
-def api_client(database_engine: Engine) -> Iterator[TestClient]:
-    def override_session() -> Iterator[Session]:
-        with Session(database_engine) as session:
-            yield session
-
-    app.dependency_overrides[session_dependency] = override_session
-    with TestClient(app) as client:
-        yield client
-    app.dependency_overrides.pop(session_dependency, None)
+pytestmark = [
+    pytest.mark.usefixtures("clean_database"),
+    pytest.mark.skipif(
+        TEST_DATABASE_URL is None,
+        reason="set TEST_DATABASE_URL to run PostgreSQL-backed Phase 1 tests",
+    ),
+]
 
 
 def create_trip(client: TestClient, *, start_date: str = "2026-01-02") -> dict[str, object]:
@@ -201,7 +163,7 @@ def test_api_item_mutations_places_and_owner_scope(
 
 
 def test_concurrent_item_appends_keep_contiguous_order(database_engine: Engine) -> None:
-    with Session(database_engine) as session:
+    with Session(database_engine, autoflush=False, expire_on_commit=False) as session:
         trip = TripService(session, "local").create(
             TripCreate(
                 title="Concurrent trip",
@@ -214,7 +176,7 @@ def test_concurrent_item_appends_keep_contiguous_order(database_engine: Engine) 
         day_id = trip.days[0].id
 
     def append_item(title: str) -> None:
-        with Session(database_engine) as session:
+        with Session(database_engine, autoflush=False, expire_on_commit=False) as session:
             ItineraryService(session, "local").create_item(
                 trip_id,
                 day_id,
@@ -226,7 +188,7 @@ def test_concurrent_item_appends_keep_contiguous_order(database_engine: Engine) 
         for future in futures:
             future.result()
 
-    with Session(database_engine) as session:
+    with Session(database_engine, autoflush=False, expire_on_commit=False) as session:
         result = TripService(session, "local").get(trip_id)
         items = result.days[0].items
         assert [item.sort_order for item in items] == [0, 1]

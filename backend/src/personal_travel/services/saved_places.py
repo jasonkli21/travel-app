@@ -44,6 +44,8 @@ class SavedPlaceService:
                 note=data.note,
             )
             saved_place.place = place
+            if saved_place not in trip.saved_places:
+                trip.saved_places.append(saved_place)
             self._saved_places.add(saved_place)
             self._session.flush()
             return saved_place

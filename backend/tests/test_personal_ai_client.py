@@ -265,3 +265,71 @@ def test_personal_ai_research_rejects_oversized_sse_event(
                 idempotency_key=uuid4(),
             )
         )
+
+
+class SlowStream(httpx.AsyncByteStream):
+    async def __aiter__(self):
+        # Each chunk arrives well inside the HTTP read timeout, but the request
+        # never terminates. Only the end-to-end deadline can bound this stream.
+        while True:
+            await asyncio.sleep(0.01)
+            yield b": heartbeat\n\n"
+
+
+@pytest.mark.asyncio
+async def test_research_deadline_bounds_a_trickling_stream(monkeypatch: pytest.MonkeyPatch) -> None:
+    session_id = str(uuid4())
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/research":
+            return httpx.Response(201, json=_research_session(session_id, "pending"))
+        return httpx.Response(200, stream=SlowStream())
+
+    client = _client_with_transport(monkeypatch, httpx.MockTransport(handle))
+    with pytest.raises(PersonalAIError, match="deadline"):
+        await client.research(question="Bounded", freshness="current", idempotency_key=uuid4())
+
+
+class OversizedStream(httpx.AsyncByteStream):
+    def __init__(self) -> None:
+        self.consumed = 0
+
+    async def __aiter__(self):
+        for _ in range(1000):
+            self.consumed += 4096
+            yield b"x" * 4096
+
+
+@pytest.mark.asyncio
+async def test_research_json_bound_stops_reading_before_buffering_full_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stream = OversizedStream()
+    client = _client_with_transport(
+        monkeypatch, httpx.MockTransport(lambda _request: httpx.Response(201, stream=stream))
+    )
+    with pytest.raises(PersonalAIError, match="oversized"):
+        await client.research(question="Bounded", freshness="current", idempotency_key=uuid4())
+    assert stream.consumed <= personal_ai.MAX_RESEARCH_RESPONSE_BYTES + 4096
+
+
+@pytest.mark.parametrize("state", ["pending", "running", "failed", "insufficient", "expired"])
+def test_noncompleted_research_never_exposes_answer_or_citations(
+    monkeypatch: pytest.MonkeyPatch, state: str
+) -> None:
+    session_id = str(uuid4())
+    payload = _research_session(session_id, state, answer="PRIVATE UPSTREAM TEXT")
+    client = _client_with_transport(
+        monkeypatch, httpx.MockTransport(lambda _request: httpx.Response(200, json=payload))
+    )
+    if state in {"pending", "running"}:
+        with pytest.raises(PersonalAIError):
+            asyncio.run(
+                client.research(question="Question", freshness="current", idempotency_key=uuid4())
+            )
+    else:
+        result = asyncio.run(
+            client.research(question="Question", freshness="current", idempotency_key=uuid4())
+        )
+        assert result.answer is None
+        assert result.citations == []

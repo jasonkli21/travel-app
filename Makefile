@@ -22,7 +22,7 @@ migrate:
 	cd backend && uv run --locked alembic upgrade head
 
 api:
-	cd backend && uv run --locked uvicorn personal_travel.main:app --reload --port 8000
+	cd backend && uv run --locked uvicorn personal_travel.main:app --reload --port 8000 --no-access-log
 
 frontend-install:
 	cd frontend && corepack pnpm install --frozen-lockfile
@@ -31,4 +31,4 @@ frontend-check:
 	cd frontend && corepack pnpm lint && corepack pnpm typecheck && corepack pnpm test
 
 web:
-	cd frontend && corepack pnpm dev
+	cd frontend && corepack pnpm dev --hostname 127.0.0.1

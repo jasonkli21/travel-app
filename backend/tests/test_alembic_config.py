@@ -13,7 +13,7 @@ def test_alembic_accepts_percent_encoded_database_password() -> None:
     )
 
     result = subprocess.run(
-        [sys.executable, "-m", "alembic", "upgrade", "head", "--sql"],
+        [sys.executable, "-m", "alembic", "upgrade", "0004", "--sql"],
         cwd=backend_dir,
         env=environment,
         check=False,

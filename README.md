@@ -17,6 +17,12 @@ itinerary. Geoapify features are optional; manual planning works without
 provider keys. External booking imports, AI proposals, authentication, and
 cloud deployment remain planned.
 
+The [Phase 0–4 audit](docs/reviews/phase-0-4-audit.md) records the architecture
+review, integrity/security/recovery fixes and verification. Migration `0005`
+repairs legacy moved-item schedules and enforces ordering/coordinate integrity;
+read the [migration recovery instructions](docs/07-local-development.md) before
+upgrading an existing database. Local ownership is still not authentication.
+
 ## Stack
 
 - **Web:** Next.js + React + TypeScript
@@ -76,7 +82,7 @@ docker compose up -d postgres
 cd backend
 uv sync --locked
 uv run --locked alembic upgrade head
-uv run --locked uvicorn personal_travel.main:app --reload --port 8000
+uv run --locked uvicorn personal_travel.main:app --reload --port 8000 --no-access-log
 
 # second terminal, from the repository root
 cd frontend

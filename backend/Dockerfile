@@ -9,4 +9,4 @@ COPY src ./src
 RUN uv sync --locked --no-dev
 ENV PATH="/app/.venv/bin:${PATH}"
 ENV PORT=8080
-CMD ["sh", "-c", "uvicorn personal_travel.main:app --host 0.0.0.0 --port ${PORT}"]
+CMD ["sh", "-c", "uvicorn personal_travel.main:app --host 0.0.0.0 --port ${PORT} --no-access-log"]

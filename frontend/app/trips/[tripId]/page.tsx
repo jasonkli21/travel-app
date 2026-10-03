@@ -6,5 +6,5 @@ import TripWorkspace from "../../../components/trip-workspace";
 
 export default function TripPage() {
   const params = useParams<{ tripId: string }>();
-  return <TripWorkspace tripId={params.tripId} />;
+  return <TripWorkspace key={params.tripId} tripId={params.tripId} />;
 }

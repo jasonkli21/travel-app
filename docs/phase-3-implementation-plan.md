@@ -1,5 +1,26 @@
 # Phase 3 implementation plan — maps and travel logistics
 
+## Review corrections (2026-10-03)
+
+The [Phase 0–4 audit](reviews/phase-0-4-audit.md) extends acceptance criteria;
+the original provider decision and slice below remain the historical plan.
+
+- Provider JSON is streamed and capped at 2 MB before assembly. Each external
+  request has an elapsed deadline as well as an I/O timeout; logistics provider
+  work is capped at 30 seconds overall.
+- Estimate at most 50 eligible transfers and group at most ten waypoints per
+  request without dropping joining legs. Bound geometry to 10,000 points per
+  line. No provider call holds a database transaction or blocks the event loop
+  with synchronous SQL.
+- Use a circular longitude mean for search bias near the date line.
+- Late search responses cannot appear for changed inputs. Same-turn provider
+  submission/import/logistics guards prevent duplicate work.
+- Manual coordinates can be entered/cleared as a pair in the place form;
+  coordinate-free no-provider workflows remain usable.
+- Production tile keys are build-time public configuration and backend keys
+  remain private. Live provider coverage/rights/quota validation is a separate
+  external verification gate, not proven by mocks.
+
 **Status:** implemented locally; see [release record](releases/phase-3-maps-logistics.md)
 **Date:** 2026-10-03
 **Roadmap:** [`09-implementation-plan.md`](09-implementation-plan.md)

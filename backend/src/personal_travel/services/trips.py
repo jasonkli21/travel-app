@@ -60,7 +60,7 @@ class TripService:
             self._session.flush()
             return trip
 
-    def list(self) -> list[Trip]:
+    def list(self) -> list[tuple[Trip, int, int]]:
         return self._trips.list(owner_id=self._owner_id)
 
     def get(self, trip_id: UUID) -> Trip:

@@ -51,6 +51,7 @@ class ReservationService:
             )
             if place is not None:
                 reservation.place = place
+            trip.reservations.append(reservation)
             self._reservations.add(reservation)
             self._session.flush()
             return reservation

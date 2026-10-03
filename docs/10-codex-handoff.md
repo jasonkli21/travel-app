@@ -15,6 +15,11 @@ The Phase 4 consumer uses the accepted `research-v1` API in
 email import, AI proposals, authentication, and cloud deployment remain
 deferred.
 
+The [comprehensive Phase 0–4 audit](reviews/phase-0-4-audit.md) documents current
+fixes and verification. Migration `0005` is the current head and requires
+online legacy-data inspection/repair and a pre-upgrade backup. See local
+development and ADR 0009 before changing concurrency or local HTTP boundaries.
+
 ## Read first
 
 1. root `AGENTS.md`
@@ -33,6 +38,8 @@ consumer-side context and evidence boundary.
 Backend:
 
 - FastAPI app and `/health`.
+- Database readiness at `/ready`, safe error/request-ID/logging behavior and
+  explicit local host/origin/request-size boundaries.
 - Pydantic settings.
 - SQLAlchemy engine/session.
 - `Trip`, `TripDay`, `Place`, `ItineraryItem`, `Reservation`, and `SavedPlace`
@@ -48,14 +55,21 @@ Backend:
   remain response-only and do not mutate travel state.
 - Alembic migration `0004` retains source attribution, license, and link for
   imported provider places.
+- Migration `0005` repairs legacy moved-item dates/order and enforces unique
+  day/order plus paired/ranged coordinates. Timed moves preserve local times
+  on the destination date and reject DST gaps/folds transactionally.
 - typed Pydantic request/response contracts and a common error envelope.
 - deterministic inclusive day generation and date-range reconciliation.
 - local-time item conversion with IANA timezone/DST validation.
 - transactional contiguous ordering and cross-day move behavior.
 - trip-root row locking for concurrent item-order mutations.
+- Shared trip-root aggregate reads, refreshed ORM collections, independent
+  place-update locks and database-side summary counts.
 - typed `PersonalAIClient` health and gated `research-v1` operations, including
   bounded SSE consumption and durable detail reconciliation.
 - owner-scoped trip/day research with bounded day context and safe errors.
+- Streamed JSON/SSE byte bounds and whole-operation deadlines; synchronous
+  SQL projections run in worker threads and release locks before provider work.
 - atomic manual place-plus-trip-candidate creation through existing tables.
 - pytest/ruff/mypy configuration.
 
@@ -65,12 +79,15 @@ Frontend:
 - same-origin `/api/v1/*` proxy and centralized typed client.
 - responsive trip/day/item/place/reservation/candidate forms with loading,
   empty, and error states.
+- Workflow form modules, paired manual coordinate entry, synchronous mutation
+  guards and a blocked/reloadable stale state after refresh failure.
 - accessible move-up/move-down and destination-day controls.
 - trip overview counts, reservation status distinction, linked-item context,
   and visible conflict warnings.
 - selected-day research form, transfer disclosure, cited unexpired result
   rendering, and a user-entered manual candidate form.
 - TypeScript/ESLint setup and production build verification.
+- Boundary/geometry/context tests under `frontend/tests/`, also executed in CI.
 
 Infrastructure:
 
@@ -79,6 +96,12 @@ Infrastructure:
 - GCP/Neon deployment documented but not implemented.
 
 ## Phase 1–3 verification
+
+Current review evidence: 86 backend tests passed with PostgreSQL 16.15 and zero
+skips, 11 frontend Node tests passed, Ruff/mypy/ESLint/TypeScript/build/package
+checks passed, plus an isolated standalone browser smoke check. Live providers,
+Docker execution, hosted CI and cloud deployment were not verified. Historical
+release records below retain the checks actually performed at their release.
 
 The October 2 Phase 0 review and corrections are recorded in
 [`releases/phase-0-scaffold.md`](releases/phase-0-scaffold.md). Phase 1 evidence,
@@ -139,6 +162,7 @@ The Phase 1 service decisions are:
 - days are inclusive, one-based, contiguous, and reconciled transactionally;
 - item ordering is contiguous and zero-based within each day;
 - local `HH:MM` values are interpreted in the trip timezone and DST gaps/folds fail;
+- cross-day moves re-resolve those times on the destination date;
 - concurrent item mutations serialize on the trip aggregate root;
 - deleting a trip or item is permanent; shrinking over a nonempty day returns `409`;
 - manual places are owner-scoped; provider-imported places keep source

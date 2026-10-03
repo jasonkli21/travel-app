@@ -1,6 +1,6 @@
 # Data model
 
-Status: Phase 4 delivered locally; no schema change
+Status: Phase 4 delivered locally; Phase 0–4 integrity review applied
 Date: 2026-10-03
 
 The initial migration implements the core itinerary graph. Phase 1 adds
@@ -74,6 +74,10 @@ External provider identity and source attribution are optional. Phase 3 stores
 the source attribution, license, and source link returned for a provider-backed
 place so the required credit stays available in search results and saved app
 records.
+
+Migration `0005` checks that coordinates are both null or both present, with
+latitude in [-90, 90] and longitude in [-180, 180]. Coordinates are validated
+at both the HTTP and SQL boundaries.
 
 ### `itinerary_items`
 
@@ -195,6 +199,11 @@ Create appends, delete compacts, and move removes/reinserts and renumbers both
 affected days in one transaction. The database rejects negative values and the
 service validates destination positions.
 
+Migration `0005` adds unique `(trip_day_id, sort_order)`. Reorders and moves
+flush distinct temporary positions above occupied/final positions before
+compacting, inside the same locked transaction. This avoids transient unique
+violations without deferred constraints or PostgreSQL-specific triggers.
+
 `day_index` is a contiguous, one-based integer within a trip. Trip creation
 generates one day for every inclusive calendar date. Date-range edits preserve
 overlapping day IDs and titles, add new dates, and reject removal of a day that
@@ -205,6 +214,11 @@ items, so concurrent appends, deletes, and moves cannot reuse one snapshot's
 order values. Integer ordering plus transactional renumbering is sufficient for
 the personal single-user product without introducing fractional indexes or
 collaboration machinery.
+
+Multi-query aggregate reads take a shared root lock; mutations take an
+exclusive root lock and refresh existing ORM collections. Reusable place
+metadata is independently locked. Manual cross-tab updates still use
+last-writer semantics; Phase 5 must add explicit version checks.
 
 Do not introduce fractional indexing/CRDTs without a real collaboration requirement.
 
@@ -226,6 +240,13 @@ Phase 1 accepts local `HH:MM` values relative to the owning trip day and IANA
 timezone. Timed items are persisted as timezone-aware instants and rendered back
 as local times. Daylight-saving gaps and ambiguous folds are rejected, as are
 cross-midnight item ranges. Date-only items keep both time values null.
+
+A cross-day move preserves each local HH:MM endpoint on the destination date.
+If either endpoint lands in a DST gap/fold, neither schedule nor order changes.
+Migration `0005` repairs the old source-date timestamp bug and normalizes legacy
+order. It requires online inspection, a backup and stopped writes; unresolved
+DST or invalid-coordinate data stops the migration transactionally. Downgrade
+removes constraints but cannot undo data repair; see the recovery guide.
 
 Phase 2 reservation schedules use local date/time pairs in the owning trip
 timezone. A reservation may cross midnight, but a scheduled value must have a

@@ -4,7 +4,15 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -48,6 +56,7 @@ class ItineraryItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     reservation: Mapped[Reservation | None] = relationship("Reservation", back_populates="items")
 
     __table_args__ = (
+        UniqueConstraint("trip_day_id", "sort_order", name="uq_itinerary_items_day_order"),
         CheckConstraint(
             "item_type IN ('activity','food','lodging','transport','flight','note')",
             name="valid_item_type",

@@ -26,6 +26,14 @@ safe unavailable response. Only completed, unexpired answers with valid HTTP(S)
 citations reach the browser. Internal AI queries, attempts, raw evidence, and
 provider responses are not forwarded.
 
+The create/run/detail sequence has one elapsed deadline (default 45 seconds,
+maximum configurable 50), not just per-I/O timeouts. Streamed JSON is capped at
+1 MB, SSE at 128 KiB total, 16 KiB per line/frame and 128 events. SQL projection
+runs outside the event loop and releases its transaction before HTTP awaits.
+The server returns the earliest citation/session expiry; the UI hides results
+after expiry or changes to projected day content. A timeout does not guarantee
+the upstream job stopped, so there is no automatic retry with a new key.
+
 ## Context and privacy
 
 The current contract accepts a question rather than a structured trip context.

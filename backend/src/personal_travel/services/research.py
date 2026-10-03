@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from personal_travel.api.schemas import (
     ResearchCitationResponse,
@@ -48,13 +49,7 @@ class ResearchService:
                 status_code=503,
             )
 
-        trip = self._trips.get(trip_id)
-        day = next((candidate for candidate in trip.days if candidate.id == data.day_id), None)
-        if day is None:
-            raise not_found("trip day")
-        question = compose_research_question(trip, day, data.question)
-        # External work may take tens of seconds; release the read transaction first.
-        self._session.rollback()
+        question = await run_in_threadpool(self._question_snapshot, trip_id, data)
 
         try:
             result = await self._client.research(
@@ -80,6 +75,16 @@ class ResearchService:
                 for citation in result.citations
             ],
         )
+
+    def _question_snapshot(self, trip_id: UUID, data: TripResearchRequest) -> str:
+        try:
+            trip = self._trips.get(trip_id)
+            day = next((candidate for candidate in trip.days if candidate.id == data.day_id), None)
+            if day is None:
+                raise not_found("trip day")
+            return compose_research_question(trip, day, data.question)
+        finally:
+            self._session.rollback()
 
 
 def compose_research_question(trip: Trip, day: TripDay, user_question: str) -> str:

@@ -31,7 +31,10 @@ def list_trips(
     session: SessionDependency,
     owner_id: OwnerDependency,
 ) -> list[TripSummaryResponse]:
-    return [serialize_summary(trip) for trip in TripService(session, owner_id).list()]
+    return [
+        serialize_summary(trip, day_count=days, item_count=items)
+        for trip, days, items in TripService(session, owner_id).list()
+    ]
 
 
 @router.get("/{trip_id}", response_model=TripDetailResponse)

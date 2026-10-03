@@ -1,0 +1,45 @@
+"""HTTP contracts grouped by travel workflow; public imports remain compatible."""
+
+from personal_travel.domain.types import GeoapifyRouteMode as GeoapifyRouteMode
+from personal_travel.domain.types import ItemStatus as ItemStatus
+from personal_travel.domain.types import ItemType as ItemType
+from personal_travel.domain.types import ResearchFreshness as ResearchFreshness
+from personal_travel.domain.types import ResearchState as ResearchState
+from personal_travel.domain.types import ReservationStatus as ReservationStatus
+from personal_travel.domain.types import ReservationType as ReservationType
+
+from .common import COMMON_ERROR_RESPONSES as COMMON_ERROR_RESPONSES
+from .common import ErrorBody as ErrorBody
+from .common import ErrorResponse as ErrorResponse
+from .itinerary import ItemCreate as ItemCreate
+from .itinerary import ItemUpdate as ItemUpdate
+from .itinerary import ItineraryItemResponse as ItineraryItemResponse
+from .itinerary import MoveItemRequest as MoveItemRequest
+from .location import LogisticsEstimateRequest as LogisticsEstimateRequest
+from .location import LogisticsEstimateResponse as LogisticsEstimateResponse
+from .location import LogisticsLegResponse as LogisticsLegResponse
+from .location import PlaceImportRequest as PlaceImportRequest
+from .location import PlaceSearchResponse as PlaceSearchResponse
+from .location import PlaceSearchResult as PlaceSearchResult
+from .places import ManualSavedPlaceCreate as ManualSavedPlaceCreate
+from .places import PlaceCreate as PlaceCreate
+from .places import PlaceSummaryResponse as PlaceSummaryResponse
+from .places import PlaceUpdate as PlaceUpdate
+from .research import ResearchCitationResponse as ResearchCitationResponse
+from .research import TripResearchRequest as TripResearchRequest
+from .research import TripResearchResponse as TripResearchResponse
+from .reservations import ReservationConflictResponse as ReservationConflictResponse
+from .reservations import ReservationCreate as ReservationCreate
+from .reservations import ReservationLinkedItemResponse as ReservationLinkedItemResponse
+from .reservations import ReservationResponse as ReservationResponse
+from .reservations import ReservationSummaryResponse as ReservationSummaryResponse
+from .reservations import ReservationUpdate as ReservationUpdate
+from .saved_places import SavedPlaceCreate as SavedPlaceCreate
+from .saved_places import SavedPlaceResponse as SavedPlaceResponse
+from .saved_places import SavedPlaceUpdate as SavedPlaceUpdate
+from .trips import DayUpdate as DayUpdate
+from .trips import TripCreate as TripCreate
+from .trips import TripDayResponse as TripDayResponse
+from .trips import TripDetailResponse as TripDetailResponse
+from .trips import TripSummaryResponse as TripSummaryResponse
+from .trips import TripUpdate as TripUpdate

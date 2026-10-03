@@ -13,6 +13,8 @@ import {
 } from "../lib/map-geometry.mjs";
 import type { MapSize, MapViewport } from "../lib/map-geometry.mjs";
 
+import { safeHttpUrl } from "../lib/urls.mjs";
+
 const tileApiKey = process.env.NEXT_PUBLIC_GEOAPIFY_API_KEY?.trim() ?? "";
 
 export type MapMarkerKind = "itinerary" | "reservation" | "candidate" | "search";
@@ -256,7 +258,7 @@ export default function TripMap({
                   <small>
                     {marker.sourceAttribution}
                     {marker.sourceLicense ? ` · ${marker.sourceLicense}` : ""}
-                    {marker.sourceUrl ? <> · <a href={marker.sourceUrl} target="_blank" rel="noreferrer">Source</a></> : null}
+                    {safeHttpUrl(marker.sourceUrl) ? <> · <a href={safeHttpUrl(marker.sourceUrl)!} target="_blank" rel="noreferrer">Source</a></> : null}
                   </small>
                 ) : null}
               </span>

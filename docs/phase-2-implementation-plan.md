@@ -1,6 +1,27 @@
 # Phase 2 implementation plan — reservations and saved places
 
-**Status:** Phase 2 plan approved for implementation  
+## Review corrections (2026-10-03)
+
+The [Phase 0–4 audit](reviews/phase-0-4-audit.md) extends the original
+acceptance criteria; the original scope below records Phase 2's delivery.
+
+- Loaded trip collections must reflect newly created reservations/candidates
+  under production session options. Reads cannot interleave child queries
+  across a concurrent aggregate mutation.
+- Place metadata updates acquire an owner-scoped row lock; coordinates are
+  paired/ranged in both requests and SQL.
+- Reservation source references may be arbitrary manual text. Render a link
+  only for safe HTTP(S); never turn a booking reference into executable content.
+- Notes and request bodies are bounded, with matching browser limits and
+  validation responses that do not echo private inputs.
+- Workspace refresh publishes all requested records together, preserves the
+  previous complete view on failure and distinguishes saved writes from failed
+  follow-up reads.
+- Tests run against actual migrations and production session options in CI;
+  reload, cross-owner links, FK behavior and stale-collection regressions are
+  required.
+
+**Status:** delivered locally; reviewed with Phases 0–4
 **Date:** 2026-10-02  
 **Roadmap:** [`09-implementation-plan.md`](09-implementation-plan.md)  
 **Baseline:** Phase 1 delivered locally on `codex/phase-0-scaffold-corrections`

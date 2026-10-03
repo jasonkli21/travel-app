@@ -123,6 +123,9 @@ AWS compute
 ```
 
 But Aurora DSQL is not identical to PostgreSQL.
+Current PostgreSQL shared/exclusive aggregate locks are not a proven DSQL
+concurrency strategy. Its optimistic commit conflicts require an explicit
+retry design and integration tests; see [ADR 0009](decisions/0009-local-boundaries-and-integrity.md).
 
 Preserve a portable subset:
 

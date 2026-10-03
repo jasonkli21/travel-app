@@ -1,5 +1,26 @@
 # Phase 1 implementation plan — manual itinerary planner
 
+## Review corrections (2026-10-03)
+
+The [Phase 0–4 audit](reviews/phase-0-4-audit.md) and ADR 0009 extend the
+original acceptance criteria. The original scope below describes Phase 1's
+historical delivery; these corrections are required in the current application.
+
+- Cross-day moves preserve HH:MM on the destination date, resolving both
+  endpoints before graph mutation. DST gaps/folds reject the whole move.
+- SQL uniquely constrains day/order and validates paired/ranged coordinates.
+  Two-stage reindexing must work with immediate uniqueness, including deleting
+  the last item and moving between differently sized days.
+- Shared root reads and exclusive writes refresh existing ORM collections.
+  Production autoflush/expiration settings are used in regression fixtures.
+- Invalid timezone paths and extreme date conversion produce domain errors.
+- Local host/origin/body limits and safe errors apply to the API and proxy;
+  local identity is still not authenticated identity.
+- A committed write followed by failed refresh closes creation forms and
+  blocks edits until a successful reload. Same-turn duplicate writes are guarded.
+- CI executes migrated PostgreSQL suites without skips, including concurrent
+  moves/appends, SQL constraint rejection, and migration parity/recovery.
+
 **Status:** Phase 1 implementation and independent review completed locally
 **Date:** 2026-10-02  
 **Roadmap:** `docs/09-implementation-plan.md`  

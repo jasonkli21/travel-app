@@ -1,16 +1,19 @@
 "use client";
 
 import type { FormEvent } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
-  ApiError,
   type CreateManualSavedPlaceInput,
   type ResearchFreshness,
   type TripDetail,
   type TripResearchResult,
   travelApi,
 } from "../lib/api";
+
+import { errorMessage } from "../lib/errors";
+import { safeHttpUrl } from "../lib/urls.mjs";
+import { researchContextKey } from "../lib/research-context.mjs";
 
 const EMPTY_CANDIDATE = {
   name: "",
@@ -21,10 +24,6 @@ const EMPTY_CANDIDATE = {
   note: "",
 };
 
-function errorMessage(error: unknown): string {
-  return error instanceof ApiError ? error.message : "Research could not be completed. Try again.";
-}
-
 function formatTimestamp(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -32,15 +31,6 @@ function formatTimestamp(value: string): string {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(date);
-}
-
-function safeCitationUrl(value: string): string | null {
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" || url.protocol === "http:" ? url.href : null;
-  } catch {
-    return null;
-  }
 }
 
 function resultStatus(result: TripResearchResult): string {
@@ -68,13 +58,19 @@ export default function TripResearchPanel({
   pending: boolean;
   onSaveCandidate: (input: CreateManualSavedPlaceInput) => Promise<boolean>;
 }) {
-  const [dayId, setDayId] = useState(trip.days[0]?.id ?? "");
+  const [selectedDayId, setDayId] = useState(trip.days[0]?.id ?? "");
+  const dayId = trip.days.some((day) => day.id === selectedDayId) ? selectedDayId : trip.days[0]?.id ?? "";
   const [question, setQuestion] = useState("");
   const [freshness, setFreshness] = useState<ResearchFreshness>("current");
   const [researchPending, setResearchPending] = useState(false);
+  const researchInFlight = useRef(false);
   const [savePending, setSavePending] = useState(false);
-  const [result, setResult] = useState<TripResearchResult | null>(null);
-  const [expiryTick, setExpiryTick] = useState(0);
+  const [resultSnapshot, setResultSnapshot] = useState<{
+    contextKey: string; result: TripResearchResult;
+  } | null>(null);
+  const contextKey = researchContextKey(trip, dayId);
+  const result = resultSnapshot?.contextKey === contextKey ? resultSnapshot.result : null;
+  const [now, setNow] = useState(() => Date.now());
   const [error, setError] = useState<string | null>(null);
   const [candidate, setCandidate] = useState(EMPTY_CANDIDATE);
 
@@ -85,7 +81,7 @@ export default function TripResearchPanel({
       )
     : null;
   const resultExpired = result?.state === "completed"
-    && (resultExpiry === null || !Number.isFinite(resultExpiry) || resultExpiry <= Date.now());
+    && (resultExpiry === null || !Number.isFinite(resultExpiry) || resultExpiry <= now);
   const displayedResult: TripResearchResult | null = resultExpired && result
     ? { ...result, state: "expired", answer: null, citations: [] }
     : result;
@@ -94,23 +90,17 @@ export default function TripResearchPanel({
     if (resultExpiry === null || resultExpired) return;
     const maxTimerDelay = 2_147_483_647;
     const delay = Math.min(Math.max(0, resultExpiry - Date.now() + 10), maxTimerDelay);
-    const timer = window.setTimeout(() => setExpiryTick((current) => current + 1), delay);
+    const timer = window.setTimeout(() => setNow(Date.now()), delay);
     return () => window.clearTimeout(timer);
-  }, [expiryTick, result, resultExpired, resultExpiry]);
-
-  useEffect(() => {
-    if (!trip.days.some((day) => day.id === dayId)) {
-      setDayId(trip.days[0]?.id ?? "");
-      setResult(null);
-    }
-  }, [dayId, trip.days]);
+  }, [now, result, resultExpired, resultExpiry]);
 
   const submitResearch = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!dayId || !question.trim()) return;
+    if (!dayId || !question.trim() || researchInFlight.current || pending) return;
+    researchInFlight.current = true;
     setResearchPending(true);
     setError(null);
-    setResult(null);
+    setResultSnapshot(null);
     try {
       const response = await travelApi.researchTripDay(trip.id, {
         day_id: dayId,
@@ -118,10 +108,12 @@ export default function TripResearchPanel({
         freshness,
         idempotency_key: crypto.randomUUID(),
       });
-      setResult(response);
+      setNow(Date.now());
+      setResultSnapshot({ contextKey, result: response });
     } catch (nextError) {
       setError(errorMessage(nextError));
     } finally {
+      researchInFlight.current = false;
       setResearchPending(false);
     }
   };
@@ -180,7 +172,7 @@ export default function TripResearchPanel({
                 value={dayId}
                 onChange={(event) => {
                   setDayId(event.target.value);
-                  setResult(null);
+                  setResultSnapshot(null);
                   setError(null);
                 }}
                 required
@@ -196,7 +188,7 @@ export default function TripResearchPanel({
                 value={freshness}
                 onChange={(event) => {
                   setFreshness(event.target.value as ResearchFreshness);
-                  setResult(null);
+                  setResultSnapshot(null);
                   setError(null);
                 }}
               >
@@ -211,7 +203,7 @@ export default function TripResearchPanel({
               value={question}
               onChange={(event) => {
                 setQuestion(event.target.value);
-                setResult(null);
+                setResultSnapshot(null);
                 setError(null);
               }}
               maxLength={300}
@@ -240,7 +232,7 @@ export default function TripResearchPanel({
               <h3>Sources</h3>
               <ol className="researchCitations">
                 {displayedResult.citations.map((citation) => {
-                  const href = safeCitationUrl(citation.url);
+                  const href = safeHttpUrl(citation.url);
                   return (
                     <li key={`${citation.evidence_id}-${citation.number}`}>
                       <div>

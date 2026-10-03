@@ -7,6 +7,12 @@ Each phase should produce a useful, testable vertical slice.
 
 Do not implement later phases simply because their design appears here.
 
+The [Phase 0–4 audit](reviews/phase-0-4-audit.md) corrects the original plans
+and documents actual verification. Local delivery is not public production
+readiness: authentication remains a prerequisite for private imports and cloud
+data. Basic local security, readiness, deadlines and migration recovery cannot
+be postponed to Phase 9.
+
 ## Phase 0 — Scaffold and architecture
 
 Delivered.
@@ -31,6 +37,10 @@ Delivered.
 - frontend builds/type-checks,
 - docs accurately distinguish scaffold vs. implementation,
 - no external credentials required.
+- database-backed suites execute in CI against real migrations with no skips,
+- local host/origin/body boundaries, safe errors, request IDs, bounded database
+  waits and separate liveness/readiness work without provider credentials,
+- online migration and backup/restore guidance covers existing data.
 
 ## Phase 1 — Manual trip and itinerary vertical slice (delivered)
 
@@ -72,6 +82,11 @@ Frontend:
 A single local user can build and reopen a complete day-by-day itinerary without
 AI. The delivered implementation and verification evidence are recorded in
 [`releases/phase-1-itinerary.md`](releases/phase-1-itinerary.md).
+Timed moves preserve local times on the destination date and reject DST gaps/
+folds atomically. SQL enforces day/order uniqueness and coordinate integrity;
+shared aggregate reads and locked writes preserve consistent relational state.
+Successful writes remain successful if a following refresh fails; stale
+workspaces block editing until recovery.
 
 ## Phase 2 — Reservations and saved places (delivered)
 

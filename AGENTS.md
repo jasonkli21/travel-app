@@ -41,6 +41,9 @@ The delivered scaffold and Phase 1–4 implementations include:
   validated server-consumed SSE, cited results, and a research panel.
 - Atomic manual place-plus-trip-candidate creation; AI results never mutate
   authoritative trip state.
+- Phase 0–4 audit remediation: migration `0005` repairs legacy moved-item dates,
+  SQL order/coordinate integrity, local host/origin guards, bounded external
+  deadlines, database readiness and migrated disposable-schema test fixtures.
 - Docker Compose Postgres for local development.
 - CI skeleton.
 - product/design/architecture/implementation/release documentation.
@@ -110,3 +113,7 @@ make frontend-check
 ```
 
 See `docs/07-local-development.md` for full setup. Verification performed during bootstrap is recorded in `docs/releases/phase-0-scaffold.md`.
+The comprehensive current review and verification are recorded in
+`docs/reviews/phase-0-4-audit.md`. PostgreSQL checks require `TEST_DATABASE_URL`;
+CI must execute them without skips. Migration `0005` requires online inspection
+and a backup before legacy data repair.

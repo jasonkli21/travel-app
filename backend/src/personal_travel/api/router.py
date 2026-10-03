@@ -5,8 +5,8 @@ from personal_travel.api.routes import (
     itinerary,
     location,
     places,
-    reservations,
     research,
+    reservations,
     saved_places,
     trips,
 )

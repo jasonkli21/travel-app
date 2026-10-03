@@ -1,16 +1,27 @@
+import logging
+
 from fastapi import FastAPI, Request
-from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from personal_travel.api.errors import error_response
+from personal_travel.api.middleware import LocalBoundaryMiddleware
 from personal_travel.api.router import api_router
-from personal_travel.api.schemas import ErrorBody, ErrorResponse
 from personal_travel.config import get_settings
 from personal_travel.services.errors import DomainError
 
 settings = get_settings()
+
+# Configure only our safe application logs. Enabling root HTTP-client logging
+# would expose provider URLs, which may contain credentials or private queries.
+application_logger = logging.getLogger("personal_travel")
+if not application_logger.handlers:
+    application_logger.addHandler(logging.StreamHandler())
+application_logger.setLevel(logging.INFO)
+application_logger.propagate = False
 
 app = FastAPI(
     title="Personal Travel API",
@@ -26,23 +37,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.add_middleware(
+    LocalBoundaryMiddleware,
+    hosts=settings.allowed_host_list,
+    origins=settings.cors_origin_list,
+)
 app.include_router(api_router)
-
-
-def error_response(
-    status_code: int,
-    code: str,
-    message: str,
-    details: object | None = None,
-) -> JSONResponse:
-    payload = ErrorResponse(
-        error=ErrorBody(
-            code=code,
-            message=message,
-            details=details if isinstance(details, dict) else None,
-        )
-    )
-    return JSONResponse(status_code=status_code, content=payload.model_dump(mode="json"))
 
 
 @app.exception_handler(DomainError)
@@ -56,7 +56,12 @@ async def handle_request_validation(_request: Request, exc: RequestValidationErr
         422,
         "invalid_request",
         "The request could not be validated.",
-        {"fields": jsonable_encoder(exc.errors())},
+        {
+            "fields": [
+                {"location": list(error["loc"]), "type": error["type"], "message": error["msg"]}
+                for error in exc.errors()
+            ]
+        },
     )
 
 
@@ -67,3 +72,29 @@ async def handle_integrity_error(_request: Request, _exc: IntegrityError) -> JSO
         "integrity_error",
         "The requested change conflicts with existing travel data.",
     )
+
+
+@app.exception_handler(SQLAlchemyError)
+async def handle_database_error(_request: Request, _exc: SQLAlchemyError) -> JSONResponse:
+    return error_response(503, "database_unavailable", "Travel storage is temporarily unavailable.")
+
+
+@app.exception_handler(StarletteHTTPException)
+async def handle_http_error(_request: Request, exc: StarletteHTTPException) -> JSONResponse:
+    return error_response(exc.status_code, "http_error", str(exc.detail))
+
+
+@app.exception_handler(Exception)
+async def handle_unexpected_error(_request: Request, _exc: Exception) -> JSONResponse:
+    # Do not log exception text: database/provider exceptions can contain private
+    # records, SQL parameters, queries or API keys. Request IDs support diagnosis.
+    request_id = _request.scope.get("request_id", "unavailable")
+    logging.getLogger("personal_travel.errors").error(
+        "request id=%s error_type=%s", request_id, type(_exc).__name__
+    )
+    response = error_response(
+        500, "internal_error", "The travel service could not complete the request."
+    )
+    response.headers["X-Request-ID"] = str(request_id)
+    response.headers["Cache-Control"] = "no-store"
+    return response

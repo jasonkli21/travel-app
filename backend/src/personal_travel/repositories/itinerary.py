@@ -1,13 +1,6 @@
-from typing import Protocol
-
 from sqlalchemy.orm import Session
 
 from personal_travel.models.itinerary import ItineraryItem
-
-
-class ItineraryItemRepository(Protocol):
-    def add(self, item: ItineraryItem) -> ItineraryItem: ...
-    def delete(self, item: ItineraryItem) -> None: ...
 
 
 class SqlAlchemyItineraryItemRepository:

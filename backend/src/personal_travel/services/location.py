@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import math
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -7,6 +9,7 @@ from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from personal_travel.api.schemas import (
     LogisticsEstimateRequest,
@@ -67,13 +70,10 @@ class LocationService:
         *,
         limit: int,
     ) -> list[PlaceSearchResponse]:
-        trip = self._get_trip(trip_id)
         normalized_query = query.strip()
         if len(normalized_query) < 2:
             raise DomainError("invalid_search_query", "Enter at least two characters to search.")
-        bias = self._trip_center(trip)
-        # The provider call can take several seconds; release the read transaction first.
-        self._session.rollback()
+        bias = await run_in_threadpool(self._search_bias, trip_id)
         try:
             matches = await self._geoapify.search_places(
                 query=normalized_query,
@@ -83,6 +83,12 @@ class LocationService:
         except GeoapifyClientError as exc:
             raise self._provider_error(exc) from exc
         return [PlaceSearchResponse.model_validate(match.__dict__) for match in matches]
+
+    def _search_bias(self, trip_id: UUID) -> tuple[float, float] | None:
+        try:
+            return self._trip_center(self._get_trip(trip_id))
+        finally:
+            self._session.rollback()
 
     def import_place(self, trip_id: UUID, data: PlaceImportRequest) -> SavedPlace:
         try:
@@ -153,17 +159,40 @@ class LocationService:
         trip_id: UUID,
         data: LogisticsEstimateRequest,
     ) -> LogisticsEstimateResponse:
-        trip = self._get_trip(trip_id)
-        day = next((candidate for candidate in trip.days if candidate.id == data.day_id), None)
-        if day is None:
-            raise not_found("trip day")
-
-        eligible_legs = self._eligible_legs(day)
-        day_id = day.id
+        day_id, eligible_legs = await run_in_threadpool(self._logistics_snapshot, trip_id, data)
         leg_groups = self._group_legs(eligible_legs)
-        # The immutable leg snapshots contain all values needed below, so external calls
-        # do not keep a database transaction open.
-        self._session.rollback()
+        try:
+            async with asyncio.timeout(30):
+                return await self._estimate_groups(day_id, leg_groups, data)
+        except TimeoutError:
+            raise DomainError(
+                "location_provider_timeout",
+                "Route estimates exceeded the request deadline.",
+                status_code=503,
+            ) from None
+
+    def _logistics_snapshot(
+        self, trip_id: UUID, data: LogisticsEstimateRequest
+    ) -> tuple[UUID, list[_EligibleLeg]]:
+        try:
+            trip = self._get_trip(trip_id)
+            day = next((candidate for candidate in trip.days if candidate.id == data.day_id), None)
+            if day is None:
+                raise not_found("trip day")
+            legs = self._eligible_legs(day)
+            if len(legs) > 50:
+                raise DomainError(
+                    "too_many_route_legs", "Estimate at most 50 eligible transfers in one request."
+                )
+            return day.id, legs
+        finally:
+            # Project and release the session in the worker thread. Sync SQL
+            # never blocks the event loop or remains open across provider calls.
+            self._session.rollback()
+
+    async def _estimate_groups(
+        self, day_id: UUID, leg_groups: list[list[_EligibleLeg]], data: LogisticsEstimateRequest
+    ) -> LogisticsEstimateResponse:
         result_legs: list[LogisticsLegResponse] = []
         for group in leg_groups:
             waypoints = [group[0].origin_coordinates]
@@ -234,7 +263,12 @@ class LocationService:
         count = len(coordinates)
         return (
             sum(latitude for latitude, _ in coordinates.values()) / count,
-            sum(longitude for _, longitude in coordinates.values()) / count,
+            math.degrees(
+                math.atan2(
+                    sum(math.sin(math.radians(lon)) for _, lon in coordinates.values()),
+                    sum(math.cos(math.radians(lon)) for _, lon in coordinates.values()),
+                )
+            ),
         )
 
     @staticmethod
@@ -292,7 +326,13 @@ class LocationService:
     def _group_legs(legs: list[_EligibleLeg]) -> list[list[_EligibleLeg]]:
         groups: list[list[_EligibleLeg]] = []
         for leg in legs:
-            if groups and groups[-1][-1].destination_item_id == leg.origin_item_id:
+            # Bound waypoint count/URL length. Consecutive batches share the
+            # joining point, so splitting cannot skip a transfer.
+            if (
+                groups
+                and len(groups[-1]) < 9
+                and groups[-1][-1].destination_item_id == leg.origin_item_id
+            ):
                 groups[-1].append(leg)
             else:
                 groups.append([leg])

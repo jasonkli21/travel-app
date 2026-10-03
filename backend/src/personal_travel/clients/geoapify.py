@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import asyncio
 import math
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import urlsplit
 
 import httpx
 
-from personal_travel.api.schemas import GeoapifyRouteMode
+from personal_travel.clients.http import InvalidUpstreamResponse, read_json
 from personal_travel.config import get_settings
+from personal_travel.domain.types import GeoapifyRouteMode
+from personal_travel.domain.urls import validate_http_url
 
 
 class GeoapifyClientError(RuntimeError):
@@ -149,13 +151,19 @@ class GeoapifyClient:
             )
         request_params = {**params, "apiKey": self._api_key}
         try:
-            async with httpx.AsyncClient(
-                timeout=self._timeout,
-                transport=self._transport,
-            ) as client:
-                response = await client.get(f"{self.base_url}{path}", params=request_params)
-                response.raise_for_status()
-        except httpx.TimeoutException:
+            async with (
+                asyncio.timeout(self._timeout),
+                httpx.AsyncClient(
+                    timeout=self._timeout,
+                    transport=self._transport,
+                ) as client,
+            ):
+                async with client.stream(
+                    "GET", f"{self.base_url}{path}", params=request_params
+                ) as response:
+                    response.raise_for_status()
+                    payload = await read_json(response, max_bytes=2_000_000)
+        except (httpx.TimeoutException, TimeoutError):
             raise GeoapifyClientError(
                 "location_provider_timeout",
                 "The location provider did not respond in time. Try again.",
@@ -180,9 +188,7 @@ class GeoapifyClient:
                 status_code=503,
             ) from None
 
-        try:
-            payload = response.json()
-        except ValueError:
+        except InvalidUpstreamResponse:
             raise self._invalid_response() from None
         if not isinstance(payload, dict):
             raise self._invalid_response()
@@ -199,7 +205,7 @@ class GeoapifyClient:
         longitude = cls._finite_number(result.get("lon"))
         if (
             not isinstance(place_id, str)
-            or not place_id
+            or not place_id.strip()
             or not isinstance(name, str)
             or not name.strip()
             or latitude is None
@@ -223,18 +229,11 @@ class GeoapifyClient:
         if not isinstance(source_license, str) or not source_license.strip():
             source_license = None
         source_url = datasource.get("url")
-        if isinstance(source_url, str) and source_url.strip():
-            try:
-                parsed_source_url = urlsplit(source_url.strip())
-            except ValueError:
-                source_url = None
-            else:
-                if (
-                    parsed_source_url.scheme not in {"http", "https"}
-                    or not parsed_source_url.netloc
-                ):
-                    source_url = None
-        else:
+        try:
+            source_url = validate_http_url(
+                source_url.strip() if isinstance(source_url, str) else None
+            )
+        except ValueError:
             source_url = None
 
         formatted = result.get("formatted")
@@ -263,7 +262,7 @@ class GeoapifyClient:
         ):
             return None
         return GeoapifyPlace(
-            provider_place_id=place_id,
+            provider_place_id=place_id.strip(),
             name=name.strip()[:240],
             address=address[:500] if address else None,
             category=category[:120] if category else None,
@@ -295,7 +294,7 @@ class GeoapifyClient:
 
         lines: list[list[list[float]]] = []
         for raw_line in raw_lines:
-            if not isinstance(raw_line, list) or len(raw_line) < 2:
+            if not isinstance(raw_line, list) or not 2 <= len(raw_line) <= 10_000:
                 raise cls._invalid_response()
             points: list[list[float]] = []
             for raw_point in raw_line:
@@ -318,7 +317,10 @@ class GeoapifyClient:
     def _finite_number(value: object) -> float | None:
         if isinstance(value, bool) or not isinstance(value, int | float):
             return None
-        number = float(value)
+        try:
+            number = float(value)
+        except OverflowError:
+            return None
         return number if math.isfinite(number) else None
 
     @staticmethod

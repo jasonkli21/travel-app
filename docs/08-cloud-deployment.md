@@ -103,6 +103,18 @@ Before a public cloud deployment stores real trip reservations, imported email, 
 
 Do not treat Cloud Run being reachable only through an obscure URL as security.
 
+The delivered local host/origin guards are not authentication. Do not disable
+them or set a wildcard to publish the local owner. Future deployment must
+explicitly configure web/API hosts and origins after identity/session and
+service-authentication work. Build the public Geoapify tile key into the web
+image; keep server search/routing credentials in Secret Manager.
+
+Use `/health` for process liveness and `/ready` for database readiness. Phase
+0–4 has bounded pool/connect/statement/lock waits and safe request IDs/logs;
+Phase 9 must validate pool sizing, quotas, monitoring and backup restoration.
+Migration `0005` requires online data inspection and a pre-migration backup;
+do not use offline SQL generation as the complete deployment migration path.
+
 ## AWS migration direction
 
 AWS is not part of the initial deployment.

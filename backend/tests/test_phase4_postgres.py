@@ -5,67 +5,34 @@ from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from personal_travel.api.dependencies import session_dependency
 from personal_travel.api.schemas import ManualSavedPlaceCreate, TripCreate
 from personal_travel.clients.personal_ai import PersonalAIClient, PersonalAIError
 from personal_travel.config import Settings, get_settings
-from personal_travel.db.base import Base
 from personal_travel.main import app
-from personal_travel.models.itinerary import ItineraryItem
 from personal_travel.models.place import Place
-from personal_travel.models.reservation import Reservation, SavedPlace
-from personal_travel.models.trip import Trip, TripDay
+from personal_travel.models.reservation import SavedPlace
 from personal_travel.services.errors import DomainError
 from personal_travel.services.saved_places import SavedPlaceService
 from personal_travel.services.trips import TripService
 
 TEST_DATABASE_URL = environ.get("TEST_DATABASE_URL")
-pytestmark = pytest.mark.skipif(
-    TEST_DATABASE_URL is None,
-    reason="set TEST_DATABASE_URL to run PostgreSQL-backed Phase 4 tests",
-)
-
-
-@pytest.fixture(scope="session")
-def database_engine() -> Iterator[Engine]:
-    assert TEST_DATABASE_URL is not None
-    engine = create_engine(TEST_DATABASE_URL, pool_pre_ping=True)
-    Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
-    yield engine
-    Base.metadata.drop_all(engine)
-    engine.dispose()
+pytestmark = [
+    pytest.mark.usefixtures("clean_database"),
+    pytest.mark.skipif(
+        TEST_DATABASE_URL is None,
+        reason="set TEST_DATABASE_URL to run PostgreSQL-backed Phase 4 tests",
+    ),
+]
 
 
 @pytest.fixture(autouse=True)
-def clean_database(database_engine: Engine) -> Iterator[None]:
-    with database_engine.begin() as connection:
-        connection.execute(delete(SavedPlace))
-        connection.execute(delete(ItineraryItem))
-        connection.execute(delete(Reservation))
-        connection.execute(delete(TripDay))
-        connection.execute(delete(Trip))
-        connection.execute(delete(Place))
+def enable_research() -> Iterator[None]:
+    app.dependency_overrides[get_settings] = lambda: Settings(personal_ai_research_enabled=True)
     yield
-
-
-@pytest.fixture
-def api_client(database_engine: Engine) -> Iterator[TestClient]:
-    def override_session() -> Iterator[Session]:
-        with Session(database_engine) as session:
-            yield session
-
-    app.dependency_overrides[session_dependency] = override_session
-    app.dependency_overrides[get_settings] = lambda: Settings(
-        personal_ai_research_enabled=True
-    )
-    with TestClient(app) as client:
-        yield client
-    app.dependency_overrides.pop(session_dependency, None)
     app.dependency_overrides.pop(get_settings, None)
 
 
@@ -107,7 +74,7 @@ def test_manual_saved_place_creates_owner_place_and_trip_candidate_atomically(
         place_id = saved.place_id
         saved_place_id = saved.id
 
-    with Session(database_engine) as session:
+    with Session(database_engine, autoflush=False, expire_on_commit=False) as session:
         place = session.get(Place, place_id)
         saved_place = session.get(SavedPlace, saved_place_id)
         assert place is not None
@@ -126,7 +93,7 @@ def test_manual_saved_place_creates_owner_place_and_trip_candidate_atomically(
 def test_manual_saved_place_rejects_foreign_trip_without_creating_place(
     database_engine: Engine,
 ) -> None:
-    with Session(database_engine) as session:
+    with Session(database_engine, autoflush=False, expire_on_commit=False) as session:
         foreign_trip = TripService(session, "another-owner").create(
             TripCreate(
                 title="Foreign trip",
@@ -135,8 +102,6 @@ def test_manual_saved_place_rejects_foreign_trip_without_creating_place(
                 timezone="UTC",
             )
         )
-        foreign_trip_id = str(foreign_trip.id)
-        foreign_day_id = str(foreign_trip.days[0].id)
         with pytest.raises(DomainError) as error:
             SavedPlaceService(session, "local").create_manual(
                 foreign_trip.id,
@@ -144,7 +109,7 @@ def test_manual_saved_place_rejects_foreign_trip_without_creating_place(
             )
         assert error.value.status_code == 404
 
-    with Session(database_engine) as session:
+    with Session(database_engine, autoflush=False, expire_on_commit=False) as session:
         assert session.scalar(select(func.count()).select_from(Place)) == 0
         assert session.scalar(select(func.count()).select_from(SavedPlace)) == 0
 
@@ -156,7 +121,7 @@ def test_research_route_rejects_foreign_trip_and_day_before_ai_call_and_sanitize
 ) -> None:
     local_trip = create_trip(api_client, "Local trip")
     other_local_trip = create_trip(api_client, "Second local trip")
-    with Session(database_engine) as session:
+    with Session(database_engine, autoflush=False, expire_on_commit=False) as session:
         foreign_trip = TripService(session, "another-owner").create(
             TripCreate(
                 title="Foreign trip",
@@ -165,6 +130,9 @@ def test_research_route_rejects_foreign_trip_and_day_before_ai_call_and_sanitize
                 timezone="UTC",
             )
         )
+
+    foreign_trip_id = str(foreign_trip.id)
+    foreign_day_id = str(foreign_trip.days[0].id)
 
     calls: list[dict[str, object]] = []
 

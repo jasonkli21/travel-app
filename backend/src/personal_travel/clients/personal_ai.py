@@ -1,19 +1,21 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal, cast
-from urllib.parse import urlsplit
 from uuid import UUID
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from personal_travel.clients.http import InvalidUpstreamResponse, read_json, sse_lines
 from personal_travel.config import get_settings
+from personal_travel.domain.types import ResearchState
+from personal_travel.domain.urls import validate_http_url
 
-ResearchState = Literal["pending", "running", "completed", "insufficient", "failed", "expired"]
 TerminalResearchState = Literal["completed", "insufficient", "failed", "expired"]
 
 MAX_RESEARCH_EVENT_BYTES = 16 * 1024
@@ -46,20 +48,7 @@ class _ResearchCitation(BaseModel):
     @field_validator("url")
     @classmethod
     def validate_url(cls, value: str) -> str:
-        if value != value.strip() or any(ord(char) < 32 for char in value):
-            raise ValueError("citation URL must be HTTP or HTTPS")
-        try:
-            parsed = urlsplit(value)
-            hostname = parsed.hostname
-        except ValueError:
-            raise ValueError("citation URL must be HTTP or HTTPS") from None
-        if (
-            parsed.scheme not in {"http", "https"}
-            or not hostname
-            or parsed.username is not None
-            or parsed.password is not None
-        ):
-            raise ValueError("citation URL must be HTTP or HTTPS")
+        validate_http_url(value)
         return value
 
     @field_validator("observed_at", "expires_at")
@@ -104,20 +93,26 @@ class PersonalAIClient:
     def __init__(self, base_url: str | None = None, timeout_seconds: float | None = None) -> None:
         settings = get_settings()
         self._base_url = str(base_url or settings.personal_ai_base_url).rstrip("/")
-        self._timeout = timeout_seconds or settings.personal_ai_timeout_seconds
+        self._timeout = (
+            timeout_seconds if timeout_seconds is not None else settings.personal_ai_timeout_seconds
+        )
 
     async def health(self) -> PersonalAIHealth:
         try:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
-                response = await client.get(f"{self._base_url}/health")
-                response.raise_for_status()
-        except httpx.HTTPError as exc:
+            async with (
+                asyncio.timeout(self._timeout),
+                httpx.AsyncClient(timeout=self._timeout) as client,
+            ):
+                async with client.stream("GET", f"{self._base_url}/health") as response:
+                    response.raise_for_status()
+                    try:
+                        payload = await read_json(response, max_bytes=4096)
+                    except InvalidUpstreamResponse as exc:
+                        raise PersonalAIError(
+                            "personal-ai-system returned invalid health JSON"
+                        ) from exc
+        except (httpx.HTTPError, TimeoutError) as exc:
             raise PersonalAIError("personal-ai-system is unavailable") from exc
-
-        try:
-            payload = response.json()
-        except ValueError as exc:
-            raise PersonalAIError("personal-ai-system returned invalid health JSON") from exc
 
         if not isinstance(payload, dict):
             raise PersonalAIError("personal-ai-system returned an invalid health response")
@@ -136,12 +131,30 @@ class PersonalAIClient:
         freshness: Literal["general", "current"],
         idempotency_key: UUID,
     ) -> PersonalAIResearchResult:
+        # HTTPX timeouts apply per I/O operation. The full create/run/detail
+        # sequence also needs a wall-clock deadline, including trickling SSE.
+        try:
+            async with asyncio.timeout(self._timeout):
+                return await self._research(
+                    question=question, freshness=freshness, idempotency_key=idempotency_key
+                )
+        except TimeoutError:
+            raise PersonalAIError("personal-ai-system research exceeded its deadline") from None
+
+    async def _research(
+        self,
+        *,
+        question: str,
+        freshness: Literal["general", "current"],
+        idempotency_key: UUID,
+    ) -> PersonalAIResearchResult:
         """Create or replay one research session, run pending work, and read its result."""
 
         timeout = httpx.Timeout(self._timeout)
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
-                create = await client.post(
+                async with client.stream(
+                    "POST",
                     f"{self._base_url}/v1/research",
                     json={
                         "schema_version": "research-v1",
@@ -149,9 +162,9 @@ class PersonalAIClient:
                         "freshness": freshness,
                         "idempotency_key": str(idempotency_key),
                     },
-                )
-                create.raise_for_status()
-                created = _ResearchSession.model_validate(await _bounded_json(create))
+                ) as create:
+                    create.raise_for_status()
+                    created = _ResearchSession.model_validate(await _bounded_json(create))
 
                 terminal_event: TerminalResearchState | None = None
                 if created.state == "pending":
@@ -173,32 +186,35 @@ class PersonalAIClient:
                         # detail read below is authoritative; nonterminal state fails closed.
                         pass
 
-                detail_response = await client.get(
-                    f"{self._base_url}/v1/research/{created.id}"
-                )
-                detail_response.raise_for_status()
-                detail = _ResearchSession.model_validate(await _bounded_json(detail_response))
+                async with client.stream(
+                    "GET", f"{self._base_url}/v1/research/{created.id}"
+                ) as detail_response:
+                    detail_response.raise_for_status()
+                    detail = _ResearchSession.model_validate(await _bounded_json(detail_response))
         except PersonalAIError:
             raise
-        except (httpx.HTTPError, ValidationError, ValueError, TypeError) as exc:
+        except InvalidUpstreamResponse as exc:
+            raise PersonalAIError(f"personal-ai-system returned {exc}") from None
+        except (httpx.HTTPError, ValidationError, ValueError, TypeError, RecursionError) as exc:
             raise PersonalAIError(
                 "personal-ai-system returned an unavailable or invalid response"
             ) from exc
 
         if detail.id != created.id:
             raise PersonalAIError("personal-ai-system returned a mismatched research session")
-        if terminal_event is not None and detail.state != terminal_event:
+        now = datetime.now(UTC)
+        expired_since_read = detail.state == "expired" and detail.expires_at <= now
+        if terminal_event is not None and detail.state != terminal_event and not expired_since_read:
             raise PersonalAIError("personal-ai-system returned inconsistent research state")
         if detail.state in {"pending", "running"}:
             raise PersonalAIError("personal-ai-system research is still running")
         if created.state in {"completed", "insufficient", "failed", "expired"} and (
-            detail.state != created.state
+            detail.state != created.state and not expired_since_read
         ):
             raise PersonalAIError("personal-ai-system returned inconsistent research state")
 
-        now = datetime.now(UTC)
         if detail.state == "completed":
-            if detail.answer is None or not detail.citations:
+            if not detail.answer or not detail.answer.strip() or not detail.citations:
                 raise PersonalAIError("personal-ai-system returned an uncited research result")
             if detail.expires_at <= now:
                 return PersonalAIResearchResult(
@@ -226,7 +242,7 @@ class PersonalAIClient:
             return PersonalAIResearchResult(
                 session_id=detail.id,
                 state=detail.state,
-                expires_at=detail.expires_at,
+                expires_at=min(detail.expires_at, *(c.expires_at for c in detail.citations)),
                 answer=detail.answer,
                 citations=detail.citations,
             )
@@ -241,25 +257,10 @@ class PersonalAIClient:
 
 
 async def _bounded_json(response: httpx.Response) -> object:
-    content_length = response.headers.get("content-length")
-    if content_length is not None:
-        try:
-            if int(content_length) > MAX_RESEARCH_RESPONSE_BYTES:
-                raise PersonalAIError("personal-ai-system returned an oversized response")
-        except ValueError:
-            raise PersonalAIError("personal-ai-system returned an invalid response size") from None
-
-    chunks: list[bytes] = []
-    size = 0
-    async for chunk in response.aiter_bytes():
-        size += len(chunk)
-        if size > MAX_RESEARCH_RESPONSE_BYTES:
-            raise PersonalAIError("personal-ai-system returned an oversized response")
-        chunks.append(chunk)
     try:
-        return json.loads(b"".join(chunks))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise PersonalAIError("personal-ai-system returned invalid research JSON") from exc
+        return await read_json(response, max_bytes=MAX_RESEARCH_RESPONSE_BYTES)
+    except InvalidUpstreamResponse as exc:
+        raise PersonalAIError(f"personal-ai-system returned {exc}") from None
 
 
 async def _consume_research_events(
@@ -272,7 +273,11 @@ async def _consume_research_events(
     event_count = 0
     terminal_state: TerminalResearchState | None = None
 
-    async for line in response.aiter_lines():
+    async for line in sse_lines(
+        response,
+        max_bytes=MAX_RESEARCH_STREAM_BYTES,
+        max_line_bytes=MAX_RESEARCH_EVENT_BYTES,
+    ):
         line_size = len(line.encode("utf-8")) + 1
         stream_bytes += line_size
         frame_bytes += line_size

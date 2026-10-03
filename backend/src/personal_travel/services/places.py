@@ -40,7 +40,7 @@ class PlaceService:
 
     def update(self, place_id: UUID, data: PlaceUpdate) -> Place:
         with self._session.begin():
-            place = self._places.get(owner_id=self._owner_id, place_id=place_id)
+            place = self._places.get(owner_id=self._owner_id, place_id=place_id, for_update=True)
             if place is None:
                 raise not_found("place")
             if "name" in data.model_fields_set:

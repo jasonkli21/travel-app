@@ -1,25 +1,9 @@
 import uuid
-from typing import Protocol
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from personal_travel.models.reservation import SavedPlace
-
-
-class SavedPlaceRepository(Protocol):
-    def get(
-        self,
-        *,
-        owner_id: str,
-        trip_id: uuid.UUID,
-        saved_place_id: uuid.UUID,
-        for_update: bool = False,
-    ) -> SavedPlace | None: ...
-
-    def add(self, saved_place: SavedPlace) -> SavedPlace: ...
-
-    def delete(self, saved_place: SavedPlace) -> None: ...
 
 
 class SqlAlchemySavedPlaceRepository:

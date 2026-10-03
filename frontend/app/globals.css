@@ -177,7 +177,7 @@ h3 { margin: 3px 0 0; }
 .reservationForm, .placeForm { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; display: grid; gap: 12px; margin-top: 14px; padding: 16px; }
 .reservationForm fieldset, .placeForm fieldset { border: 0; margin: 0; min-width: 0; padding: 0; }
 .formHint { color: var(--muted); font-size: 12px; line-height: 1.4; margin: 10px 0 0; }
-.itemFields, .tripEditor fieldset { border: 0; margin: 0; min-width: 0; padding: 0; }
+.itemFields, .tripEditor fieldset, .createTripForm fieldset { border: 0; margin: 0; min-width: 0; padding: 0; }
 .formGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 label { display: grid; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 700; }
 input, select, textarea { width: 100%; border: 1px solid var(--line); border-radius: 8px; background: #fffefa; color: var(--ink); padding: 9px 10px; }
@@ -241,3 +241,6 @@ input:focus, select:focus, textarea:focus, button:focus-visible, a:focus-visible
   .searchResult { align-items: stretch; flex-direction: column; }
   .searchResult button { width: 100%; }
 }
+
+.createTripForm fieldset { display: grid; gap: 14px; }
+h1, h2, h3, .itemTitle, .itemNotes, .placeRow, .providerAttribution, .reservationDetails, .mapLocationList { overflow-wrap: anywhere; }

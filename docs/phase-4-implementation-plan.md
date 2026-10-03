@@ -1,5 +1,28 @@
 # Phase 4 implementation plan — personal AI research
 
+## Review corrections (2026-10-03)
+
+The [Phase 0–4 audit](reviews/phase-0-4-audit.md) and ADR 0009 extend the
+original acceptance criteria. Phase 4 itself still stores no AI evidence or
+session data; review migration 0005 repairs pre-existing itinerary integrity.
+
+- Bound create/run/detail by one elapsed deadline, default 45 seconds and
+  maximum configurable 50, below the web proxy's 60-second deadline.
+- Stream JSON before enforcing its 1 MB cap. Enforce SSE UTF-8 bytes before
+  line allocation/decoding, including missing newline and CR/LF/CRLF cases;
+  retain 16 KiB line/frame, 128 KiB stream and 128-event limits.
+- Require a nonblank cited answer and safe credential-free HTTP(S) URLs.
+  Present only unexpired completed output, with earliest citation/session expiry.
+- Allow terminal-to-expired reconciliation only when expiry has elapsed.
+  Nonterminal/replayed/inconsistent details fail closed without automatic retry.
+- Project selected-day context in a worker thread and release SQL before
+  external waits. Changes to that projected content invalidate browser output,
+  including a response arriving after an edit.
+- Guard duplicate submission and candidate writes; refresh failure after
+  candidate creation cannot invite duplicate creation.
+- Execute owner/day and atomic candidate tests in CI against migrated SQL,
+  rather than relying on optional skipped database tests.
+
 **Status:** implemented locally; independent review findings addressed
 
 **Date:** 2026-10-03  

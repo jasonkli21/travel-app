@@ -1,65 +1,25 @@
-from collections.abc import Iterator
 from datetime import UTC, datetime
 from os import environ
 from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, delete
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from personal_travel.api.dependencies import session_dependency
 from personal_travel.api.schemas import ReservationCreate, TripCreate
-from personal_travel.db.base import Base
-from personal_travel.main import app
-from personal_travel.models.itinerary import ItineraryItem
-from personal_travel.models.place import Place
-from personal_travel.models.reservation import Reservation, SavedPlace
-from personal_travel.models.trip import Trip, TripDay
+from personal_travel.models.reservation import Reservation
 from personal_travel.services.reservations import ReservationService
 from personal_travel.services.trips import TripService
 
 TEST_DATABASE_URL = environ.get("TEST_DATABASE_URL")
-pytestmark = pytest.mark.skipif(
-    TEST_DATABASE_URL is None,
-    reason="set TEST_DATABASE_URL to run PostgreSQL-backed Phase 2 tests",
-)
-
-
-@pytest.fixture(scope="session")
-def database_engine() -> Iterator[Engine]:
-    assert TEST_DATABASE_URL is not None
-    engine = create_engine(TEST_DATABASE_URL, pool_pre_ping=True)
-    Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
-    yield engine
-    Base.metadata.drop_all(engine)
-    engine.dispose()
-
-
-@pytest.fixture(autouse=True)
-def clean_database(database_engine: Engine) -> Iterator[None]:
-    with database_engine.begin() as connection:
-        connection.execute(delete(SavedPlace))
-        connection.execute(delete(ItineraryItem))
-        connection.execute(delete(Reservation))
-        connection.execute(delete(TripDay))
-        connection.execute(delete(Trip))
-        connection.execute(delete(Place))
-    yield
-
-
-@pytest.fixture
-def api_client(database_engine: Engine) -> Iterator[TestClient]:
-    def override_session() -> Iterator[Session]:
-        with Session(database_engine) as session:
-            yield session
-
-    app.dependency_overrides[session_dependency] = override_session
-    with TestClient(app) as client:
-        yield client
-    app.dependency_overrides.pop(session_dependency, None)
+pytestmark = [
+    pytest.mark.usefixtures("clean_database"),
+    pytest.mark.skipif(
+        TEST_DATABASE_URL is None,
+        reason="set TEST_DATABASE_URL to run PostgreSQL-backed Phase 2 tests",
+    ),
+]
 
 
 def create_trip(
@@ -307,7 +267,7 @@ def test_reservations_with_same_schedule_use_creation_order(
     assert first.status_code == 201, first.text
     assert second.status_code == 201, second.text
 
-    with Session(database_engine) as session:
+    with Session(database_engine, autoflush=False, expire_on_commit=False) as session:
         first_record = session.get(Reservation, UUID(first.json()["id"]))
         second_record = session.get(Reservation, UUID(second.json()["id"]))
         assert first_record is not None

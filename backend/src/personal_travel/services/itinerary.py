@@ -93,6 +93,7 @@ class ItineraryService:
             day, item = self._find_item(trip, item_id)
             day.items.remove(item)
             self._items.delete(item)
+            self._session.flush()
             self._reindex(day)
             self._session.flush()
 
@@ -101,6 +102,17 @@ class ItineraryService:
             trip = self._get_trip(trip_id)
             source_day, item = self._find_item(trip, item_id)
             destination_day = self._find_day(trip, data.destination_day_id)
+
+            # Moving a timed item preserves its wall-clock schedule on the new
+            # date. Resolve before changing the graph so DST failures roll back
+            # the whole move, including both days' order.
+            if source_day is not destination_day:
+                item.starts_at, item.ends_at = local_datetime_for_item(
+                    destination_day.date,
+                    local_time_string(item.starts_at, trip.timezone),
+                    local_time_string(item.ends_at, trip.timezone),
+                    trip.timezone,
+                )
 
             if source_day is destination_day:
                 source_day.items.remove(item)
@@ -121,8 +133,7 @@ class ItineraryService:
                         details={"position": data.position},
                     )
                 destination_day.items.insert(data.position, item)
-                self._reindex(source_day)
-                self._reindex(destination_day)
+                self._reindex(source_day, destination_day)
 
             self._session.flush()
             return item
@@ -170,7 +181,21 @@ class ItineraryService:
                     return day, item
         raise not_found("itinerary item")
 
-    @staticmethod
-    def _reindex(day: TripDay) -> None:
-        for sort_order, item in enumerate(day.items):
-            item.sort_order = sort_order
+    def _reindex(self, *days: TripDay) -> None:
+        # Immediate SQL uniqueness checks make in-place swaps unsafe. First move
+        # every affected item above all occupied positions, then compact. Both
+        # flushes are inside the same trip-locked transaction.
+        items = [item for day in days for item in day.items]
+        temporary_start = (
+            max(
+                max((item.sort_order for item in items), default=-1),
+                max((len(day.items) - 1 for day in days), default=-1),
+            )
+            + 1
+        )
+        for offset, item in enumerate(items):
+            item.sort_order = temporary_start + offset
+        self._session.flush()
+        for day in days:
+            for sort_order, item in enumerate(day.items):
+                item.sort_order = sort_order

@@ -291,6 +291,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
         ...init.headers,
       },
       cache: "no-store",
+      signal: init.signal ?? AbortSignal.timeout(65_000),
     });
   } catch {
     throw new ApiError("The travel API could not be reached. Is the local backend running?", "network_error");
@@ -309,6 +310,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       errorPayload?.error?.details ?? null,
     );
   }
+  if (payload === null) throw new ApiError("The travel API returned an invalid response.", "invalid_response");
   return payload as T;
 }
 

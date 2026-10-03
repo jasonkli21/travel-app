@@ -9,6 +9,8 @@ WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@10.17.1 --activate
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+ARG NEXT_PUBLIC_GEOAPIFY_API_KEY=""
+ENV NEXT_PUBLIC_GEOAPIFY_API_KEY=${NEXT_PUBLIC_GEOAPIFY_API_KEY}
 RUN pnpm build
 
 FROM node:22-alpine AS runner

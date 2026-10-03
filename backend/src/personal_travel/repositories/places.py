@@ -1,5 +1,4 @@
 import uuid
-from typing import Protocol
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -7,21 +6,14 @@ from sqlalchemy.orm import Session
 from personal_travel.models.place import Place
 
 
-class PlaceRepository(Protocol):
-    def get(self, *, owner_id: str, place_id: uuid.UUID) -> Place | None: ...
-    def get_by_provider_identity(
-        self, *, owner_id: str, provider: str, provider_place_id: str
-    ) -> Place | None: ...
-    def list(self, *, owner_id: str) -> list[Place]: ...
-    def add(self, place: Place) -> Place: ...
-
-
 class SqlAlchemyPlaceRepository:
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def get(self, *, owner_id: str, place_id: uuid.UUID) -> Place | None:
+    def get(self, *, owner_id: str, place_id: uuid.UUID, for_update: bool = False) -> Place | None:
         statement = select(Place).where(Place.owner_id == owner_id, Place.id == place_id)
+        if for_update:
+            statement = statement.with_for_update().execution_options(populate_existing=True)
         return self._session.scalar(statement)
 
     def get_by_provider_identity(

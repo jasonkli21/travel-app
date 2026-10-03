@@ -43,6 +43,28 @@ it to the local web origin and tile API in Geoapify. Restart the web process
 after changing the public tile key. Manual planning and coordinate entry work
 without either key.
 
+Production builds bake the public tile key into browser assets: rebuild after
+changing it (Docker build argument `NEXT_PUBLIC_GEOAPIFY_API_KEY`). Setting it
+only at container start does not change the browser bundle.
+
+Development defaults bind web and PostgreSQL to loopback. The API accepts
+`ALLOWED_HOSTS=localhost,127.0.0.1,::1` and browser origins in `CORS_ORIGINS`
+(localhost/127.0.0.1 port 3000 by default). For a different browser port, update
+that list if calling the API directly. The web proxy validates its browser
+Host against `TRAVEL_WEB_ALLOWED_HOSTS` and accepts only the same browser
+origin; forwarded host headers are not trusted. Clients without Origin are
+still unauthenticated. Do not expose this local owner on a public interface.
+
+API/proxy request bodies are limited to 64 KiB. Database defaults bound connect
+time to 5 seconds, pool acquisition to 5 seconds, statements to 15 seconds and
+lock waits to 5 seconds. The settings in `.env.example` are explicit. External
+research has one 45-second deadline (maximum 50); logistics provider work has
+a 30-second deadline and at most 50 eligible transfers. Errors expose request
+IDs and safe envelopes; request logs omit user text and query strings.
+The supplied API commands disable Uvicorn access logging because its default
+records include full query strings. Keep `--no-access-log` when launching it
+manually; application logs record safe route templates instead.
+
 The AI system and Geoapify are optional. Manual itinerary and reservation
 flows continue to work without either service.
 
@@ -92,6 +114,9 @@ Expected:
 {"status":"ok","service":"travel-api"}
 ```
 
+`/health` is process liveness. `curl http://localhost:8000/ready` also checks
+database availability and returns a safe `503` when storage is unavailable.
+
 ## Frontend
 
 ```bash
@@ -125,9 +150,24 @@ make backend-typecheck
 make frontend-check
 ```
 
+Run the complete database suite against local PostgreSQL:
+
+```bash
+TEST_DATABASE_URL=postgresql+psycopg://travel:travel@localhost:5432/travel make backend-test
+```
+
+The supplied test account needs schema-creation privileges. Fixtures create
+UUID-named disposable schemas, apply real migrations, check ORM parity, use
+production session settings and remove only those schemas. Use an isolated
+test database; do not point tests at private/production data. Without
+`TEST_DATABASE_URL`, SQL tests are explicitly skipped and the run is not
+complete Phase 0–4 verification. CI sets it and runs all SQL and frontend Node
+tests. Frontend tests live under `frontend/tests/` and are part of
+`make frontend-check`.
+
 Run `corepack pnpm build` from `frontend/` as well when changing its build or
-runtime setup. Backend checks do not require a database or real AI/Geoapify
-service. PostgreSQL-backed Phase 1–3 tests and online migration checks require
+runtime setup. Offline backend checks do not require real AI/Geoapify services.
+PostgreSQL-backed Phase 1–4 tests and online migration checks require
 an isolated PostgreSQL 16 database. Provider-client tests use mocked HTTP
 responses and do not require credentials.
 
@@ -142,8 +182,9 @@ and rerun the affected checks. Do not update dependencies as a side effect of
 ordinary scaffold verification.
 
 Phase 4 adds no frontend package dependency, database migration, or travel-side
-research-session table. Phase 3's migration `0004` remains the latest schema
-change. The travel research client consumes the AI service's versioned HTTP
+research-session table. The Phase 0–4 review adds migration `0005` for legacy
+schedule/order repair and SQL integrity. The travel research client consumes
+the AI service's versioned HTTP
 contract and does not share its Python packages.
 
 ## Database migrations
@@ -164,6 +205,44 @@ Then:
 ```bash
 uv run --locked alembic upgrade head
 ```
+
+Then run `uv run --locked alembic check` to verify ORM/migration parity.
+Migration `0005` requires an online connection; offline SQL can be generated
+through `0004`, but is not a complete upgrade to head.
+
+## Backup and migration recovery
+
+Before upgrading an existing database, stop API writes and create a local
+backup outside the repository. For the default Docker database:
+
+```bash
+docker compose exec -T postgres pg_dump -U travel -d travel -Fc > /tmp/travel-before-upgrade.dump
+cd backend
+uv run --locked alembic upgrade head
+uv run --locked alembic check
+```
+
+Keep the dump somewhere durable/private if it is needed beyond this session.
+Migration `0005` preserves local times while repairing legacy source-date
+timestamps and normalizes order before adding uniqueness. Invalid coordinate
+pairs/ranges or a destination DST gap/fold abort the whole migration. Inspect
+the affected records using an authorized local SQL session, correct their
+schedule/coordinates explicitly, and retry; do not guess an ambiguous instant.
+The upgrade expects application writes to be stopped throughout inspection.
+
+Downgrade removes the new constraints but cannot reconstruct repaired data.
+To recover the old state, restore the backup into a separate database and
+verify it before switching `DATABASE_URL`:
+
+```bash
+docker compose exec -T postgres createdb -U travel travel_restore
+docker compose exec -T postgres pg_restore -U travel -d travel_restore --no-owner < /tmp/travel-before-upgrade.dump
+```
+
+Inspect `alembic current` and representative trips against that restored
+database. Do not run the corrected code against an old schema; either correct
+legacy records and upgrade the restored database or run the matching prior
+application revision. Hosted backup/restore drills remain Phase 9 work.
 
 ## Reset local DB
 

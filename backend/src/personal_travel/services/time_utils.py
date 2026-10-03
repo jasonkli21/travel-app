@@ -7,7 +7,7 @@ from personal_travel.services.errors import DomainError
 def get_zoneinfo(value: str) -> ZoneInfo:
     try:
         return ZoneInfo(value)
-    except ZoneInfoNotFoundError as exc:
+    except (ZoneInfoNotFoundError, ValueError) as exc:
         raise DomainError(
             "invalid_timezone",
             "timezone must be a valid IANA timezone name.",
@@ -35,7 +35,12 @@ def resolve_local_datetime(
     candidates: list[datetime] = []
     for fold in (0, 1):
         candidate = naive.replace(tzinfo=zone, fold=fold)
-        round_trip = candidate.astimezone(UTC).astimezone(zone).replace(tzinfo=None)
+        try:
+            round_trip = candidate.astimezone(UTC).astimezone(zone).replace(tzinfo=None)
+        except (OverflowError, ValueError) as exc:
+            raise DomainError(
+                "invalid_local_time", "The scheduled date is outside the supported time range."
+            ) from exc
         if round_trip == naive:
             candidates.append(candidate)
 

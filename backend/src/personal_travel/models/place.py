@@ -3,7 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Numeric, String, UniqueConstraint
+from sqlalchemy import CheckConstraint, Numeric, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from personal_travel.db.base import Base
@@ -37,6 +37,9 @@ class Place(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     saved_places: Mapped[list[SavedPlace]] = relationship("SavedPlace", back_populates="place")
 
     __table_args__ = (
+        CheckConstraint("(latitude IS NULL) = (longitude IS NULL)", name="valid_coordinate_pair"),
+        CheckConstraint("latitude >= -90 AND latitude <= 90", name="valid_latitude"),
+        CheckConstraint("longitude >= -180 AND longitude <= 180", name="valid_longitude"),
         UniqueConstraint(
             "owner_id", "provider", "provider_place_id", name="uq_places_owner_provider_external_id"
         ),

@@ -1,50 +1,14 @@
-import { readProxyBody } from "../../../../lib/proxy-response.mjs";
-
-const backendBaseUrl = () =>
-  (process.env.TRAVEL_API_URL ?? "http://localhost:8000").trim().replace(/\/+$/, "");
+import { proxyRequest } from "../../../../lib/proxy.mjs";
 
 type RouteContext = { params: Promise<{ path: string[] }> };
 
 async function proxy(request: Request, context: RouteContext): Promise<Response> {
   const { path } = await context.params;
-  const upstreamUrl = `${backendBaseUrl()}/v1/${path.map((part) => encodeURIComponent(part)).join("/")}${
-    new URL(request.url).search
-  }`;
-  const headers = new Headers();
-  const contentType = request.headers.get("content-type");
-  if (contentType) {
-    headers.set("content-type", contentType);
-  }
-
-  try {
-    const response = await fetch(upstreamUrl, {
-      method: request.method,
-      headers,
-      body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.text(),
-      cache: "no-store",
-      signal: AbortSignal.timeout(60_000),
-    });
-    const responseHeaders = new Headers();
-    const upstreamContentType = response.headers.get("content-type");
-    if (upstreamContentType) {
-      responseHeaders.set("content-type", upstreamContentType);
-    }
-    return new Response(await readProxyBody(response), {
-      status: response.status,
-      headers: responseHeaders,
-    });
-  } catch {
-    return Response.json(
-      {
-        error: {
-          code: "travel_api_unavailable",
-          message: "The travel API is unavailable. Start the local backend and try again.",
-          details: null,
-        },
-      },
-      { status: 503 },
-    );
-  }
+  return proxyRequest(request, path, {
+    backendBaseUrl: process.env.TRAVEL_API_URL ?? "http://localhost:8000",
+    allowedHosts: (process.env.TRAVEL_WEB_ALLOWED_HOSTS ?? "localhost,127.0.0.1,[::1]")
+      .split(",").map((host) => host.trim().toLowerCase()),
+  });
 }
 
 export const GET = proxy;

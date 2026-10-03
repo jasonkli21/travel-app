@@ -131,3 +131,28 @@ async def test_missing_provider_key_is_reported_without_an_http_request(
 
     assert error.value.status_code == 503
     assert error.value.code == "location_provider_not_configured"
+
+
+@pytest.mark.asyncio
+async def test_geoapify_rejects_oversized_response_without_loading_body() -> None:
+    client = GeoapifyClient(
+        api_key="test-key",
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(200, headers={"content-length": "9000000"}, json={})
+        ),
+    )
+    with pytest.raises(GeoapifyClientError) as error:
+        await client.search_places(query="Museum", limit=10)
+    assert error.value.code == "location_provider_invalid_response"
+
+
+@pytest.mark.asyncio
+async def test_geoapify_safely_rejects_invalid_json_and_huge_numeric_values() -> None:
+    client = GeoapifyClient(
+        api_key="test-key",
+        transport=httpx.MockTransport(lambda _request: httpx.Response(200, text="{bad")),
+    )
+    with pytest.raises(GeoapifyClientError) as error:
+        await client.search_places(query="Museum", limit=10)
+    assert error.value.status_code == 502
+    assert GeoapifyClient._finite_number(10**400) is None

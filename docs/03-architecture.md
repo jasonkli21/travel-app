@@ -1,7 +1,7 @@
 # Architecture
 
-Status: accepted scaffold direction  
-Date: 2026-10-02
+Status: Phase 0–4 architecture reviewed locally
+Date: 2026-10-03
 
 ## System shape
 
@@ -47,17 +47,24 @@ Use a modular monolith, not independently deployed microservices:
 
 ```text
 backend/
-  api/
-  clients/
-  db/
-  models/
-  repositories/
-  services/
+  src/personal_travel/
+    api/routes/     # HTTP adapters
+    api/schemas/    # contracts by workflow
+    domain/         # shared value types and URL policy
+    clients/        # bounded external HTTP clients
+    db/
+    models/
+    repositories/   # SQL statements
+    services/       # travel rules and transaction ownership
+  migrations/
+  tests/
 
 frontend/
   app/
-  components/       # add as UI grows
+  components/trip-workspace/  # workflow forms
   lib/              # typed API clients/hooks
+  tests/            # boundary, geometry and context regressions
+  scripts/          # runtime/build helpers
 
 docs/
 infrastructure/
@@ -94,6 +101,13 @@ Owns:
 Owns durable authoritative travel records and relational constraints.
 
 The app should use transactions for cross-row invariants.
+
+Trip aggregate reads use shared root locks and mutations use exclusive root
+locks, refreshing ORM collections before calculation. SQL rejects duplicate
+day/order positions and invalid coordinate pairs/ranges. Contiguity, same-trip
+links and ownership remain deterministic service rules. Shared reusable places
+have an independent update lock. These PostgreSQL locks protect invariants;
+they do not provide optimistic cross-tab editing or future proposal versions.
 
 ### `personal-ai-system`
 
@@ -178,6 +192,12 @@ UI request
 
 No queue/background worker in the scaffold.
 
+Async provider orchestration projects immutable values using a worker thread
+for synchronous SQL, rolls back the read transaction, and then awaits HTTP.
+Whole-operation deadlines and streamed byte limits bound provider work.
+Research defaults to a 45-second deadline; logistics provider work is capped
+at 30 seconds and 50 eligible transfers. No locks span external waits.
+
 Introduce asynchronous infrastructure only for a concrete requirement such as:
 
 - email/document ingestion,
@@ -204,6 +224,9 @@ Preserve a later AWS option by:
 - no database triggers unless a later ADR accepts the portability cost.
 
 Aurora DSQL is a possible future target, not an implementation requirement.
+It needs a distinct transaction/retry and migration assessment; portable
+column types do not imply PostgreSQL locking semantics. See
+[ADR 0009](decisions/0009-local-boundaries-and-integrity.md).
 
 ## Identity
 
@@ -214,3 +237,10 @@ This mirrors the personal AI system's useful repository shape while preserving t
 > `local` is not authenticated identity.
 
 Before real cloud bookings/email/private documents are stored, add authentication and server-derived owner identity.
+
+Local API/web host and browser-origin allowlists plus loopback bindings protect
+against unintended browser access. Clients without Origin remain possible;
+this is not an authenticated boundary. Bodies are capped at 64 KiB. Safe error
+envelopes, request IDs, route-template/status/duration logs and bounded SQL
+waits are delivered now. `/health` is process liveness and `/ready` checks SQL
+availability. Hosted metrics, quotas and auth remain later-phase work.
