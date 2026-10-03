@@ -3,7 +3,10 @@
 Status: initial relational vocabulary  
 Date: 2026-10-02
 
-The initial migration intentionally implements only the core itinerary graph.
+The initial migration implements the core itinerary graph. Phase 1 adds
+application services and an additive ordering-constraint migration around that
+schema; reservations, attachments, saved places, and AI proposals remain
+planned rather than implemented.
 
 ## Implemented scaffold tables
 
@@ -151,11 +154,18 @@ The requirement is auditability and stale-proposal detection, not storing arbitr
 
 ## Ordering
 
-`sort_order` is intentionally simple in the scaffold.
+`sort_order` is a contiguous, zero-based integer within each day in Phase 1.
+Create appends, delete compacts, and move removes/reinserts and renumbers both
+affected days in one transaction. The database rejects negative values and the
+service validates destination positions.
 
-Phase 1 should choose an ordering strategy and test move behavior.
+`day_index` is a contiguous, one-based integer within a trip. Trip creation
+generates one day for every inclusive calendar date. Date-range edits preserve
+overlapping day IDs and titles, add new dates, and reject removal of a day that
+still contains itinerary items.
 
-For a personal single-user app, integer ordering plus transactional renumbering is probably sufficient initially.
+For a personal single-user app, integer ordering plus transactional renumbering
+is sufficient initially.
 
 Do not introduce fractional indexing/CRDTs without a real collaboration requirement.
 
@@ -172,6 +182,11 @@ Future itinerary operations must distinguish:
 - date-only/flexible item.
 
 Do not silently convert a date-only plan into a fixed UTC instant.
+
+Phase 1 accepts local `HH:MM` values relative to the owning trip day and IANA
+timezone. Timed items are persisted as timezone-aware instants and rendered back
+as local times. Daylight-saving gaps and ambiguous folds are rejected, as are
+cross-midnight ranges. Date-only items keep both time values null.
 
 ## Places and geospatial behavior
 

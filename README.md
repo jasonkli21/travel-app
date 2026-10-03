@@ -6,7 +6,11 @@ The application owns authoritative travel state. `personal-ai-system` owns reusa
 
 ## Current status
 
-**Scaffold only.** The repository establishes architecture, tooling, local development, initial relational models, health endpoints, and the AI-system client boundary. It intentionally does **not** implement the product phases beyond bootstrap.
+**Phase 1 — manual itinerary vertical slice delivered.** The repository now has
+owner-scoped trip/day/item/place CRUD, deterministic day generation and
+reconciliation, transactional ordering/move behavior, a typed FastAPI contract,
+and a responsive Next.js planner. AI research, maps, reservations, and
+authentication remain deferred to later phases.
 
 ## Stack
 
@@ -80,6 +84,11 @@ The backend reads the root `.env`; Next.js reads `frontend/.env.local`.
 Set `TRAVEL_API_URL` there when using a nondefault backend address.
 Use [`docs/07-local-development.md`](docs/07-local-development.md) for production
 build/start commands and lockfile maintenance.
+
+Create a trip from the home page, open it, add a day title and itinerary items,
+attach a manually created place, move items with the accessible controls, then
+reload the page to verify PostgreSQL-backed persistence. The API is available
+under `/v1`; the web app reaches it through the same-origin `/api/v1/*` proxy.
 
 ## Documentation
 

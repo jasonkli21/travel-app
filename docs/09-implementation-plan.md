@@ -1,6 +1,6 @@
 # Phased implementation plan
 
-Status: proposed roadmap  
+Status: active roadmap; Phase 1 delivered
 Date: 2026-10-02
 
 Each phase should produce a useful, testable vertical slice.
@@ -32,7 +32,7 @@ Current phase.
 - docs accurately distinguish scaffold vs. implementation,
 - no external credentials required.
 
-## Phase 1 — Manual trip and itinerary vertical slice
+## Phase 1 — Manual trip and itinerary vertical slice (delivered)
 
 ### Build
 
@@ -69,7 +69,9 @@ Frontend:
 
 ### Definition of done
 
-A single local user can build and reopen a complete day-by-day itinerary without AI.
+A single local user can build and reopen a complete day-by-day itinerary without
+AI. The delivered implementation and verification evidence are recorded in
+[`releases/phase-1-itinerary.md`](releases/phase-1-itinerary.md).
 
 ## Phase 2 — Reservations and saved places
 

@@ -15,3 +15,4 @@
 | `10-codex-handoff.md` | Current state and explicit next tasks |
 | `decisions/` | Architecture decision records |
 | `releases/phase-0-scaffold.md` | Verification actually performed on the bootstrap |
+| `releases/phase-1-itinerary.md` | Phase 1 implementation and verification record |
