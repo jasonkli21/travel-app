@@ -1,16 +1,18 @@
 # Codex handoff
 
-Status: Phase 3 delivered handoff
+Status: Phase 4 delivered handoff
 Date: 2026-10-03
 
 ## Objective
 
 The Phase 1 manual itinerary planner, Phase 2 reservations/saved-places slice,
-and Phase 3 maps/location/logistics slice are implemented locally. Review
-evidence and commit references are recorded in the phase release documents.
+Phase 3 maps/location/logistics slice, and Phase 4 bounded AI research consumer
+are implemented locally. Review evidence and commit references are recorded in
+the phase release documents.
 
-Phase 4 AI research is the next planned phase. Do not invent its external API
-contract; booking/email import, authentication, and cloud deployment remain
+The Phase 4 consumer uses the accepted `research-v1` API in
+`personal-ai-system`; do not change that API from this repository. Booking and
+email import, AI proposals, authentication, and cloud deployment remain
 deferred.
 
 ## Read first
@@ -23,8 +25,8 @@ deferred.
 6. `docs/09-implementation-plan.md`
 7. ADRs under `docs/decisions/`
 
-Use `docs/06-ai-integration.md` only to preserve the boundary; Phase 3 did not
-expand the AI API.
+Use `docs/06-ai-integration.md`, the Phase 4 plan, and ADR 0008 to preserve the
+consumer-side context and evidence boundary.
 
 ## Current implementation contents
 
@@ -51,7 +53,10 @@ Backend:
 - local-time item conversion with IANA timezone/DST validation.
 - transactional contiguous ordering and cross-day move behavior.
 - trip-root row locking for concurrent item-order mutations.
-- `PersonalAIClient` with health only.
+- typed `PersonalAIClient` health and gated `research-v1` operations, including
+  bounded SSE consumption and durable detail reconciliation.
+- owner-scoped trip/day research with bounded day context and safe errors.
+- atomic manual place-plus-trip-candidate creation through existing tables.
 - pytest/ruff/mypy configuration.
 
 Frontend:
@@ -63,6 +68,8 @@ Frontend:
 - accessible move-up/move-down and destination-day controls.
 - trip overview counts, reservation status distinction, linked-item context,
   and visible conflict warnings.
+- selected-day research form, transfer disclosure, cited unexpired result
+  rendering, and a user-entered manual candidate form.
 - TypeScript/ESLint setup and production build verification.
 
 Infrastructure:
@@ -81,6 +88,8 @@ Phase 2 evidence, commit references, and environment-specific limitations are
 recorded in [`releases/phase-2-reservations.md`](releases/phase-2-reservations.md).
 Phase 3 evidence, commit references, and provider/database limitations are in
 [`releases/phase-3-maps-logistics.md`](releases/phase-3-maps-logistics.md).
+Phase 4 evidence, review findings, commit references, and external service
+limitations are in [`releases/phase-4-ai-research.md`](releases/phase-4-ai-research.md).
 
 The implementation plan is preserved in
 [`phase-1-implementation-plan.md`](phase-1-implementation-plan.md), and the
@@ -117,6 +126,8 @@ DELETE /v1/trips/{trip_id}/saved-places/{saved_place_id}
 GET    /v1/trips/{trip_id}/places/search?q=...&limit=...
 POST   /v1/trips/{trip_id}/saved-places/import
 POST   /v1/trips/{trip_id}/logistics/estimate
+POST   /v1/trips/{trip_id}/saved-places/manual
+POST   /v1/trips/{trip_id}/research
 ```
 
 The route -> service -> repository boundary is implemented and remains
@@ -161,6 +172,23 @@ The Phase 3 service decisions are:
 - transfer warnings compare route time plus a selected buffer with the actual
   schedule gap. Missing coordinates or timestamps produce no route leg.
 
+The Phase 4 service decisions are:
+
+- the travel-side research gate defaults off and the AI system's research and
+  provider gates remain separately controlled;
+- only selected-day date/timezone/title and up to three item/place labels and
+  local times are projected, with a 190-character context and 500-character
+  final-question budget;
+- owner/trip/day/item/place/reservation IDs, itinerary/reservation notes,
+  confirmation data, and booking references are excluded from the context;
+- only completed, unexpired answers with bounded validated citations are sent
+  to the browser; a missing SSE terminal event is reconciled against durable
+  session detail;
+- research does not mutate travel state; manual candidate creation is one SQL
+  transaction, and itinerary addition remains in the existing item editor;
+- no research session, evidence, migration, or AI-derived place is persisted
+  by the travel application.
+
 ## Things explicitly deferred
 
 Do not add now:
@@ -184,11 +212,10 @@ Do not add now:
 
 ## Personal AI integration rule
 
-Do not implement a made-up research endpoint.
-
-The existing client is intentionally health-only until `personal-ai-system` exposes an accepted external contract.
-
-Future integration remains HTTP, not Python package sharing.
+Use only the accepted `research-v1` routes through the typed HTTP client. Do
+not import the AI repository's Python packages or forward its internal session
+records to the browser. New AI capabilities need an accepted upstream contract
+and a separate plan/review.
 
 ## Cloud rule
 

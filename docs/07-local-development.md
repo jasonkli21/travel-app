@@ -1,6 +1,6 @@
 # Local development
 
-Status: Phase 3 local instructions
+Status: Phase 4 local instructions
 Date: 2026-10-03
 
 ## Prerequisites
@@ -45,6 +45,20 @@ without either key.
 
 The AI system and Geoapify are optional. Manual itinerary and reservation
 flows continue to work without either service.
+
+AI research is disabled by default. To turn on the travel-side endpoint, set
+`PERSONAL_AI_RESEARCH_ENABLED=true` and `PERSONAL_AI_BASE_URL` in the root
+`.env`. `PERSONAL_AI_TIMEOUT_SECONDS` defaults to 45 seconds. The separate
+`personal-ai-system` backend must also enable its research gate. Its search
+provider and storage settings are independent; use that repository's guide for
+real provider setup and rights gates.
+
+For an end-to-end local demonstration without provider credentials, configure
+the AI backend with `RESEARCH_ENABLED=true`, `RESEARCH_STORAGE=memory`, and
+`RESEARCH_SEARCH_ADAPTER=fake`, then enable `PERSONAL_AI_RESEARCH_ENABLED` for
+Travel. Fake results are explicitly synthetic and are not verified real-world
+information. Memory storage is process-local and loses its research sessions
+on restart. Real search-provider behavior is not implied by this setup.
 
 ## Start PostgreSQL
 
@@ -127,8 +141,10 @@ or `corepack pnpm install --no-frozen-lockfile` in `frontend/`, review the lock 
 and rerun the affected checks. Do not update dependencies as a side effect of
 ordinary scaffold verification.
 
-Phase 3 adds no frontend package dependency. It adds reversible Alembic
-migration `0004` for source attribution fields on provider-imported places.
+Phase 4 adds no frontend package dependency, database migration, or travel-side
+research-session table. Phase 3's migration `0004` remains the latest schema
+change. The travel research client consumes the AI service's versioned HTTP
+contract and does not share its Python packages.
 
 ## Database migrations
 

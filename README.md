@@ -6,13 +6,16 @@ The application owns authoritative travel state. `personal-ai-system` owns reusa
 
 ## Current status
 
-**Phase 3 — maps and travel logistics delivered locally.** The repository has
+**Phase 4 — bounded AI research delivered locally.** The repository has
 the Phase 1 owner-scoped itinerary planner, Phase 2 manual reservations and
 saved-place candidates, and a Phase 3 trip map, submitted place search/import,
-and on-demand route estimates with deterministic transfer warnings. Geoapify
-features are optional; manual planning works without provider keys. AI
-research, external booking imports, authentication, and cloud deployment
-remain planned.
+and on-demand route estimates with deterministic transfer warnings. Phase 4
+adds a gated typed integration with `personal-ai-system`'s accepted
+`research-v1` API, bounded trip-day context, cited results, and user-entered
+manual candidates. Research is disabled by default and does not modify the
+itinerary. Geoapify features are optional; manual planning works without
+provider keys. External booking imports, AI proposals, authentication, and
+cloud deployment remain planned.
 
 ## Stack
 
@@ -89,7 +92,9 @@ map tiles, set `NEXT_PUBLIC_GEOAPIFY_API_KEY` in `frontend/.env.local`; to
 enable submitted place search and route estimates, set `GEOAPIFY_API_KEY` in
 the root `.env`. Provider keys are optional and should be restricted in
 Geoapify; the browser-visible tile key should be limited to the local web
-origin.
+origin. AI research stays off unless `PERSONAL_AI_RESEARCH_ENABLED=true` is
+set in the travel API and the research gate is enabled in the separately
+configured `personal-ai-system`. Its provider gates remain independent.
 Use [`docs/07-local-development.md`](docs/07-local-development.md) for production
 build/start commands and lockfile maintenance.
 
@@ -99,8 +104,10 @@ reload the page to verify PostgreSQL-backed persistence. Add a tentative or
 confirmed reservation, link it to an itinerary item, and save optional place
 candidates from the trip workspace. In the map section, you can search for a
 place, explicitly save a result as a candidate, and request travel estimates
-between scheduled places for one day. The API is available under `/v1`; the web
-app reaches it through the same-origin `/api/v1/*` proxy.
+between scheduled places for one day. The research section can submit an
+on-demand question about one selected day, show cited source observations, and
+save a place only after the user enters its details. The API is available under
+`/v1`; the web app reaches it through the same-origin `/api/v1/*` proxy.
 
 ## Documentation
 
@@ -119,6 +126,10 @@ Start with:
 11. [`docs/10-codex-handoff.md`](docs/10-codex-handoff.md)
 
 Architecture decisions are under [`docs/decisions/`](docs/decisions/).
+The Phase 4 task plan, consumer decision, and release record are in
+[`docs/phase-4-implementation-plan.md`](docs/phase-4-implementation-plan.md),
+[`docs/decisions/0008-personal-ai-research-context.md`](docs/decisions/0008-personal-ai-research-context.md),
+and [`docs/releases/phase-4-ai-research.md`](docs/releases/phase-4-ai-research.md).
 
 ## Guiding rule
 

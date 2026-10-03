@@ -1,13 +1,15 @@
 # Data model
 
-Status: Phase 3 relational vocabulary delivered locally
+Status: Phase 4 delivered locally; no schema change
 Date: 2026-10-03
 
 The initial migration implements the core itinerary graph. Phase 1 adds
 application services and ordering constraints; Phase 2 adds manual reservations,
 trip-scoped saved-place candidates, richer place metadata, reservation links,
-and retained source attribution for provider-imported places. Attachments and
-AI proposals remain planned rather than implemented.
+and retained source attribution for provider-imported places. Phase 4 stores
+manual candidates in these existing tables; AI sessions and evidence remain
+owned by `personal-ai-system` and are not copied into this database.
+Attachments and AI proposals remain planned rather than implemented.
 
 ## Implemented scaffold tables
 
@@ -142,6 +144,10 @@ updated_at
 
 The `(owner_id, trip_id, place_id)` pair is unique. Saving/removing the
 relationship does not mutate or delete the reusable owner-scoped place.
+
+Phase 4 manual research candidates create the `places` row and `saved_places`
+relationship in one transaction. Research session IDs, questions, answers,
+citations, and evidence have no travel-side table or migration.
 
 ## Planned tables, not implemented
 

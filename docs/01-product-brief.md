@@ -147,6 +147,22 @@ Phase 3 adds map context and manual-first location workflows:
 Provider observations remain advisory and never silently change the itinerary.
 The trip application remains usable without provider keys.
 
+## Phase 4 product scope delivered locally
+
+Phase 4 adds manual-first, evidence-grounded research inside a trip workspace:
+
+- ask a question about one selected trip day through the accepted
+  `personal-ai-system` `research-v1` HTTP contract;
+- display only validated completed answers and their citations, observation
+  times, and expiry times;
+- keep the query and bounded day context in the configured AI/search boundary,
+  with a visible notice explaining that transfer;
+- create a trip candidate only from fields the traveler enters and confirms;
+- keep all AI output out of authoritative itinerary and reservation state.
+
+The travel-side research gate defaults off. The local owner seam is still not
+authentication, and real private integrations remain out of scope.
+
 ## Explicit non-goals for early phases
 
 - Gmail ingestion,

@@ -141,19 +141,23 @@ UI
 
 No AI call.
 
-### Future research
+### Phase 4 research
 
 ```text
 UI
  -> travel API
- -> bounded trip context
- -> personal-ai-system research API
- -> evidence-backed results
- -> travel API maps result contract
- -> UI
+ -> owner-scoped trip/day validation
+ -> bounded question using date range, timezone, selected day, and up to three
+    itinerary item/place labels and local times
+ -> personal-ai-system `research-v1` create/run/detail API
+ -> validate session correlation, event bounds, result state, and citations
+ -> UI renders an unexpired cited result
 ```
 
-Research does not mutate itinerary state.
+The travel-side gate defaults off. No trip, day, owner, item, or reservation
+identifiers, notes, or reservation details are sent as context. Research does
+not mutate itinerary state. Saving a candidate is a separate user-authored
+transaction using the existing place and saved-place tables.
 
 ### Future proposed edit
 

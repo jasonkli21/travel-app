@@ -1,6 +1,6 @@
 # Phased implementation plan
 
-Status: active roadmap; Phase 3 delivered locally
+Status: active roadmap; Phase 4 delivered locally
 Date: 2026-10-03
 
 Each phase should produce a useful, testable vertical slice.
@@ -94,15 +94,15 @@ The task-level plan and provider decision are recorded in
 The trip map, explicit place search/import, and on-demand itinerary logistics
 slice are delivered locally. Release evidence and review fixes are recorded in
 [`releases/phase-3-maps-logistics.md`](releases/phase-3-maps-logistics.md).
-Do not begin Phase 4 AI research as part of Phase 3 follow-up work.
-
 Do not require PostGIS unless measured query needs justify it.
 
 ## Phase 4 — First `personal-ai-system` integration
 
-Prerequisite: accepted AI-system contract for bounded research.
+Delivered locally against the accepted `research-v1` contract in the
+`personal-ai-system` repository. The travel feature remains disabled by
+default; research and provider gates must be configured independently.
 
-Build:
+Delivered functionality:
 
 - typed research client,
 - active-trip/day context projection,
@@ -112,6 +112,11 @@ Build:
 - graceful AI-unavailable behavior.
 
 Research results do not write itinerary state automatically.
+
+The Phase 4 plan, consumer boundary decision, and release evidence are recorded
+in [`phase-4-implementation-plan.md`](phase-4-implementation-plan.md),
+[`decisions/0008-personal-ai-research-context.md`](decisions/0008-personal-ai-research-context.md),
+and [`releases/phase-4-ai-research.md`](releases/phase-4-ai-research.md).
 
 ## Phase 5 — Structured AI proposals
 

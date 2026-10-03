@@ -1,6 +1,6 @@
 # Phase 4 implementation plan — personal AI research
 
-**Status:** planned; implementation in progress  
+**Status:** implemented locally; independent review pending  
 **Date:** 2026-10-03  
 **Baseline:** `5720cc1` (`codex/phase-0-scaffold-corrections`), with Phases 1–3 delivered locally  
 **Roadmap:** [`09-implementation-plan.md`](09-implementation-plan.md)  

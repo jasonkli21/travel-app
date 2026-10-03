@@ -19,9 +19,9 @@ When working on AI integration, also read `docs/06-ai-integration.md`.
 
 ## Current implementation status
 
-The repository is at **Phase 3 — maps and travel logistics delivered locally**.
+The repository is at **Phase 4 — bounded AI research delivered locally**.
 
-The delivered scaffold and Phase 1–3 implementations include:
+The delivered scaffold and Phase 1–4 implementations include:
 
 - Next.js frontend shell.
 - FastAPI application and health endpoint.
@@ -37,13 +37,18 @@ The delivered scaffold and Phase 1–3 implementations include:
 - Geoapify-backed submitted place search/import with persisted source attribution.
 - A responsive trip map and on-demand route estimates with deterministic
   transfer warnings.
+- A gated, typed `research-v1` integration with bounded active-day context,
+  validated server-consumed SSE, cited results, and a research panel.
+- Atomic manual place-plus-trip-candidate creation; AI results never mutate
+  authoritative trip state.
 - Docker Compose Postgres for local development.
 - CI skeleton.
 - product/design/architecture/implementation/release documentation.
 
-Do not claim later phases are implemented because they appear in planning docs.
-External booking imports, AI research/proposals, authentication, cloud
-deployment, and attachments remain planned rather than implemented.
+The travel-side AI research gate defaults off and external AI/provider gates
+must be configured separately. Do not claim later phases are implemented
+because they appear in planning docs. External booking imports, AI proposals,
+authentication, cloud deployment, and attachments remain planned.
 
 ## Architectural invariants
 
