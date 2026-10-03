@@ -19,14 +19,17 @@ When working on AI integration, also read `docs/06-ai-integration.md`.
 
 ## Current implementation status
 
-The repository is at **Phase 0 — scaffold/bootstrap**.
+The repository is at **Phase 1 — manual itinerary vertical slice delivered locally**.
 
-Present scaffold includes:
+The delivered scaffold and Phase 1 implementation include:
 
 - Next.js frontend shell.
 - FastAPI application and health endpoint.
 - PostgreSQL/SQLAlchemy/Alembic foundation.
 - Initial travel-domain tables.
+- Owner-scoped trip, day, item, and manual-place CRUD services and API routes.
+- Deterministic inclusive trip-day reconciliation and transactional item ordering.
+- Responsive manual itinerary UI and a typed same-origin API proxy.
 - `PersonalAIClient` HTTP boundary.
 - Docker Compose Postgres for local development.
 - CI skeleton.

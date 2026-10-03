@@ -4,6 +4,7 @@ from fastapi import APIRouter, Response, status
 
 from personal_travel.api.dependencies import OwnerDependency, SessionDependency
 from personal_travel.api.schemas import (
+    COMMON_ERROR_RESPONSES,
     DayUpdate,
     TripCreate,
     TripDetailResponse,
@@ -13,7 +14,7 @@ from personal_travel.api.schemas import (
 from personal_travel.api.serializers import serialize_detail, serialize_summary
 from personal_travel.services.trips import TripService
 
-router = APIRouter(prefix="/trips", tags=["trips"])
+router = APIRouter(prefix="/trips", tags=["trips"], responses=COMMON_ERROR_RESPONSES)
 
 
 @router.post("", response_model=TripDetailResponse, status_code=status.HTTP_201_CREATED)

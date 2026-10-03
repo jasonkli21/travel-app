@@ -9,7 +9,9 @@ from personal_travel.models.trip import Trip, TripDay
 
 
 class TripRepository(Protocol):
-    def get(self, *, owner_id: str, trip_id: uuid.UUID) -> Trip | None: ...
+    def get(
+        self, *, owner_id: str, trip_id: uuid.UUID, for_update: bool = False
+    ) -> Trip | None: ...
     def list(self, *, owner_id: str) -> list[Trip]: ...
     def add(self, trip: Trip) -> Trip: ...
     def delete(self, trip: Trip) -> None: ...
@@ -19,7 +21,7 @@ class SqlAlchemyTripRepository:
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def get(self, *, owner_id: str, trip_id: uuid.UUID) -> Trip | None:
+    def get(self, *, owner_id: str, trip_id: uuid.UUID, for_update: bool = False) -> Trip | None:
         statement = (
             select(Trip)
             .where(Trip.owner_id == owner_id, Trip.id == trip_id)
@@ -29,6 +31,8 @@ class SqlAlchemyTripRepository:
                 .selectinload(ItineraryItem.place)
             )
         )
+        if for_update:
+            statement = statement.with_for_update()
         return self._session.scalar(statement)
 
     def list(self, *, owner_id: str) -> list[Trip]:

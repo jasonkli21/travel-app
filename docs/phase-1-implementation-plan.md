@@ -1,6 +1,6 @@
 # Phase 1 implementation plan — manual itinerary planner
 
-**Status:** execution plan for the first product vertical slice  
+**Status:** Phase 1 implementation and independent review completed locally
 **Date:** 2026-10-02  
 **Roadmap:** `docs/09-implementation-plan.md`  
 **Baseline:** Phase 0 scaffold on `codex/phase-0-scaffold-corrections`
@@ -51,7 +51,7 @@ of scope.
 | Trip date edits | Reconcile days in the same transaction as the trip edit. Add newly covered dates. Remove out-of-range days only when empty; reject the edit with `409 trip_days_contain_items` if a removed day contains items. Preserve overlapping day IDs, titles, and items, then renumber all day indexes. |
 | Time semantics | Item times are local wall-clock times on the owning trip day, interpreted in the trip's IANA timezone. API inputs and outputs use `HH:MM` local times; the existing timezone-aware database columns store the corresponding instants. Reject invalid/nonexistent/ambiguous DST times and cross-midnight ranges. Date-only items keep both time values null. |
 | Timezone edits | A trip timezone edit preserves each timed item's local date and wall-clock time by translating its stored instant from the old zone to the new zone. Reject the update if a value cannot be represented unambiguously or an item no longer fits its day. |
-| Ordering | Each day has contiguous zero-based `sort_order` values. Create appends; delete compacts; move removes the item from its old day and inserts it at a zero-based destination index. Reindex both affected lists inside one database transaction. Disable overlapping UI mutations while a write is pending. |
+| Ordering | Each day has contiguous zero-based `sort_order` values. Create appends; delete compacts; move removes the item from its old day and inserts it at a zero-based destination index. Reindex both affected lists inside one database transaction. Every trip/item mutation locks the trip aggregate root so concurrent order calculations serialize. Disable overlapping UI mutations while a write is pending. |
 | Destructive behavior | Item delete and trip delete are permanent. Trip delete relies on existing FK cascades for days/items; place deletion is not exposed in Phase 1 and its existing `SET NULL` behavior remains. The UI requires explicit confirmation before deleting a trip. |
 | Places | Places are manually created, owner-scoped records. No external identity, map provider, or geocoding is required. An item may reference a place only when it belongs to the configured owner; foreign or missing IDs resolve as not found. |
 | API errors | Domain and request-validation failures use `{ "error": { "code": string, "message": string, "details": object | null } }`. Not-found responses do not reveal whether a record belongs to a different owner. |
@@ -98,7 +98,9 @@ latitude/longitude ranges and either both be present or both omitted.
   methods.
 - A service method owns its transaction boundary for each mutation. Trip-day
   reconciliation, item mutation, and reindexing either commit together or roll
-  back together.
+  back together. Mutating services lock the trip aggregate root before loading
+  its days/items so concurrent order calculations cannot append or reindex from
+  the same snapshot.
 - Every lookup includes the configured owner or is reached through an already
   owner-scoped trip. An item/day from another trip is indistinguishable from a
   missing resource.
@@ -185,8 +187,10 @@ history remains additive; ORM metadata and migration constraints agree.
 
 1. Extend the trip repository to support owner-scoped create/get/list/update/
    delete and eager retrieval of days/items/places.
-2. Add a trip-day repository for lookup, inclusive range generation, range
-   reconciliation, stable IDs/titles, and one-based date ordering.
+2. Keep trip-day aggregate operations in `TripService` and the owner-scoped
+   trip repository. A separate trip-day repository is intentionally not added:
+   days are generated, reconciled, locked, and committed as part of the trip
+   aggregate, which keeps the invariant in one transaction boundary.
 3. Add a place repository/service for owner-scoped list/create and coordinate
    validation.
 4. Implement trip create/list/get/update/delete and day-title operations.
@@ -235,8 +239,10 @@ does not expose another owner; a created trip can be reopened with all days.
 5. Implement move to an existing destination day and zero-based insertion
    index. Validate both source/destination under the requested trip; reindex
    source and destination lists in one transaction.
-6. Translate integrity or stale target conflicts into stable domain errors;
-   never partially move an item.
+6. Lock the trip aggregate root for every item mutation so concurrent appends,
+   deletes, and moves serialize before calculating order. Translate integrity or
+   stale target conflicts into stable domain errors; never partially move an
+   item.
 
 **Acceptance criteria:** create/edit/delete preserve allowed fields and order;
 date-only items round-trip as untimed; DST-invalid and cross-day times fail;
@@ -252,7 +258,8 @@ and cross-owner IDs cannot mutate state; every move is atomic.
 
 1. Add a catch-all `/api/v1/*` server route that forwards supported methods and
    request bodies to the configured `TRAVEL_API_URL`, bounds request time, and
-   returns upstream status/body safely.
+   returns upstream status/body safely, including valid null bodies for `204`,
+   `205`, and `304` responses.
 2. Preserve the existing health route and default local backend URL.
 3. Define typed client methods for trips, places, trip/day/item edits, delete,
    and move. Centralize envelope parsing and safe error messages.
@@ -276,8 +283,9 @@ types; API paths are not duplicated throughout components.
    item create/edit/delete, day-title edit, and confirmed trip deletion.
 3. Add item status/type/time/notes editing, optional place selection and manual
    quick-create, plus accessible reorder and cross-day move controls.
-4. Disable the edited row/form while a mutation is pending, surface API errors
-   near the action, and refresh the authoritative trip detail after success.
+4. Disable all mutation controls while a mutation is pending, keep failed item
+   forms open with their input intact, surface API errors near the action, and
+   refresh the authoritative trip detail after success.
 5. Make navigation and forms usable at desktop and mobile widths; preserve
    focus behavior after create/edit/delete and use labels/semantic buttons.
 6. Remove placeholder itinerary content and interactive-looking AI controls.
@@ -318,6 +326,7 @@ avoid mixing later-phase scope:
 | `feat: add trip and itinerary API` | Additive migration, Pydantic contracts, domain errors, repositories/services, trip/day/place/item routes, and backend API documentation. |
 | `feat: build responsive manual itinerary planner` | Same-origin API proxy, typed client, trips list/workspace, complete manual trip/item/place flows, and responsive/accessibility details. |
 | `docs: record Phase 1 itinerary release` | README/roadmap/handoff status and release record with commit IDs and actual verification evidence. |
+| `fix: address Phase 1 review findings` | Independent-review fixes, contract/test coverage, concurrency safeguards, and final documentation corrections. |
 
 If implementation reveals a meaningful new architecture decision, split that
 ADR into the relevant backend commit and update the plan. Do not create an ADR
@@ -331,10 +340,10 @@ policies.
 | Schema/migration | Fresh upgrade, downgrade/upgrade where safe, ORM/migration parity, positive day index and nonnegative item order | Migration and metadata checks |
 | Trips/days | Inclusive date generation, leap/day-boundary dates, expansion, empty shrink, shrink with items, timezone validation/conversion | Service/API checks against PostgreSQL |
 | Itinerary | Create/read/update/delete, all type/status values, null fields, date-only item, time ordering, DST gap/fold, out-of-day time | Service/API checks against PostgreSQL |
-| Ordering | Append, delete compaction, same-day reorder, cross-day move, invalid destination/index, rollback | Service/API checks against PostgreSQL |
+| Ordering | Append, delete compaction, same-day reorder, cross-day move, invalid destination/index, rollback, concurrent appends | Service/API checks against PostgreSQL |
 | Ownership | Foreign trip/day/item/place IDs, hidden-resource 404 behavior, request cannot override owner | API checks with two owner fixtures |
 | Place | Manual create/list, invalid coordinate pairs/ranges, attach/clear, foreign place rejection | Service/API checks against PostgreSQL |
-| Frontend | Trip create/open/edit/delete, item create/edit/delete/move, place quick-create, reload persistence, empty/error states, keyboard operation, mobile layout | Type/lint/build checks and documented local browser smoke path |
+| Frontend | Trip create/open/edit/delete, item create/edit/delete/move, place quick-create, reload persistence, empty/error states, keyboard operation, mobile layout, `204` proxy delete handling | Type/lint/build/test checks and documented local browser smoke path |
 | Scope | AI health remains optional; no research call; no cloud/provider credentials required | Code/config review |
 
 The repository convention is to update backend and frontend tests with behavior.

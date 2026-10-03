@@ -20,13 +20,15 @@ import {
 const itemTypes: ItemType[] = ["activity", "food", "lodging", "transport", "flight", "note"];
 const itemStatuses: ItemStatus[] = ["tentative", "planned", "booked", "completed", "cancelled"];
 
-function formatDate(value: string, timezone: string): string {
+function formatDate(value: string): string {
+  // A trip date is a date-only value. Format its UTC components so zones such
+  // as UTC+14 cannot display it as the following local calendar date.
   return new Intl.DateTimeFormat("en", {
     weekday: "short",
     month: "short",
     day: "numeric",
-    timeZone: timezone,
-  }).format(new Date(`${value}T12:00:00Z`));
+    timeZone: "UTC",
+  }).format(new Date(`${value}T00:00:00Z`));
 }
 
 function errorMessage(error: unknown): string {
@@ -39,7 +41,8 @@ type ItemFormProps = {
   places: PlaceSummary[];
   initial?: ItineraryItem;
   pending: boolean;
-  onSubmit: (input: CreateItemInput | UpdateItemInput) => Promise<void>;
+  disabled: boolean;
+  onSubmit: (input: CreateItemInput | UpdateItemInput) => Promise<boolean>;
   onCreatePlace: (name: string) => Promise<PlaceSummary>;
   onCancel?: () => void;
 };
@@ -50,6 +53,7 @@ function ItemForm({
   places,
   initial,
   pending,
+  disabled,
   onSubmit,
   onCreatePlace,
   onCancel,
@@ -88,7 +92,7 @@ function ItemForm({
     }
     setFormError(null);
     try {
-      await onSubmit({
+      const saved = await onSubmit({
         item_type: itemType,
         title: title.trim(),
         notes: notes.trim() || null,
@@ -97,6 +101,9 @@ function ItemForm({
         status,
         place_id: placeId || null,
       });
+      if (!saved) {
+        setFormError("The change was not saved. Review the error above and try again.");
+      }
     } catch (error) {
       setFormError(errorMessage(error));
     }
@@ -106,7 +113,8 @@ function ItemForm({
 
   return (
     <form className="itemForm" onSubmit={submit}>
-      <div className="formGrid">
+      <fieldset className="itemFields" disabled={disabled || pending || placePending}>
+        <div className="formGrid">
         <label>
           Title
           <input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={240} required />
@@ -138,27 +146,28 @@ function ItemForm({
             {places.map((place) => <option key={place.id} value={place.id}>{place.name}</option>)}
           </select>
         </label>
-      </div>
-      <label>
-        Notes
-        <textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={2} />
-      </label>
-      <div className="inlineForm">
-        <label className="grow">
-          Quick-create place
-          <input value={newPlaceName} onChange={(event) => setNewPlaceName(event.target.value)} placeholder="Optional place name" />
+        </div>
+        <label>
+          Notes
+          <textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={2} />
         </label>
-        <button className="secondary compact" type="button" onClick={createPlace} disabled={placePending || pending || !newPlaceName.trim()}>
-          {placePending ? "Adding…" : "Add place"}
-        </button>
-      </div>
+        <div className="inlineForm">
+          <label className="grow">
+            Quick-create place
+            <input value={newPlaceName} onChange={(event) => setNewPlaceName(event.target.value)} placeholder="Optional place name" />
+          </label>
+          <button className="secondary compact" type="button" onClick={createPlace} disabled={!newPlaceName.trim()}>
+            {placePending ? "Adding…" : "Add place"}
+          </button>
+        </div>
+        <div className="formActions">
+          <button className="primary" type="submit">
+            {pending ? "Saving…" : initial ? "Save item" : `Add to day ${dayNumber ?? ""}`}
+          </button>
+          {onCancel ? <button className="secondary" type="button" onClick={onCancel}>Cancel</button> : null}
+        </div>
+      </fieldset>
       {formError ? <p className="formError" role="alert">{formError}</p> : null}
-      <div className="formActions">
-        <button className="primary" type="submit" disabled={pending || placePending}>
-          {pending ? "Saving…" : initial ? "Save item" : `Add to day ${dayNumber ?? ""}`}
-        </button>
-        {onCancel ? <button className="secondary" type="button" onClick={onCancel} disabled={pending}>Cancel</button> : null}
-      </div>
     </form>
   );
 }
@@ -167,19 +176,21 @@ function DayTitleForm({
   dayId,
   title,
   pending,
+  disabled,
   onSave,
 }: {
   dayId: string;
   title: string | null;
   pending: boolean;
-  onSave: (title: string | null) => Promise<void>;
+  disabled: boolean;
+  onSave: (title: string | null) => Promise<boolean>;
 }) {
   const [value, setValue] = useState(title ?? "");
   return (
     <form className="dayTitleForm" onSubmit={(event) => { event.preventDefault(); void onSave(value.trim() || null); }}>
       <label className="srOnly" htmlFor={`day-title-${dayId}`}>Day title</label>
-      <input id={`day-title-${dayId}`} value={value} onChange={(event) => setValue(event.target.value)} placeholder="Add a day title" maxLength={200} />
-      <button className="iconButton" type="submit" disabled={pending} aria-label="Save day title">Save</button>
+      <input id={`day-title-${dayId}`} value={value} onChange={(event) => setValue(event.target.value)} placeholder="Add a day title" maxLength={200} disabled={disabled} />
+      <button className="iconButton" type="submit" disabled={disabled} aria-label="Save day title">{pending ? "Saving…" : "Save"}</button>
     </form>
   );
 }
@@ -214,14 +225,16 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
     void Promise.resolve().then(refresh);
   }, [refresh]);
 
-  const run = async (key: string, operation: () => Promise<void>) => {
+  const run = async (key: string, operation: () => Promise<void>): Promise<boolean> => {
     setPending(key);
     setError(null);
     try {
       await operation();
       await refresh();
+      return true;
     } catch (nextError) {
       setError(errorMessage(nextError));
+      return false;
     } finally {
       setPending(null);
     }
@@ -283,7 +296,7 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
             <p className="muted">Manual changes are authoritative and do not require AI availability.</p>
           </div>
           <div className="topActions">
-            <button className="secondary" type="button" onClick={() => setShowTripEditor((current) => !current)}>{showTripEditor ? "Close trip editor" : "Edit trip"}</button>
+            <button className="secondary" type="button" onClick={() => setShowTripEditor((current) => !current)} disabled={pending !== null}>{showTripEditor ? "Close trip editor" : "Edit trip"}</button>
             <button className="danger" type="button" onClick={deleteTrip} disabled={pending !== null}>Delete trip</button>
           </div>
         </header>
@@ -292,13 +305,15 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
 
         {showTripEditor ? (
           <form className="panel tripEditor" onSubmit={saveTrip}>
-            <div className="formGrid">
+            <fieldset disabled={pending !== null}>
+              <div className="formGrid">
               <label>Trip title<input value={tripForm.title} onChange={(event) => setTripForm({ ...tripForm, title: event.target.value })} required /></label>
               <label>Timezone<input value={tripForm.timezone} onChange={(event) => setTripForm({ ...tripForm, timezone: event.target.value })} placeholder="America/Los_Angeles" required /></label>
               <label>Start date<input type="date" value={tripForm.start_date} onChange={(event) => setTripForm({ ...tripForm, start_date: event.target.value })} required /></label>
               <label>End date<input type="date" value={tripForm.end_date} onChange={(event) => setTripForm({ ...tripForm, end_date: event.target.value })} required /></label>
-            </div>
-            <button className="primary" type="submit" disabled={pending !== null}>{pending === "trip" ? "Saving…" : "Save trip"}</button>
+              </div>
+              <button className="primary" type="submit">{pending === "trip" ? "Saving…" : "Save trip"}</button>
+            </fieldset>
           </form>
         ) : null}
 
@@ -307,10 +322,10 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
             <article className="day" key={day.id}>
               <div className="dayHeading">
                 <div>
-                  <p className="date">Day {day.day_index} · {formatDate(day.date, trip.timezone)}</p>
-                  <DayTitleForm key={`${day.id}-${day.title ?? ""}`} dayId={day.id} title={day.title} pending={pending === `day-${day.id}`} onSave={(title) => run(`day-${day.id}`, async () => { await travelApi.updateDay(trip.id, day.id, title); })} />
+                  <p className="date">Day {day.day_index} · {formatDate(day.date)}</p>
+                  <DayTitleForm key={`${day.id}-${day.title ?? ""}`} dayId={day.id} title={day.title} pending={pending === `day-${day.id}`} disabled={pending !== null} onSave={(title) => run(`day-${day.id}`, async () => { await travelApi.updateDay(trip.id, day.id, title); })} />
                 </div>
-                <button className="secondary compact" type="button" onClick={() => setAddingDay((current) => current === day.id ? null : day.id)}>{addingDay === day.id ? "Close form" : "+ Add item"}</button>
+                <button className="secondary compact" type="button" onClick={() => setAddingDay((current) => current === day.id ? null : day.id)} disabled={pending !== null}>{addingDay === day.id ? "Close form" : "+ Add item"}</button>
               </div>
               <div className="items">
                 {day.items.length === 0 ? <p className="emptyText">Nothing planned yet.</p> : null}
@@ -324,18 +339,18 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
                         {item.notes ? <p className="itemNotes">{item.notes}</p> : null}
                       </div>
                       <div className="itemActions">
-                        <button className="iconButton" type="button" onClick={() => setEditingItem((current) => current === item.id ? null : item.id)} aria-expanded={editingItem === item.id}>{editingItem === item.id ? "Close" : "Edit"}</button>
+                        <button className="iconButton" type="button" onClick={() => setEditingItem((current) => current === item.id ? null : item.id)} disabled={pending !== null} aria-expanded={editingItem === item.id}>{editingItem === item.id ? "Close" : "Edit"}</button>
                         <button className="iconButton" type="button" onClick={() => void run(`move-${item.id}`, () => travelApi.moveItem(trip.id, item.id, day.id, Math.max(index - 1, 0)).then(() => undefined))} disabled={pending !== null || index === 0} aria-label="Move item up">↑</button>
                         <button className="iconButton" type="button" onClick={() => void run(`move-${item.id}`, () => travelApi.moveItem(trip.id, item.id, day.id, index + 1).then(() => undefined))} disabled={pending !== null || index === day.items.length - 1} aria-label="Move item down">↓</button>
                         <select className="moveSelect" defaultValue="" onChange={(event) => { const destination = trip.days.find((candidate) => candidate.id === event.target.value); if (destination) void run(`move-${item.id}`, () => travelApi.moveItem(trip.id, item.id, destination.id, destination.items.length).then(() => undefined)); event.currentTarget.value = ""; }} disabled={pending !== null} aria-label="Move item to another day"><option value="">Move to…</option>{trip.days.filter((candidate) => candidate.id !== day.id).map((candidate) => <option key={candidate.id} value={candidate.id}>Day {candidate.day_index}</option>)}</select>
                         <button className="iconButton dangerText" type="button" onClick={() => { if (window.confirm(`Delete ${item.title}?`)) void run(`delete-${item.id}`, async () => { await travelApi.deleteItem(trip.id, item.id); }); }} disabled={pending !== null} aria-label={`Delete ${item.title}`}>Delete</button>
                       </div>
                     </div>
-                    {editingItem === item.id ? <ItemForm trip={trip} dayId={day.id} places={places} initial={item} pending={pending === `item-${item.id}`} onSubmit={(input) => run(`item-${item.id}`, async () => { await travelApi.updateItem(trip.id, item.id, input); setEditingItem(null); })} onCreatePlace={createPlace} onCancel={() => setEditingItem(null)} /> : null}
+                    {editingItem === item.id ? <ItemForm trip={trip} dayId={day.id} places={places} initial={item} pending={pending === `item-${item.id}`} disabled={pending !== null} onSubmit={async (input) => { const saved = await run(`item-${item.id}`, async () => { await travelApi.updateItem(trip.id, item.id, input); }); if (saved) setEditingItem(null); return saved; }} onCreatePlace={createPlace} onCancel={() => setEditingItem(null)} /> : null}
                   </div>
                 ))}
               </div>
-              {addingDay === day.id ? <ItemForm trip={trip} dayId={day.id} places={places} pending={pending === `add-${day.id}`} onSubmit={(input) => run(`add-${day.id}`, async () => { await travelApi.createItem(trip.id, day.id, input as CreateItemInput); setAddingDay(null); })} onCreatePlace={createPlace} /> : null}
+              {addingDay === day.id ? <ItemForm trip={trip} dayId={day.id} places={places} pending={pending === `add-${day.id}`} disabled={pending !== null} onSubmit={async (input) => { const saved = await run(`add-${day.id}`, async () => { await travelApi.createItem(trip.id, day.id, input as CreateItemInput); }); if (saved) setAddingDay(null); return saved; }} onCreatePlace={createPlace} /> : null}
             </article>
           ))}
         </div>

@@ -1,11 +1,11 @@
 from fastapi import APIRouter, status
 
 from personal_travel.api.dependencies import OwnerDependency, SessionDependency
-from personal_travel.api.schemas import PlaceCreate, PlaceSummaryResponse
+from personal_travel.api.schemas import COMMON_ERROR_RESPONSES, PlaceCreate, PlaceSummaryResponse
 from personal_travel.api.serializers import serialize_place
 from personal_travel.services.places import PlaceService
 
-router = APIRouter(prefix="/places", tags=["places"])
+router = APIRouter(prefix="/places", tags=["places"], responses=COMMON_ERROR_RESPONSES)
 
 
 @router.get("", response_model=list[PlaceSummaryResponse])

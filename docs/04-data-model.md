@@ -164,8 +164,11 @@ generates one day for every inclusive calendar date. Date-range edits preserve
 overlapping day IDs and titles, add new dates, and reject removal of a day that
 still contains itinerary items.
 
-For a personal single-user app, integer ordering plus transactional renumbering
-is sufficient initially.
+Mutation services lock the trip aggregate row while calculating and renumbering
+items, so concurrent appends, deletes, and moves cannot reuse one snapshot's
+order values. Integer ordering plus transactional renumbering is sufficient for
+the personal single-user product without introducing fractional indexes or
+collaboration machinery.
 
 Do not introduce fractional indexing/CRDTs without a real collaboration requirement.
 
@@ -204,6 +207,11 @@ Initial FK behavior:
 - deleting a day cascades its itinerary items,
 - deleting a place sets itinerary `place_id` to null.
 
-Before user-facing destructive actions are implemented, decide whether product deletion should be hard delete, soft delete/archive, or an audited event.
+Phase 1 makes trip and itinerary-item deletion permanent. The API requires an
+explicit confirmation in the UI before deleting a trip; the existing database
+cascades remove its days/items, and an item delete compacts its day's order.
+Soft deletion, archival, and audited deletion events remain future product
+decisions for later entities.
 
-Do not infer that database cascade equals final product deletion policy.
+The database cascade is therefore an implementation detail of the Phase 1
+permanent-delete policy, not a general rule for future product entities.

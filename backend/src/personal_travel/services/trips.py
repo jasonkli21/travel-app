@@ -116,7 +116,7 @@ class TripService:
             self._trips.delete(trip)
 
     def _get_in_transaction(self, trip_id: UUID) -> Trip:
-        trip = self._trips.get(owner_id=self._owner_id, trip_id=trip_id)
+        trip = self._trips.get(owner_id=self._owner_id, trip_id=trip_id, for_update=True)
         if trip is None:
             raise not_found("trip")
         return trip
@@ -147,18 +147,23 @@ class TripService:
         if removed_days:
             self._session.flush()
 
+        existing_by_date = {day.date: day for day in trip.days}
+        temporary_start = (
+            max(max((day.day_index for day in trip.days), default=0), len(requested_dates)) + 1
+        )
         ordered_days: list[TripDay] = []
-        for day_date in requested_dates:
+        for offset, day_date in enumerate(requested_dates):
             existing_day = existing_by_date.get(day_date)
             if existing_day is None:
                 ordered_day = TripDay(
                     trip=trip,
                     date=day_date,
-                    day_index=MAX_TRIP_DAYS + len(ordered_days) + 1,
+                    day_index=temporary_start + offset,
                 )
                 self._session.add(ordered_day)
             else:
                 ordered_day = existing_day
+                ordered_day.day_index = temporary_start + offset
             ordered_days.append(ordered_day)
 
         self._session.flush()

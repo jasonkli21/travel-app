@@ -1,3 +1,5 @@
+import { readProxyBody } from "../../../../lib/proxy-response.mjs";
+
 const backendBaseUrl = () =>
   (process.env.TRAVEL_API_URL ?? "http://localhost:8000").trim().replace(/\/+$/, "");
 
@@ -27,7 +29,7 @@ async function proxy(request: Request, context: RouteContext): Promise<Response>
     if (upstreamContentType) {
       responseHeaders.set("content-type", upstreamContentType);
     }
-    return new Response(await response.text(), {
+    return new Response(await readProxyBody(response), {
       status: response.status,
       headers: responseHeaders,
     });

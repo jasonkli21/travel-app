@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import (
@@ -16,7 +16,12 @@ ItemStatus = Literal["tentative", "planned", "booked", "completed", "cancelled"]
 LocalTime = Annotated[
     str,
     StringConstraints(pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$"),
+    Field(description="Local wall-clock time on the owning trip day, formatted as HH:MM."),
 ]
+LOCAL_TIME_DESCRIPTION = (
+    "Local wall-clock time on the owning trip day, formatted as HH:MM; "
+    "null means the item is untimed."
+)
 
 
 def _trim_optional(value: str | None) -> str | None:
@@ -38,10 +43,26 @@ class TripCreate(BaseModel):
 class TripUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    title: str | None = Field(default=None, min_length=1, max_length=200)
-    start_date: date | None = None
-    end_date: date | None = None
-    timezone: str | None = Field(default=None, min_length=1, max_length=64)
+    title: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=200,
+        description="Trip title; omit to preserve it, or provide a non-null replacement.",
+    )
+    start_date: date | None = Field(
+        default=None,
+        description="Inclusive first calendar date; omit to preserve it.",
+    )
+    end_date: date | None = Field(
+        default=None,
+        description="Inclusive last calendar date; omit to preserve it.",
+    )
+    timezone: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=64,
+        description="IANA timezone name; omit to preserve it, or provide a non-null replacement.",
+    )
 
 
 class DayUpdate(BaseModel):
@@ -81,8 +102,8 @@ class ItemCreate(BaseModel):
     item_type: ItemType = "activity"
     title: str = Field(min_length=1, max_length=240)
     notes: str | None = None
-    start_time: LocalTime | None = None
-    end_time: LocalTime | None = None
+    start_time: LocalTime | None = Field(default=None, description=LOCAL_TIME_DESCRIPTION)
+    end_time: LocalTime | None = Field(default=None, description=LOCAL_TIME_DESCRIPTION)
     status: ItemStatus = "tentative"
     place_id: UUID | None = None
 
@@ -98,8 +119,8 @@ class ItemUpdate(BaseModel):
     item_type: ItemType | None = None
     title: str | None = Field(default=None, min_length=1, max_length=240)
     notes: str | None = None
-    start_time: LocalTime | None = None
-    end_time: LocalTime | None = None
+    start_time: LocalTime | None = Field(default=None, description=LOCAL_TIME_DESCRIPTION)
+    end_time: LocalTime | None = Field(default=None, description=LOCAL_TIME_DESCRIPTION)
     status: ItemStatus | None = None
     place_id: UUID | None = None
 
@@ -131,8 +152,19 @@ class ItineraryItemResponse(BaseModel):
     item_type: ItemType
     title: str
     notes: str | None
-    start_time: str | None
-    end_time: str | None
+    start_time: str | None = Field(
+        default=None,
+        description=(
+            "Local wall-clock start time on the item's trip day, or null for date-only items."
+        ),
+    )
+    end_time: str | None = Field(
+        default=None,
+        description=(
+            "Local wall-clock end time on the item's trip day, "
+            "or null for open-ended/date-only items."
+        ),
+    )
     sort_order: int
     status: ItemStatus
     place: PlaceSummaryResponse | None
@@ -163,10 +195,29 @@ class TripDetailResponse(TripSummaryResponse):
 
 
 class ErrorBody(BaseModel):
-    code: str
-    message: str
-    details: dict[str, object] | None = None
+    code: str = Field(description="Stable machine-readable error code.")
+    message: str = Field(description="Safe human-readable error message.")
+    details: dict[str, object] | None = Field(
+        default=None,
+        description="Optional structured details safe for clients to display or inspect.",
+    )
 
 
 class ErrorResponse(BaseModel):
     error: ErrorBody
+
+
+COMMON_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
+    404: {
+        "model": ErrorResponse,
+        "description": "The requested resource was not found for the configured owner.",
+    },
+    409: {
+        "model": ErrorResponse,
+        "description": "The requested change conflicts with existing travel data.",
+    },
+    422: {
+        "model": ErrorResponse,
+        "description": "The request body or domain values are invalid.",
+    },
+}

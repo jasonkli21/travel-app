@@ -37,6 +37,7 @@ Backend:
 - deterministic inclusive day generation and date-range reconciliation.
 - local-time item conversion with IANA timezone/DST validation.
 - transactional contiguous ordering and cross-day move behavior.
+- trip-root row locking for concurrent item-order mutations.
 - `PersonalAIClient` with health only.
 - pytest/ruff/mypy configuration.
 
@@ -71,6 +72,7 @@ GET    /v1/trips
 GET    /v1/trips/{trip_id}
 PATCH  /v1/trips/{trip_id}
 DELETE /v1/trips/{trip_id}
+PATCH  /v1/trips/{trip_id}/days/{day_id}
 
 POST   /v1/trips/{trip_id}/days/{day_id}/items
 PATCH  /v1/trips/{trip_id}/items/{item_id}
@@ -89,6 +91,7 @@ The Phase 1 service decisions are:
 - days are inclusive, one-based, contiguous, and reconciled transactionally;
 - item ordering is contiguous and zero-based within each day;
 - local `HH:MM` values are interpreted in the trip timezone and DST gaps/folds fail;
+- concurrent item mutations serialize on the trip aggregate root;
 - deleting a trip or item is permanent; shrinking over a nonempty day returns `409`;
 - manual places are owner-scoped and no provider/map integration is introduced.
 

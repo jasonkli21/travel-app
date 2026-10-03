@@ -120,7 +120,9 @@ class ItineraryService:
             return item
 
     def _get_trip(self, trip_id: UUID) -> Trip:
-        trip = self._trips.get(owner_id=self._owner_id, trip_id=trip_id)
+        # Lock the aggregate root so concurrent item mutations serialize before
+        # they calculate or rewrite sort_order values.
+        trip = self._trips.get(owner_id=self._owner_id, trip_id=trip_id, for_update=True)
         if trip is None:
             raise not_found("trip")
         return trip
