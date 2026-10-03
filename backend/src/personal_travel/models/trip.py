@@ -13,6 +13,7 @@ from personal_travel.models.common import TimestampMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
     from personal_travel.models.itinerary import ItineraryItem
+    from personal_travel.models.reservation import Reservation, SavedPlace
 
 
 class Trip(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -26,6 +27,12 @@ class Trip(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     days: Mapped[list[TripDay]] = relationship(
         back_populates="trip", cascade="all, delete-orphan", order_by="TripDay.day_index"
+    )
+    reservations: Mapped[list[Reservation]] = relationship(
+        "Reservation", back_populates="trip", cascade="all, delete-orphan"
+    )
+    saved_places: Mapped[list[SavedPlace]] = relationship(
+        "SavedPlace", back_populates="trip", cascade="all, delete-orphan"
     )
 
     __table_args__ = (

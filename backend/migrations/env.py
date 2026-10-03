@@ -5,7 +5,14 @@ from sqlalchemy import engine_from_config, pool
 
 from personal_travel.config import get_settings
 from personal_travel.db.base import Base
-from personal_travel.models import ItineraryItem, Place, Trip, TripDay  # noqa: F401
+from personal_travel.models import (  # noqa: F401
+    ItineraryItem,
+    Place,
+    Reservation,
+    SavedPlace,
+    Trip,
+    TripDay,
+)
 
 config = context.config
 if config.config_file_name is not None:

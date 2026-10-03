@@ -13,6 +13,7 @@ from personal_travel.models.common import TimestampMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
     from personal_travel.models.place import Place
+    from personal_travel.models.reservation import Reservation
     from personal_travel.models.trip import TripDay
 
 
@@ -28,6 +29,12 @@ class ItineraryItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     place_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("places.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    reservation_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("reservations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     item_type: Mapped[str] = mapped_column(String(32), nullable=False, default="activity")
     title: Mapped[str] = mapped_column(String(240), nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -38,6 +45,7 @@ class ItineraryItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     trip_day: Mapped[TripDay] = relationship("TripDay", back_populates="items")
     place: Mapped[Place | None] = relationship("Place", back_populates="items")
+    reservation: Mapped[Reservation | None] = relationship("Reservation", back_populates="items")
 
     __table_args__ = (
         CheckConstraint(
