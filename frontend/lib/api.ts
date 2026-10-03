@@ -1,12 +1,26 @@
 export type ItemType = "activity" | "food" | "lodging" | "transport" | "flight" | "note";
 export type ItemStatus = "tentative" | "planned" | "booked" | "completed" | "cancelled";
+export type ReservationType = "lodging" | "flight" | "train" | "car_rental" | "activity" | "dining" | "other";
+export type ReservationStatus = "tentative" | "confirmed" | "cancelled";
 
 export interface PlaceSummary {
   id: string;
   name: string;
   address: string | null;
+  category: string | null;
+  phone: string | null;
+  website_url: string | null;
   latitude: number | null;
   longitude: number | null;
+}
+
+export interface ReservationSummary {
+  id: string;
+  reservation_type: ReservationType;
+  status: ReservationStatus;
+  provider_name: string;
+  confirmation_code: string | null;
+  conflict_count: number;
 }
 
 export interface ItineraryItem {
@@ -19,6 +33,7 @@ export interface ItineraryItem {
   sort_order: number;
   status: ItemStatus;
   place: PlaceSummary | null;
+  reservation: ReservationSummary | null;
 }
 
 export interface TripDay {
@@ -45,6 +60,52 @@ export interface TripDetail extends TripSummary {
   days: TripDay[];
 }
 
+export interface ReservationLinkedItem {
+  id: string;
+  title: string;
+  day_id: string;
+  day_index: number;
+  date: string;
+}
+
+export interface ReservationConflict {
+  item_id: string;
+  day_id: string;
+  day_index: number;
+  date: string;
+  title: string;
+  start_time: string | null;
+  end_time: string | null;
+  reason: string;
+}
+
+export interface Reservation {
+  id: string;
+  reservation_type: ReservationType;
+  status: ReservationStatus;
+  provider_name: string;
+  confirmation_code: string | null;
+  start_date: string | null;
+  start_time: string | null;
+  end_date: string | null;
+  end_time: string | null;
+  place: PlaceSummary | null;
+  source_reference: string | null;
+  notes: string | null;
+  linked_items: ReservationLinkedItem[];
+  conflicts: ReservationConflict[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SavedPlace {
+  id: string;
+  note: string | null;
+  place: PlaceSummary;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface CreateTripInput {
   title: string;
   start_date: string;
@@ -67,6 +128,7 @@ export interface CreateItemInput {
   end_time: string | null;
   status: ItemStatus;
   place_id: string | null;
+  reservation_id: string | null;
 }
 
 export type UpdateItemInput = Partial<CreateItemInput>;
@@ -74,8 +136,46 @@ export type UpdateItemInput = Partial<CreateItemInput>;
 export interface CreatePlaceInput {
   name: string;
   address?: string | null;
+  category?: string | null;
+  phone?: string | null;
+  website_url?: string | null;
   latitude?: number | null;
   longitude?: number | null;
+}
+
+export interface UpdatePlaceInput {
+  name?: string | null;
+  address?: string | null;
+  category?: string | null;
+  phone?: string | null;
+  website_url?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+}
+
+export interface CreateReservationInput {
+  reservation_type: ReservationType;
+  status: ReservationStatus;
+  provider_name: string;
+  confirmation_code: string | null;
+  start_date: string | null;
+  start_time: string | null;
+  end_date: string | null;
+  end_time: string | null;
+  place_id: string | null;
+  source_reference: string | null;
+  notes: string | null;
+}
+
+export type UpdateReservationInput = Partial<CreateReservationInput>;
+
+export interface CreateSavedPlaceInput {
+  place_id: string;
+  note: string | null;
+}
+
+export interface UpdateSavedPlaceInput {
+  note: string | null;
 }
 
 export interface ApiErrorPayload {
@@ -145,6 +245,34 @@ export const travelApi = {
   listPlaces: () => request<PlaceSummary[]>("/places"),
   createPlace: (input: CreatePlaceInput) =>
     request<PlaceSummary>("/places", { method: "POST", body: JSON.stringify(input) }),
+  updatePlace: (placeId: string, input: UpdatePlaceInput) =>
+    request<PlaceSummary>(`/places/${placeId}`, { method: "PATCH", body: JSON.stringify(input) }),
+  listReservations: (tripId: string) => request<Reservation[]>(`/trips/${tripId}/reservations`),
+  createReservation: (tripId: string, input: CreateReservationInput) =>
+    request<Reservation>(`/trips/${tripId}/reservations`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  updateReservation: (tripId: string, reservationId: string, input: UpdateReservationInput) =>
+    request<Reservation>(`/trips/${tripId}/reservations/${reservationId}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }),
+  deleteReservation: (tripId: string, reservationId: string) =>
+    request<void>(`/trips/${tripId}/reservations/${reservationId}`, { method: "DELETE" }),
+  listSavedPlaces: (tripId: string) => request<SavedPlace[]>(`/trips/${tripId}/saved-places`),
+  createSavedPlace: (tripId: string, input: CreateSavedPlaceInput) =>
+    request<SavedPlace>(`/trips/${tripId}/saved-places`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  updateSavedPlace: (tripId: string, savedPlaceId: string, input: UpdateSavedPlaceInput) =>
+    request<SavedPlace>(`/trips/${tripId}/saved-places/${savedPlaceId}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }),
+  deleteSavedPlace: (tripId: string, savedPlaceId: string) =>
+    request<void>(`/trips/${tripId}/saved-places/${savedPlaceId}`, { method: "DELETE" }),
   createItem: (tripId: string, dayId: string, input: CreateItemInput) =>
     request<TripDetail>(`/trips/${tripId}/days/${dayId}/items`, {
       method: "POST",
