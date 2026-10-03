@@ -189,12 +189,8 @@ class PersonalAIClient:
             raise PersonalAIError("personal-ai-system returned a mismatched research session")
         if terminal_event is not None and detail.state != terminal_event:
             raise PersonalAIError("personal-ai-system returned inconsistent research state")
-        if (
-            created.state == "pending"
-            and terminal_event is None
-            and detail.state in {"pending", "running"}
-        ):
-            raise PersonalAIError("personal-ai-system research was interrupted")
+        if detail.state in {"pending", "running"}:
+            raise PersonalAIError("personal-ai-system research is still running")
         if created.state in {"completed", "insufficient", "failed", "expired"} and (
             detail.state != created.state
         ):

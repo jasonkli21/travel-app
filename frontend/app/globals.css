@@ -66,6 +66,7 @@ h3 { margin: 3px 0 0; }
 .researchCitations li { border: 1px solid var(--line); border-radius: 9px; background: var(--panel); padding: 10px 12px; }
 .researchCitations li > div { display: grid; gap: 5px; }
 .researchCitations a { color: var(--accent); font-weight: 700; overflow-wrap: anywhere; }
+.researchSourceUrl { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
 .researchSourceTimes { color: var(--muted); font-size: 11px; line-height: 1.4; }
 .researchCandidateForm { margin-top: 4px; }
 .researchCandidateForm .formHint { margin: 0; }

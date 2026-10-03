@@ -1,6 +1,7 @@
 # Phase 4 release — bounded AI research
 
-**Status:** implemented locally; independent review pending  
+**Status:** implemented locally; independent review findings addressed
+
 **Date:** 2026-10-03  
 **Plan:** [`phase-4-implementation-plan.md`](../phase-4-implementation-plan.md)  
 **Decision:** [`0008-personal-ai-research-context.md`](../decisions/0008-personal-ai-research-context.md)
@@ -33,13 +34,23 @@ was not changed.
 2. `3d9f117` — `feat: add bounded personal AI research API`
 3. `9f53c48` — `feat: add trip-day AI research panel`
 4. Phase 4 documentation and release record
-5. Independent-review remediation — pending
+5. Independent-review remediation
 
 ## Review and verification
 
-- Independent Luna Max review of the plan and complete code: pending.
+- An independent Luna Max reviewed the plan and implementation and identified
+  four issues: nonterminal idempotent replays could look successful, results
+  could outlive edited inputs or their expiry, citations did not display each
+  raw source URL, and route-level ownership/upstream-error regressions were
+  missing. The remediation makes nonterminal replays fail safely, clears stale
+  results on input edits, expires visible results at the earliest evidence or
+  session expiry, displays source URLs, and adds route regressions proving
+  trip/day ownership checks run before the AI call and upstream bodies remain
+  hidden.
+- All independent-review findings are addressed in the plan and implementation.
 - Automated tests, type checks, lint, and builds were not run in this session.
-  The focused test cases are committed as source but remain unexecuted.
+  The focused test cases, including the added route regressions, are committed
+  as source but remain unexecuted.
 - No live AI service, external search provider, provider credentials, or
   PostgreSQL-backed Phase 4 test database was configured for this work.
 - The local travel research gate defaults to off. The AI service's research

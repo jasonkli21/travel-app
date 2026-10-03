@@ -1,13 +1,20 @@
 from collections.abc import Iterator
 from os import environ
+from typing import Any, Literal, NoReturn
+from uuid import UUID
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, delete, func, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
+from personal_travel.api.dependencies import session_dependency
 from personal_travel.api.schemas import ManualSavedPlaceCreate, TripCreate
+from personal_travel.clients.personal_ai import PersonalAIClient, PersonalAIError
+from personal_travel.config import Settings, get_settings
 from personal_travel.db.base import Base
+from personal_travel.main import app
 from personal_travel.models.itinerary import ItineraryItem
 from personal_travel.models.place import Place
 from personal_travel.models.reservation import Reservation, SavedPlace
@@ -44,6 +51,36 @@ def clean_database(database_engine: Engine) -> Iterator[None]:
         connection.execute(delete(Trip))
         connection.execute(delete(Place))
     yield
+
+
+@pytest.fixture
+def api_client(database_engine: Engine) -> Iterator[TestClient]:
+    def override_session() -> Iterator[Session]:
+        with Session(database_engine) as session:
+            yield session
+
+    app.dependency_overrides[session_dependency] = override_session
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        personal_ai_research_enabled=True
+    )
+    with TestClient(app) as client:
+        yield client
+    app.dependency_overrides.pop(session_dependency, None)
+    app.dependency_overrides.pop(get_settings, None)
+
+
+def create_trip(client: TestClient, title: str) -> dict[str, Any]:
+    response = client.post(
+        "/v1/trips",
+        json={
+            "title": title,
+            "start_date": "2026-10-03",
+            "end_date": "2026-10-03",
+            "timezone": "UTC",
+        },
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
 
 
 def test_manual_saved_place_creates_owner_place_and_trip_candidate_atomically(
@@ -98,6 +135,8 @@ def test_manual_saved_place_rejects_foreign_trip_without_creating_place(
                 timezone="UTC",
             )
         )
+        foreign_trip_id = str(foreign_trip.id)
+        foreign_day_id = str(foreign_trip.days[0].id)
         with pytest.raises(DomainError) as error:
             SavedPlaceService(session, "local").create_manual(
                 foreign_trip.id,
@@ -108,3 +147,72 @@ def test_manual_saved_place_rejects_foreign_trip_without_creating_place(
     with Session(database_engine) as session:
         assert session.scalar(select(func.count()).select_from(Place)) == 0
         assert session.scalar(select(func.count()).select_from(SavedPlace)) == 0
+
+
+def test_research_route_rejects_foreign_trip_and_day_before_ai_call_and_sanitizes_failure(
+    api_client: TestClient,
+    database_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    local_trip = create_trip(api_client, "Local trip")
+    other_local_trip = create_trip(api_client, "Second local trip")
+    with Session(database_engine) as session:
+        foreign_trip = TripService(session, "another-owner").create(
+            TripCreate(
+                title="Foreign trip",
+                start_date="2026-10-03",
+                end_date="2026-10-03",
+                timezone="UTC",
+            )
+        )
+
+    calls: list[dict[str, object]] = []
+
+    async def fail_research(
+        _client: PersonalAIClient,
+        *,
+        question: str,
+        freshness: Literal["general", "current"],
+        idempotency_key: UUID,
+    ) -> NoReturn:
+        calls.append(
+            {
+                "question": question,
+                "freshness": freshness,
+                "idempotency_key": idempotency_key,
+            }
+        )
+        raise PersonalAIError("secret upstream response body")
+
+    monkeypatch.setattr(PersonalAIClient, "research", fail_research)
+
+    def request_payload(day_id: str) -> dict[str, str]:
+        return {
+            "day_id": day_id,
+            "question": "Find a quiet dinner",
+            "freshness": "current",
+            "idempotency_key": "1caa92f9-c49b-42cc-9282-e9255b4a7a0d",
+        }
+
+    foreign_response = api_client.post(
+        f"/v1/trips/{foreign_trip_id}/research",
+        json=request_payload(foreign_day_id),
+    )
+    assert foreign_response.status_code == 404
+    assert calls == []
+
+    mismatched_day_response = api_client.post(
+        f"/v1/trips/{local_trip['id']}/research",
+        json=request_payload(other_local_trip["days"][0]["id"]),
+    )
+    assert mismatched_day_response.status_code == 404
+    assert calls == []
+
+    upstream_failure_response = api_client.post(
+        f"/v1/trips/{local_trip['id']}/research",
+        json=request_payload(local_trip["days"][0]["id"]),
+    )
+    assert upstream_failure_response.status_code == 503
+    assert upstream_failure_response.json()["error"]["code"] == "research_unavailable"
+    assert "secret upstream response body" not in upstream_failure_response.text
+    assert len(calls) == 1

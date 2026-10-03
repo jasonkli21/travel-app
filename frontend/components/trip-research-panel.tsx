@@ -12,6 +12,15 @@ import {
   travelApi,
 } from "../lib/api";
 
+const EMPTY_CANDIDATE = {
+  name: "",
+  category: "",
+  address: "",
+  phone: "",
+  website_url: "",
+  note: "",
+};
+
 function errorMessage(error: unknown): string {
   return error instanceof ApiError ? error.message : "Research could not be completed. Try again.";
 }
@@ -65,19 +74,34 @@ export default function TripResearchPanel({
   const [researchPending, setResearchPending] = useState(false);
   const [savePending, setSavePending] = useState(false);
   const [result, setResult] = useState<TripResearchResult | null>(null);
+  const [expiryTick, setExpiryTick] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [candidate, setCandidate] = useState({
-    name: "",
-    category: "",
-    address: "",
-    phone: "",
-    website_url: "",
-    note: "",
-  });
+  const [candidate, setCandidate] = useState(EMPTY_CANDIDATE);
+
+  const resultExpiry = result?.state === "completed"
+    ? Math.min(
+        Date.parse(result.expires_at),
+        ...result.citations.map((citation) => Date.parse(citation.expires_at)),
+      )
+    : null;
+  const resultExpired = result?.state === "completed"
+    && (resultExpiry === null || !Number.isFinite(resultExpiry) || resultExpiry <= Date.now());
+  const displayedResult: TripResearchResult | null = resultExpired && result
+    ? { ...result, state: "expired", answer: null, citations: [] }
+    : result;
+
+  useEffect(() => {
+    if (resultExpiry === null || resultExpired) return;
+    const maxTimerDelay = 2_147_483_647;
+    const delay = Math.min(Math.max(0, resultExpiry - Date.now() + 10), maxTimerDelay);
+    const timer = window.setTimeout(() => setExpiryTick((current) => current + 1), delay);
+    return () => window.clearTimeout(timer);
+  }, [expiryTick, result, resultExpired, resultExpiry]);
 
   useEffect(() => {
     if (!trip.days.some((day) => day.id === dayId)) {
       setDayId(trip.days[0]?.id ?? "");
+      setResult(null);
     }
   }, [dayId, trip.days]);
 
@@ -120,7 +144,7 @@ export default function TripResearchPanel({
         setError("The candidate was not saved. Review the trip error and try again.");
         return;
       }
-      setCandidate({ name: "", category: "", address: "", phone: "", website_url: "", note: "" });
+      setCandidate(EMPTY_CANDIDATE);
     } catch (nextError) {
       setError(errorMessage(nextError));
     } finally {
@@ -152,7 +176,15 @@ export default function TripResearchPanel({
           <div className="formGrid">
             <label>
               Trip day
-              <select value={dayId} onChange={(event) => setDayId(event.target.value)} required>
+              <select
+                value={dayId}
+                onChange={(event) => {
+                  setDayId(event.target.value);
+                  setResult(null);
+                  setError(null);
+                }}
+                required
+              >
                 {trip.days.map((day) => (
                   <option key={day.id} value={day.id}>Day {day.day_index} · {day.date}{day.title ? ` · ${day.title}` : ""}</option>
                 ))}
@@ -160,7 +192,14 @@ export default function TripResearchPanel({
             </label>
             <label>
               Freshness
-              <select value={freshness} onChange={(event) => setFreshness(event.target.value as ResearchFreshness)}>
+              <select
+                value={freshness}
+                onChange={(event) => {
+                  setFreshness(event.target.value as ResearchFreshness);
+                  setResult(null);
+                  setError(null);
+                }}
+              >
                 <option value="current">Current information</option>
                 <option value="general">General background</option>
               </select>
@@ -170,7 +209,11 @@ export default function TripResearchPanel({
             What would you like to research?
             <textarea
               value={question}
-              onChange={(event) => setQuestion(event.target.value)}
+              onChange={(event) => {
+                setQuestion(event.target.value);
+                setResult(null);
+                setError(null);
+              }}
               maxLength={300}
               minLength={1}
               rows={3}
@@ -188,21 +231,22 @@ export default function TripResearchPanel({
       </form>
 
       {error ? <p className="formError locationError" role="alert">{error}</p> : null}
-      {result ? (
+      {displayedResult ? (
         <div className="researchResult" aria-live="polite">
-          <p className={`researchState researchState-${result.state}`} role="status">{resultStatus(result)}</p>
-          {result.state === "completed" && result.answer && result.citations.length > 0 ? (
+          <p className={`researchState researchState-${displayedResult.state}`} role="status">{resultStatus(displayedResult)}</p>
+          {displayedResult.state === "completed" && displayedResult.answer && displayedResult.citations.length > 0 ? (
             <>
-              <div className="researchAnswer" aria-label="Cited research answer">{result.answer}</div>
+              <div className="researchAnswer" aria-label="Cited research answer">{displayedResult.answer}</div>
               <h3>Sources</h3>
               <ol className="researchCitations">
-                {result.citations.map((citation) => {
+                {displayedResult.citations.map((citation) => {
                   const href = safeCitationUrl(citation.url);
                   return (
                     <li key={`${citation.evidence_id}-${citation.number}`}>
                       <div>
                         <strong>[{citation.number}] </strong>
                         {href ? <a href={href} target="_blank" rel="noopener noreferrer">{citation.title || href}</a> : <span>{citation.title || "Invalid source link"}</span>}
+                        <span className="researchSourceUrl">{citation.url}</span>
                         <span className="researchSourceTimes">
                           Observed {formatTimestamp(citation.observed_at)} ({timezone});
                           expires {formatTimestamp(citation.expires_at)} ({timezone})
@@ -230,7 +274,7 @@ export default function TripResearchPanel({
               </form>
             </>
           ) : null}
-          {result.state === "completed" && (!result.answer || result.citations.length === 0) ? (
+          {displayedResult.state === "completed" && (!displayedResult.answer || displayedResult.citations.length === 0) ? (
             <p className="formError" role="alert">A complete cited answer was not returned, so there is nothing to show.</p>
           ) : null}
         </div>

@@ -1,6 +1,7 @@
 # Phase 4 implementation plan — personal AI research
 
-**Status:** implemented locally; independent review pending  
+**Status:** implemented locally; independent review findings addressed
+
 **Date:** 2026-10-03  
 **Baseline:** `5720cc1` (`codex/phase-0-scaffold-corrections`), with Phases 1–3 delivered locally  
 **Roadmap:** [`09-implementation-plan.md`](09-implementation-plan.md)  
@@ -181,6 +182,9 @@ commit groups.
 - The response/UI show the cited answer only when the AI session allows it,
   with each source URL, observation time, and expiry visible and safe to open.
   Stale/insufficient/failed results are clearly distinguished.
+- Replayed AI sessions still in a nonterminal state fail safely. The UI clears
+  results when the selected day, query, or freshness changes and hides results
+  once their earliest session/citation expiry time passes.
 - Provider/API failure leaves all travel records unchanged and does not break
   manual trip, reservation, itinerary, map, or saved-place workflows.
 - Candidate saving creates both the manual place and trip relationship
