@@ -51,14 +51,15 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "reservation_type IN ("
             "'lodging','flight','train','car_rental','activity','dining','other')",
-            name="valid_reservation_type",
+            name="ck_reservations_valid_reservation_type",
         ),
         sa.CheckConstraint(
-            "status IN ('tentative','confirmed','cancelled')", name="valid_reservation_status"
+            "status IN ('tentative','confirmed','cancelled')",
+            name="ck_reservations_valid_reservation_status",
         ),
         sa.CheckConstraint(
             "ends_at IS NULL OR starts_at IS NULL OR starts_at <= ends_at",
-            name="valid_reservation_time_range",
+            name="ck_reservations_valid_reservation_time_range",
         ),
         sa.ForeignKeyConstraint(
             ["place_id"],

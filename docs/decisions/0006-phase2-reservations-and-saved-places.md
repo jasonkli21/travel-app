@@ -30,8 +30,15 @@ browser timezone or a provider-specific default—must remain authoritative.
   mutates or deletes the reusable place.
 - Keep conflict calculation in deterministic travel-domain code. Compare
   scheduled non-cancelled reservations with non-cancelled scheduled items in
-  the same trip, exclude an intentionally linked item, and return explainable
-  conflict context rather than mutating state.
+  the same trip, exclude an intentionally linked item, treat a single endpoint
+  as a point event, and return explainable conflict context rather than
+  mutating state. Both missing endpoints mean unscheduled; boundary-only
+  equality is not a conflict.
+- When a trip timezone changes, re-resolve each reservation endpoint in the new
+  zone while preserving its local date and wall-clock value. Reject invalid DST
+  endpoints or an impossible range atomically.
+- Treat the four reservation schedule fields as one PATCH group. A client must
+  send all four when changing or clearing the schedule; four nulls clear it.
 - Extend manual places with optional category, phone, and website metadata.
   Defer provider search, geocoding, maps, and external evidence.
 

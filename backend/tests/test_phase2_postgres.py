@@ -1,5 +1,7 @@
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from os import environ
+from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
@@ -151,10 +153,25 @@ def test_reservations_saved_places_and_conflicts(api_client: TestClient) -> None
     )
     assert second_item_response.status_code == 201, second_item_response.text
     second_item_id = second_item_response.json()["days"][0]["items"][1]["id"]
+    third_item_response = api_client.post(
+        f"/v1/trips/{trip['id']}/days/{day['id']}/items",
+        json={"title": "Second overlap", "start_time": "10:50", "end_time": "11:05"},
+    )
+    assert third_item_response.status_code == 201, third_item_response.text
+    third_item_id = third_item_response.json()["days"][0]["items"][2]["id"]
     with_conflict = api_client.get(f"/v1/trips/{trip['id']}/reservations")
-    assert [conflict["item_id"] for conflict in with_conflict.json()[0]["conflicts"]] == [
-        second_item_id
-    ]
+    assert {conflict["item_id"] for conflict in with_conflict.json()[0]["conflicts"]} == {
+        second_item_id,
+        third_item_id,
+    }
+
+    for item_id in (second_item_id, third_item_id):
+        cancelled_item = api_client.patch(
+            f"/v1/trips/{trip['id']}/items/{item_id}",
+            json={"status": "cancelled"},
+        )
+        assert cancelled_item.status_code == 200, cancelled_item.text
+    assert api_client.get(f"/v1/trips/{trip['id']}/reservations").json()[0]["conflicts"] == []
 
     cancelled = api_client.patch(
         f"/v1/trips/{trip['id']}/reservations/{reservation['id']}",
@@ -189,6 +206,7 @@ def test_reservation_links_and_records_are_owner_and_trip_scoped(
         f"/v1/trips/{first_trip['id']}/reservations",
         json={"provider_name": "Hotel"},
     ).json()
+    assert first_reservation["conflicts"] == []
     second_item = api_client.post(
         f"/v1/trips/{second_trip['id']}/days/{second_trip['days'][0]['id']}/items",
         json={"title": "Private item"},
@@ -241,3 +259,83 @@ def test_reservation_dst_gap_is_rejected(api_client: TestClient) -> None:
     )
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "invalid_local_time"
+
+
+def test_timezone_edit_preserves_reservation_wall_clock_values(api_client: TestClient) -> None:
+    trip = create_trip(
+        api_client,
+        timezone="America/Los_Angeles",
+        start_date="2026-01-10",
+        end_date="2026-01-10",
+    )
+    created = api_client.post(
+        f"/v1/trips/{trip['id']}/reservations",
+        json={
+            "provider_name": "Hotel",
+            "start_date": "2026-01-10",
+            "start_time": "10:00",
+            "end_date": "2026-01-10",
+            "end_time": "11:00",
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    updated_trip = api_client.patch(
+        f"/v1/trips/{trip['id']}",
+        json={"timezone": "America/New_York"},
+    )
+    assert updated_trip.status_code == 200, updated_trip.text
+    reservation = api_client.get(f"/v1/trips/{trip['id']}/reservations").json()[0]
+    assert reservation["start_date"] == "2026-01-10"
+    assert reservation["start_time"] == "10:00"
+    assert reservation["end_date"] == "2026-01-10"
+    assert reservation["end_time"] == "11:00"
+
+
+def test_reservations_with_same_schedule_use_creation_order(
+    api_client: TestClient,
+    database_engine: Engine,
+) -> None:
+    trip = create_trip(api_client, start_date="2026-08-02", end_date="2026-08-02")
+    payload = {
+        "provider_name": "Same-time provider",
+        "start_date": "2026-08-02",
+        "start_time": "10:00",
+    }
+    first = api_client.post(f"/v1/trips/{trip['id']}/reservations", json=payload)
+    second = api_client.post(f"/v1/trips/{trip['id']}/reservations", json=payload)
+    assert first.status_code == 201, first.text
+    assert second.status_code == 201, second.text
+
+    with Session(database_engine) as session:
+        first_record = session.get(Reservation, UUID(first.json()["id"]))
+        second_record = session.get(Reservation, UUID(second.json()["id"]))
+        assert first_record is not None
+        assert second_record is not None
+        first_record.created_at = datetime(2026, 1, 1, tzinfo=UTC)
+        second_record.created_at = datetime(2026, 1, 2, tzinfo=UTC)
+        session.commit()
+
+    listed = api_client.get(f"/v1/trips/{trip['id']}/reservations")
+    assert listed.status_code == 200, listed.text
+    assert [reservation["id"] for reservation in listed.json()] == [
+        first.json()["id"],
+        second.json()["id"],
+    ]
+
+
+def test_one_sided_reservation_schedule_is_a_point_conflict(api_client: TestClient) -> None:
+    trip = create_trip(api_client, start_date="2026-08-01", end_date="2026-08-01")
+    day = trip["days"][0]
+    item = api_client.post(
+        f"/v1/trips/{trip['id']}/days/{day['id']}/items",
+        json={"title": "Timed activity", "start_time": "10:00", "end_time": "11:00"},
+    )
+    assert item.status_code == 201, item.text
+    item_id = item.json()["days"][0]["items"][0]["id"]
+    reservation = api_client.post(
+        f"/v1/trips/{trip['id']}/reservations",
+        json={"provider_name": "Timed booking", "start_date": "2026-08-01", "start_time": "10:00"},
+    )
+    assert reservation.status_code == 201, reservation.text
+    assert reservation.json()["conflicts"][0]["item_id"] == item_id

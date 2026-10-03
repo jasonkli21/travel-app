@@ -132,7 +132,10 @@ input:focus, select:focus, textarea:focus, button:focus-visible, a:focus-visible
 .aiBoundary p { color: var(--muted); font-size: 12px; line-height: 1.4; margin: 10px 0 0; }
 .centerState { min-height: 180px; display: grid; place-items: center; color: var(--muted); }
 .srOnly { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-@media (max-width: 1050px) { .shell { grid-template-columns: 190px 1fr; } .aiPanel { display: none; } }
+@media (max-width: 1050px) {
+  .shell { grid-template-columns: 190px minmax(0, 1fr); }
+  .aiPanel { border-left: 0; border-top: 1px solid var(--line); display: flex; grid-column: 1 / -1; }
+}
 @media (max-width: 1150px) { .overviewPanel { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 720px) {
   .shell { display: block; }

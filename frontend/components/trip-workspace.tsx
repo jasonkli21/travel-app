@@ -457,38 +457,52 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
   const [tripForm, setTripForm] = useState({ title: "", start_date: "", end_date: "", timezone: "UTC" });
   const [showTripEditor, setShowTripEditor] = useState(false);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (): Promise<boolean> => {
     setError(null);
+    let nextTrip: TripDetail;
     try {
-      const [nextTrip, nextPlaces, nextReservations, nextSavedPlaces] = await Promise.all([
-        travelApi.getTrip(tripId),
+      nextTrip = await travelApi.getTrip(tripId);
+    } catch (nextError) {
+      setError(errorMessage(nextError));
+      setLoading(false);
+      setTrip(null);
+      return false;
+    }
+
+    setTrip(nextTrip);
+    setTripForm({ title: nextTrip.title, start_date: nextTrip.start_date, end_date: nextTrip.end_date, timezone: nextTrip.timezone });
+    try {
+      const [nextPlaces, nextReservations, nextSavedPlaces] = await Promise.all([
         travelApi.listPlaces(),
         travelApi.listReservations(tripId),
         travelApi.listSavedPlaces(tripId),
       ]);
-      setTrip(nextTrip);
       setPlaces(nextPlaces);
       setReservations(nextReservations);
       setSavedPlaces(nextSavedPlaces);
-      setTripForm({ title: nextTrip.title, start_date: nextTrip.start_date, end_date: nextTrip.end_date, timezone: nextTrip.timezone });
     } catch (nextError) {
-      setError(errorMessage(nextError));
-    } finally {
+      setError(`Trip loaded, but some supporting data could not be refreshed: ${errorMessage(nextError)}`);
       setLoading(false);
+      return false;
     }
+    setLoading(false);
+    return true;
   }, [tripId]);
 
   useEffect(() => {
     void Promise.resolve().then(refresh);
   }, [refresh]);
 
-  const run = async (key: string, operation: () => Promise<void>): Promise<boolean> => {
+  const run = async (
+    key: string,
+    operation: () => Promise<void>,
+    options: { refreshAfter?: boolean } = {},
+  ): Promise<boolean> => {
     setPending(key);
     setError(null);
     try {
       await operation();
-      await refresh();
-      return true;
+      return options.refreshAfter === false ? true : await refresh();
     } catch (nextError) {
       setError(errorMessage(nextError));
       return false;
@@ -508,7 +522,7 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
     void run("trip-delete", async () => {
       await travelApi.deleteTrip(tripId);
       router.push("/");
-    });
+    }, { refreshAfter: false });
   };
 
   const dayCountLabel = useMemo(

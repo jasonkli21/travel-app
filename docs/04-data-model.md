@@ -25,7 +25,8 @@ updated_at
 
 Constraint: `start_date <= end_date`.
 
-Phase 1 service invariants still need to ensure owner scoping and that trip-day dates match the trip range.
+Trip and itinerary services enforce owner scoping and ensure trip-day dates
+match the trip range.
 
 ### `trip_days`
 
@@ -217,8 +218,13 @@ cross-midnight item ranges. Date-only items keep both time values null.
 Phase 2 reservation schedules use local date/time pairs in the owning trip
 timezone. A reservation may cross midnight, but a scheduled value must have a
 start date/time and an end date requires an end time. DST gaps and folds are
-rejected. Conflict calculation compares the resulting instants and excludes
-the intentionally linked item, cancelled records, and boundary-only equality.
+rejected. A single supplied endpoint is a point event; both missing endpoints
+are unscheduled. Conflict calculation compares the resulting instants and
+excludes the intentionally linked item, cancelled records, and boundary-only
+equality. Changing a trip timezone preserves each reservation endpoint's local
+date and wall-clock value by re-resolving it in the new zone. Reservation
+schedule PATCHes are atomic: all four local schedule fields must be supplied
+together, and four nulls clear the schedule.
 
 ## Places and geospatial behavior
 
@@ -244,5 +250,5 @@ cascades remove its days/items, and an item delete compacts its day's order.
 Cancelled reservations remain as manual history, while soft deletion, archival,
 and audited deletion events remain future product decisions for later entities.
 
-The database cascade is therefore an implementation detail of the Phase 1
+The database cascade is therefore an implementation detail of the Phase 1/2
 permanent-delete policy, not a general rule for future product entities.

@@ -19,6 +19,8 @@ class ReservationConflict:
 def _bounds(
     starts_at: datetime | None, ends_at: datetime | None
 ) -> tuple[datetime, datetime] | None:
+    # A single endpoint is intentionally a point event. Fully missing endpoints
+    # are unscheduled and do not participate in conflict calculation.
     point = starts_at or ends_at
     if point is None:
         return None

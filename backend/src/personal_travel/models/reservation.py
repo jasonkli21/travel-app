@@ -47,14 +47,15 @@ class Reservation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         CheckConstraint(
             "reservation_type IN ("
             "'lodging','flight','train','car_rental','activity','dining','other')",
-            name="valid_reservation_type",
+            name="ck_reservations_valid_reservation_type",
         ),
         CheckConstraint(
-            "status IN ('tentative','confirmed','cancelled')", name="valid_reservation_status"
+            "status IN ('tentative','confirmed','cancelled')",
+            name="ck_reservations_valid_reservation_status",
         ),
         CheckConstraint(
             "ends_at IS NULL OR starts_at IS NULL OR starts_at <= ends_at",
-            name="valid_reservation_time_range",
+            name="ck_reservations_valid_reservation_time_range",
         ),
         Index("ix_reservations_owner_trip_start", "owner_id", "trip_id", "starts_at"),
     )

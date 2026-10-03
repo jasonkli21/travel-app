@@ -90,6 +90,7 @@ class TripService:
                 self._reconcile_days(trip, target_start, target_end)
             if target_timezone != trip.timezone:
                 self._rebase_item_times(trip, trip.timezone, target_timezone)
+                self._rebase_reservation_times(trip, trip.timezone, target_timezone)
 
             if "title" in data.model_fields_set:
                 if data.title is None:
@@ -221,3 +222,53 @@ class TripService:
                 details={"field": field_name, "date": day_date.isoformat()},
             )
         return local.timetz().replace(tzinfo=None)
+
+    @staticmethod
+    def _rebase_reservation_times(trip: Trip, old_timezone: str, new_timezone: str) -> None:
+        old_zone = get_zoneinfo(old_timezone)
+        new_zone = get_zoneinfo(new_timezone)
+        for reservation in trip.reservations:
+            if reservation.starts_at is None and reservation.ends_at is None:
+                continue
+            if reservation.starts_at is None or reservation.ends_at is None:
+                # Existing one-sided schedules remain point events. Rebase the
+                # supplied endpoint without inventing an end or start.
+                if reservation.starts_at is not None:
+                    local = as_aware_utc(reservation.starts_at).astimezone(old_zone)
+                    reservation.starts_at = resolve_local_datetime(
+                        local.date(),
+                        local.timetz().replace(tzinfo=None),
+                        new_zone,
+                        field_name="start_time",
+                    )
+                if reservation.ends_at is not None:
+                    local = as_aware_utc(reservation.ends_at).astimezone(old_zone)
+                    reservation.ends_at = resolve_local_datetime(
+                        local.date(),
+                        local.timetz().replace(tzinfo=None),
+                        new_zone,
+                        field_name="end_time",
+                    )
+                continue
+
+            start_local = as_aware_utc(reservation.starts_at).astimezone(old_zone)
+            end_local = as_aware_utc(reservation.ends_at).astimezone(old_zone)
+            starts_at = resolve_local_datetime(
+                start_local.date(),
+                start_local.timetz().replace(tzinfo=None),
+                new_zone,
+                field_name="start_time",
+            )
+            ends_at = resolve_local_datetime(
+                end_local.date(),
+                end_local.timetz().replace(tzinfo=None),
+                new_zone,
+                field_name="end_time",
+            )
+            if as_aware_utc(starts_at) > as_aware_utc(ends_at):
+                raise DomainError(
+                    "invalid_reservation_time_range",
+                    "an existing reservation has an invalid time range after timezone conversion.",
+                )
+            reservation.starts_at = starts_at
+            reservation.ends_at = ends_at

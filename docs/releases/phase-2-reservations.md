@@ -34,18 +34,18 @@ and live booking evidence remain deferred.
 3. `08fc044` — `feat: expose Phase 2 reservation workflows`
 4. `4e03360` — `feat: build Phase 2 reservation workspace`
 5. This commit — `docs: record Phase 2 reservation release`
-6. The independent-review follow-up commit will record review findings and
-   fixes after Luna Max completes its read-only review.
+6. The independent-review follow-up commit records the Luna Max findings and
+   fixes described below.
 
 ## Verification performed
 
 Backend, from the repository root with an isolated uv cache:
 
-- `uv run --directory backend --locked pytest -q` — 16 passed, 7 skipped
+- `uv run --directory backend --locked pytest -q` — 17 passed, 9 skipped
   because PostgreSQL-backed tests require `TEST_DATABASE_URL`; one existing
   Starlette/httpx deprecation warning.
 - `DATABASE_URL=... TEST_DATABASE_URL=... uv run --directory backend --locked
-  pytest -q tests/test_phase1_postgres.py tests/test_phase2_postgres.py` — 7
+  pytest -q tests/test_phase1_postgres.py tests/test_phase2_postgres.py` — 9
   passed against isolated PostgreSQL 16; one existing Starlette/httpx
   deprecation warning.
 - `uv run --directory backend --locked ruff check src tests` — passed.
@@ -53,6 +53,8 @@ Backend, from the repository root with an isolated uv cache:
 - `uv run --directory backend --locked mypy src` — passed.
 - Alembic upgrade to `head`, downgrade to `0002`, and upgrade to `head` again
   on a fresh isolated PostgreSQL database — passed.
+- `alembic check` against a fresh Phase 2 database — no new upgrade operations
+  detected after the ORM/migration constraint names were aligned.
 - Phase 2 contract tests cover complete local schedule pairs, atomic schedule
   patch behavior, coordinate-update rules, and richer place metadata.
 
@@ -64,6 +66,24 @@ bundled Node runtime:
 - `node --test scripts/proxy-response.test.mjs` — 2 passed.
 - `next build` — passed; routes remain `/`, `/trips/[tripId]`, `/api/health`,
   and `/api/v1/[...path]`.
+
+## Independent review and fixes
+
+Luna Max reviewed the plan, ADR, implementation commits, tests, and release
+claims read-only. The follow-up fixes:
+
+- keep saved-place controls visible below the main workspace at tablet/mobile
+  widths;
+- preserve reservation local date/wall-clock values when a trip timezone changes;
+- document and test point-event semantics for one-sided schedules, boundary
+  equality, cancelled items, unscheduled records, and multiple conflicts;
+- propagate refresh failures so a mutation is not reported as fully successful
+  with stale supporting data;
+- align the reservation check-constraint names between ORM metadata and the
+  additive migration;
+- document the atomic reservation schedule PATCH group;
+- correct stale Phase 2 data-model wording and align reservation ordering with
+  the plan's creation-time tie-breaker.
 
 The `pnpm` wrapper was not used for the final frontend checks because this
 environment lacks the `corepack` command and the available pnpm attempted a
@@ -78,5 +98,5 @@ ran successfully directly.
   credentials were not used.
 - No external booking/provider evidence was required; all Phase 2 records are
   manually entered and locally authoritative.
-- The independent Luna Max review and any resulting fixes are recorded in the
-  follow-up commit after this release commit.
+- The review was read-only and did not require external credentials or
+  deployment access.

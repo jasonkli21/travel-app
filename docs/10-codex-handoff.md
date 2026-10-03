@@ -120,8 +120,10 @@ The Phase 2 service decisions are:
 
 - reservation status distinguishes `tentative`, `confirmed`, and `cancelled`;
 - reservation schedules use local date/time fields in the trip timezone and
-  persist aware instants; DST gaps/folds fail and cross-midnight reservations
-  are allowed;
+  persist aware instants; DST gaps/folds fail, cross-midnight reservations are
+  allowed, and trip timezone edits preserve reservation wall-clock values;
+- reservation schedule PATCHes treat the four local schedule fields as an
+  atomic group; four nulls clear the schedule;
 - an itinerary item links to at most one same-trip reservation, while a
   reservation may anchor multiple items;
 - saved places are unique trip/place candidate relationships and do not delete

@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -127,11 +127,11 @@ class ReservationService:
         raise not_found("reservation")
 
     @staticmethod
-    def _sort_key(reservation: Reservation) -> tuple[bool, object, str, str, UUID]:
+    def _sort_key(reservation: Reservation) -> tuple[bool, object, str, str, datetime]:
         return (
             reservation.starts_at is None,
-            reservation.starts_at or date.max,
+            reservation.starts_at or datetime.max,
             reservation.status,
             reservation.provider_name.casefold(),
-            reservation.id,
+            reservation.created_at,
         )

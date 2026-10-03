@@ -47,9 +47,9 @@ The architectural choices in this section are also recorded in
 | Identity and ownership | Reservations and saved-place rows carry `owner_id`. Every lookup is scoped to the configured server owner, and a reservation/place/item link is accepted only when all records belong to that owner and the same trip. `local` remains an unauthenticated bootstrap seam. |
 | Reservation lifecycle | `tentative` means a planned but not confirmed booking, `confirmed` means a booked anchor, and `cancelled` preserves a manually recorded booking that is no longer active. Delete is permanent and explicit; deleting a reservation clears item links with `ON DELETE SET NULL`. |
 | Reservation types | Use checked strings: `lodging`, `flight`, `train`, `car_rental`, `activity`, `dining`, and `other`. The list is deliberately small and can be extended by a later migration when product behavior requires it. |
-| Reservation time | API callers submit optional local `start_date`/`start_time` and `end_date`/`end_time` fields in the owning trip's IANA timezone. A scheduled reservation must have a start date and time; its end is optional, but an end date requires an end time. Cross-midnight ranges are allowed. A reservation with all four fields null is unscheduled and cannot produce a time conflict. Persist scheduled values as timezone-aware instants in `starts_at`/`ends_at`; reject invalid, nonexistent, and ambiguous local times. |
+| Reservation time | API callers submit optional local `start_date`/`start_time` and `end_date`/`end_time` fields in the owning trip's IANA timezone. A scheduled reservation must have a start date and time; its end is optional, but an end date requires an end time. Cross-midnight ranges are allowed. A reservation with all four fields null is unscheduled and cannot produce a time conflict. Persist scheduled values as timezone-aware instants in `starts_at`/`ends_at`; reject invalid, nonexistent, and ambiguous local times. When the trip timezone changes, preserve each reservation endpoint's local date and wall-clock value by re-resolving it in the new timezone, just as Phase 1 does for itinerary items; reject the trip edit if the new zone makes an endpoint invalid or the range impossible. |
 | Itinerary link cardinality | `itinerary_items.reservation_id` is nullable. An item links to at most one reservation; one reservation may anchor multiple items. The item and reservation must belong to the same trip. This avoids an unnecessary association aggregate while preserving the useful one-booking-to-many-itinerary-items case. |
-| Conflict semantics | For each non-cancelled reservation, compare its scheduled interval with non-cancelled scheduled itinerary items in the same trip. The linked item itself is excluded because that is the intended anchor. Positive-length intervals overlap when `a.start < b.end` and `b.start < a.end`; a point event overlaps a positive interval when it falls inside the interval. Boundary-only equality is not a conflict. Results are computed in application code and returned with stable IDs, day/item context, and a human-readable reason. |
+| Conflict semantics | For each non-cancelled reservation, compare its scheduled interval with non-cancelled scheduled itinerary items in the same trip. The linked item itself is excluded because that is the intended anchor. Positive-length intervals overlap when `a.start < b.end` and `b.start < a.end`; a single supplied endpoint is deliberately treated as a point event, while both endpoints missing means unscheduled; a point event overlaps a positive interval when it falls inside the interval. Boundary-only equality is not a conflict. Results are computed in application code and returned with stable IDs, day/item context, and a human-readable reason. |
 | Saved places | `saved_places` is a first-class owner/trip/place join with one row per trip/place and an optional candidate note. The existing owner-scoped `places` record remains reusable across trips. Saving a place never changes the place or itinerary item and removing the saved relationship does not delete the place. |
 | Place metadata | Add optional manually maintained `category`, `phone`, and `website_url` fields. No provider-specific lookup or normalization is introduced. Place edits remain owner-scoped and preserve the existing optional coordinates/provider identity fields. |
 | API errors | Reuse the Phase 1 error envelope. Missing, foreign-owner, cross-trip, and invalid links are safe `404`/`422` responses; reservation deletion and conflict reporting do not expose another owner's records. |
@@ -110,7 +110,7 @@ All routes remain under `/v1` and use the existing owner/session dependencies.
 | --- | --- | --- |
 | `GET` | `/v1/trips/{trip_id}/reservations` | List the trip's reservations with local schedule fields, linked-item summaries, and deterministic conflicts. |
 | `POST` | `/v1/trips/{trip_id}/reservations` | Create a manual reservation after validating owner, trip, place, schedule, and status/type. |
-| `PATCH` | `/v1/trips/{trip_id}/reservations/{reservation_id}` | Edit reservation fields or clear its optional values; revalidate all schedule and link invariants. |
+| `PATCH` | `/v1/trips/{trip_id}/reservations/{reservation_id}` | Edit reservation fields or clear its optional values; revalidate all schedule and link invariants. The four schedule fields are an atomic patch group: if any is present, all four must be present; four nulls clear the schedule. |
 | `DELETE` | `/v1/trips/{trip_id}/reservations/{reservation_id}` | Permanently delete a reservation and clear its itinerary-item links. |
 | `GET` | `/v1/trips/{trip_id}/saved-places` | List trip candidates with place metadata and saved notes. |
 | `POST` | `/v1/trips/{trip_id}/saved-places` | Save an existing owner place to the trip with an optional note; reject duplicates deterministically. |
@@ -219,8 +219,10 @@ helpers, item/place service extensions, backend unit/integration tests.
    checks, clearing, and safe not-found behavior.
 4. Implement conflict calculation and compact item reservation summaries.
 5. Add PostgreSQL-backed tests for CRUD, ownership, cross-trip links, duplicate
-   saved places, deletion cascades/SET NULL, time round-trips, conflict edge
-   cases, and transaction rollback.
+   saved places, deletion cascades/SET NULL, time round-trips and timezone
+   edits, conflict edge cases (one-sided points, boundary equality, cancelled
+   items/reservations, unscheduled records, and multiple conflicts), and
+   transaction rollback.
 
 **Acceptance:** all writes are atomic and owner-scoped; linked items cannot
 silently point across trips; cancelled reservations do not warn; intended
@@ -266,8 +268,9 @@ the FastAPI contract; API errors remain actionable.
 3. Add conflict callouts and linked itinerary-item context; never auto-mutate
    an item when merely displaying a warning.
 4. Add item reservation selection and saved-place candidate actions.
-5. Add manual place metadata editing/creation while retaining mobile layout,
-   labels, keyboard operation, pending-state disabling, and error recovery.
+5. Add manual place metadata editing/creation while retaining mobile and tablet
+   access to the saved-place section, labels, keyboard operation,
+   pending-state disabling, and error recovery.
 
 **Acceptance:** a local user can create a tentative reservation, confirm it,
 link it to an item, see it in the overview and reservation section, observe a

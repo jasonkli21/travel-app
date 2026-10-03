@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import UTC, date, datetime
 
 import pytest
 from pydantic import ValidationError
@@ -9,6 +9,7 @@ from personal_travel.api.schemas import (
     ReservationCreate,
     ReservationUpdate,
 )
+from personal_travel.services.conflicts import intervals_overlap
 
 
 def test_reservation_schedule_requires_complete_local_pairs() -> None:
@@ -66,3 +67,13 @@ def test_place_metadata_and_coordinate_updates_are_validated() -> None:
 
     with pytest.raises(ValidationError, match="provided together"):
         PlaceUpdate(latitude=35.0)
+
+
+def test_conflict_intervals_treat_single_endpoints_as_points() -> None:
+    point = (datetime(2026, 5, 10, 10, 0, tzinfo=UTC), datetime(2026, 5, 10, 10, 0, tzinfo=UTC))
+    interval = (datetime(2026, 5, 10, 9, 0, tzinfo=UTC), datetime(2026, 5, 10, 11, 0, tzinfo=UTC))
+    boundary = (datetime(2026, 5, 10, 11, 0, tzinfo=UTC), datetime(2026, 5, 10, 12, 0, tzinfo=UTC))
+
+    assert intervals_overlap(point, interval)
+    assert not intervals_overlap(interval, boundary)
+    assert intervals_overlap(point, point)
