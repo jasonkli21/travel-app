@@ -50,6 +50,25 @@ h3 { margin: 3px 0 0; }
 .days { display: grid; gap: 18px; margin-top: 28px; }
 .itinerarySection, .reservationSection { scroll-margin-top: 20px; }
 .mapSection { margin-top: 38px; scroll-margin-top: 20px; }
+.researchSection { margin-top: 38px; scroll-margin-top: 20px; }
+.researchSection > .sectionHeading { margin-bottom: 14px; }
+.researchDisclosure { border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 0 8px 8px 0; color: #34483a; font-size: 13px; line-height: 1.5; margin: 0 0 14px; padding: 11px 13px; }
+.researchForm, .researchCandidateForm { display: grid; gap: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 16px; }
+.researchForm fieldset, .researchCandidateForm fieldset { display: grid; gap: 12px; border: 0; margin: 0; min-width: 0; padding: 0; }
+.researchForm textarea { min-height: 86px; }
+.researchResult { display: grid; gap: 10px; margin-top: 14px; }
+.researchState { border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font-size: 13px; line-height: 1.45; margin: 0; padding: 10px 12px; }
+.researchState-completed { border-color: #c6d9ca; background: #f1f7f1; }
+.researchState-failed, .researchState-expired { border-color: #e2b9b1; background: #fff8f5; color: var(--danger); }
+.researchAnswer { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); line-height: 1.6; overflow-wrap: anywhere; padding: 16px; white-space: pre-wrap; }
+.researchResult > h3, .researchCandidateForm h3 { font-size: 17px; margin: 4px 0 0; }
+.researchCitations { display: grid; gap: 8px; list-style: none; margin: 0; padding: 0; }
+.researchCitations li { border: 1px solid var(--line); border-radius: 9px; background: var(--panel); padding: 10px 12px; }
+.researchCitations li > div { display: grid; gap: 5px; }
+.researchCitations a { color: var(--accent); font-weight: 700; overflow-wrap: anywhere; }
+.researchSourceTimes { color: var(--muted); font-size: 11px; line-height: 1.4; }
+.researchCandidateForm { margin-top: 4px; }
+.researchCandidateForm .formHint { margin: 0; }
 .mapControls { display: grid; grid-template-columns: repeat(3, minmax(120px, 1fr)) auto; align-items: end; gap: 10px; margin-top: 18px; }
 .mapControls > button { min-height: 40px; }
 .mapFrame { display: grid; gap: 12px; margin-top: 14px; }
@@ -213,6 +232,7 @@ input:focus, select:focus, textarea:focus, button:focus-visible, a:focus-visible
   .itemSummary { grid-template-columns: 50px minmax(0, 1fr); }
   .itemActions { grid-column: 1 / -1; justify-content: flex-start; }
   .formGrid { grid-template-columns: 1fr; }
+  .researchForm, .researchCandidateForm { padding: 12px; }
   .inlineForm { align-items: stretch; flex-direction: column; }
   .inlineForm button { width: 100%; }
   .reservationHeader { flex-direction: column; }

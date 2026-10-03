@@ -3,6 +3,8 @@ export type ItemStatus = "tentative" | "planned" | "booked" | "completed" | "can
 export type ReservationType = "lodging" | "flight" | "train" | "car_rental" | "activity" | "dining" | "other";
 export type ReservationStatus = "tentative" | "confirmed" | "cancelled";
 export type LogisticsMode = "walk" | "drive" | "bicycle" | "transit";
+export type ResearchFreshness = "general" | "current";
+export type ResearchState = "pending" | "running" | "completed" | "insufficient" | "failed" | "expired";
 
 export interface PlaceSummary {
   id: string;
@@ -163,6 +165,26 @@ export interface SavedPlace {
   updated_at: string;
 }
 
+export interface ResearchCitation {
+  number: number;
+  evidence_id: string;
+  source_observation_id: string;
+  url: string;
+  title: string | null;
+  observed_at: string;
+  expires_at: string;
+}
+
+export interface TripResearchResult {
+  schema_version: "trip-research-v1";
+  session_id: string;
+  state: ResearchState;
+  answer: string | null;
+  failure_code: string | null;
+  expires_at: string;
+  citations: ResearchCitation[];
+}
+
 export interface CreateTripInput {
   title: string;
   start_date: string;
@@ -229,6 +251,10 @@ export type UpdateReservationInput = Partial<CreateReservationInput>;
 export interface CreateSavedPlaceInput {
   place_id: string;
   note: string | null;
+}
+
+export interface CreateManualSavedPlaceInput extends CreatePlaceInput {
+  note?: string | null;
 }
 
 export interface UpdateSavedPlaceInput {
@@ -317,6 +343,18 @@ export const travelApi = {
       method: "POST",
       body: JSON.stringify(input),
     }),
+  researchTripDay: (
+    tripId: string,
+    input: {
+      day_id: string;
+      question: string;
+      freshness: ResearchFreshness;
+      idempotency_key: string;
+    },
+  ) => request<TripResearchResult>(`/trips/${tripId}/research`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  }),
   createPlace: (input: CreatePlaceInput) =>
     request<PlaceSummary>("/places", { method: "POST", body: JSON.stringify(input) }),
   updatePlace: (placeId: string, input: UpdatePlaceInput) =>
@@ -337,6 +375,11 @@ export const travelApi = {
   listSavedPlaces: (tripId: string) => request<SavedPlace[]>(`/trips/${tripId}/saved-places`),
   createSavedPlace: (tripId: string, input: CreateSavedPlaceInput) =>
     request<SavedPlace>(`/trips/${tripId}/saved-places`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  createManualSavedPlace: (tripId: string, input: CreateManualSavedPlaceInput) =>
+    request<SavedPlace>(`/trips/${tripId}/saved-places/manual`, {
       method: "POST",
       body: JSON.stringify(input),
     }),

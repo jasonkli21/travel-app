@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ApiError,
   type CreateItemInput,
+  type CreateManualSavedPlaceInput,
   type CreatePlaceInput,
   type CreateReservationInput,
   type ItemStatus,
@@ -28,6 +29,7 @@ import {
   travelApi,
 } from "../lib/api";
 import TripMap, { type TripMapMarker, type TripMapRoute } from "./trip-map";
+import TripResearchPanel from "./trip-research-panel";
 
 const itemTypes: ItemType[] = ["activity", "food", "lodging", "transport", "flight", "note"];
 const itemStatuses: ItemStatus[] = ["tentative", "planned", "booked", "completed", "cancelled"];
@@ -772,6 +774,18 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
     return saved;
   };
 
+  const saveResearchCandidate = async (input: CreateManualSavedPlaceInput) => {
+    const saved = await run(
+      "research-candidate",
+      async () => {
+        await travelApi.createManualSavedPlace(trip.id, input);
+      },
+      { refreshAfter: false },
+    );
+    if (saved) await refresh();
+    return saved;
+  };
+
   return (
     <main className="shell">
       <aside className="sidebar">
@@ -785,6 +799,7 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
           <a href="#overview">Overview</a>
           <a className="active" href="#itinerary">Itinerary</a>
           <a href="#map">Map</a>
+          <a href="#research">Research</a>
           <a href="#reservations">Reservations</a>
           <a href="#saved-places">Saved places</a>
         </nav>
@@ -952,6 +967,12 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
             </section>
           </div>
         </section>
+
+        <TripResearchPanel
+          trip={trip}
+          pending={pending !== null}
+          onSaveCandidate={saveResearchCandidate}
+        />
 
         <section className="itinerarySection" id="itinerary">
           <div className="sectionHeading"><div><p className="eyebrow">AUTHORITATIVE PLAN</p><h2>Day-by-day itinerary</h2></div></div>
