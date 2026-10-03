@@ -33,19 +33,18 @@ and live booking evidence remain deferred.
 2. `ff38a38` — `feat: add Phase 2 reservation and saved-place model`
 3. `08fc044` — `feat: expose Phase 2 reservation workflows`
 4. `4e03360` — `feat: build Phase 2 reservation workspace`
-5. This commit — `docs: record Phase 2 reservation release`
-6. The independent-review follow-up commit records the Luna Max findings and
-   fixes described below.
+5. `3877f95` — `docs: record Phase 2 reservation release`
+6. `eac4944` — `fix: address Phase 2 independent review findings`
 
 ## Verification performed
 
 Backend, from the repository root with an isolated uv cache:
 
-- `uv run --directory backend --locked pytest -q` — 17 passed, 9 skipped
+- `uv run --directory backend --locked pytest -q` — 17 passed, 10 skipped
   because PostgreSQL-backed tests require `TEST_DATABASE_URL`; one existing
   Starlette/httpx deprecation warning.
 - `DATABASE_URL=... TEST_DATABASE_URL=... uv run --directory backend --locked
-  pytest -q tests/test_phase1_postgres.py tests/test_phase2_postgres.py` — 9
+  pytest -q tests/test_phase1_postgres.py tests/test_phase2_postgres.py` — 10
   passed against isolated PostgreSQL 16; one existing Starlette/httpx
   deprecation warning.
 - `uv run --directory backend --locked ruff check src tests` — passed.
@@ -84,6 +83,8 @@ claims read-only. The follow-up fixes:
 - document the atomic reservation schedule PATCH group;
 - correct stale Phase 2 data-model wording and align reservation ordering with
   the plan's creation-time tie-breaker.
+- add a PostgreSQL regression test proving creation-time ordering for equal
+  reservation schedules.
 
 The `pnpm` wrapper was not used for the final frontend checks because this
 environment lacks the `corepack` command and the available pnpm attempted a
