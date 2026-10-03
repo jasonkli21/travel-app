@@ -1,17 +1,17 @@
 # Codex handoff
 
-Status: Phase 2 delivered handoff
-Date: 2026-10-02
+Status: Phase 3 delivered handoff
+Date: 2026-10-03
 
 ## Objective
 
-The Phase 1 manual itinerary planner and Phase 2 reservations/saved-places
-slice are implemented as small, testable local vertical slices. The next
-implementation target is Phase 3 only after the Phase 2 workflow has been
-reviewed in use.
+The Phase 1 manual itinerary planner, Phase 2 reservations/saved-places slice,
+and Phase 3 maps/location/logistics slice are implemented locally. Review
+evidence and commit references are recorded in the phase release documents.
 
-Do not implement maps/provider search, booking/email import, AI research, or
-cloud deployment yet.
+Phase 4 AI research is the next planned phase. Do not invent its external API
+contract; booking/email import, authentication, and cloud deployment remain
+deferred.
 
 ## Read first
 
@@ -23,7 +23,7 @@ cloud deployment yet.
 6. `docs/09-implementation-plan.md`
 7. ADRs under `docs/decisions/`
 
-Use `docs/06-ai-integration.md` only to preserve the boundary; Phase 2 did not
+Use `docs/06-ai-integration.md` only to preserve the boundary; Phase 3 did not
 expand the AI API.
 
 ## Current implementation contents
@@ -38,6 +38,14 @@ Backend:
 - owner-scoped repositories and services for trip/day/place/item operations.
 - owner/trip-scoped reservation and saved-place services with place metadata
   editing, itinerary links, and deterministic conflict calculation.
+- typed Geoapify HTTP client for submitted geocoding search and on-demand
+  routing, plus owner-scoped result import and saved-candidate reuse.
+- trip map with Geoapify raster tiles, an explicit missing-key state, marker
+  and route geometry, and an accessible source-attributed location list.
+- deterministic logistics eligibility and transfer warnings; route estimates
+  remain response-only and do not mutate travel state.
+- Alembic migration `0004` retains source attribution, license, and link for
+  imported provider places.
 - typed Pydantic request/response contracts and a common error envelope.
 - deterministic inclusive day generation and date-range reconciliation.
 - local-time item conversion with IANA timezone/DST validation.
@@ -63,7 +71,7 @@ Infrastructure:
 - Dockerfiles for API/web.
 - GCP/Neon deployment documented but not implemented.
 
-## Phase 1 and Phase 2 verification
+## Phase 1–3 verification
 
 The October 2 Phase 0 review and corrections are recorded in
 [`releases/phase-0-scaffold.md`](releases/phase-0-scaffold.md). Phase 1 evidence,
@@ -71,12 +79,17 @@ commit references, and environment-specific limitations are recorded in
 [`releases/phase-1-itinerary.md`](releases/phase-1-itinerary.md).
 Phase 2 evidence, commit references, and environment-specific limitations are
 recorded in [`releases/phase-2-reservations.md`](releases/phase-2-reservations.md).
+Phase 3 evidence, commit references, and provider/database limitations are in
+[`releases/phase-3-maps-logistics.md`](releases/phase-3-maps-logistics.md).
 
 The implementation plan is preserved in
 [`phase-1-implementation-plan.md`](phase-1-implementation-plan.md), and the
 Phase 2 plan is preserved in
-[`phase-2-implementation-plan.md`](phase-2-implementation-plan.md). The
-delivered route surface is:
+[`phase-2-implementation-plan.md`](phase-2-implementation-plan.md). The Phase 3
+plan and provider decision are in
+[`phase-3-implementation-plan.md`](phase-3-implementation-plan.md) and
+[`decisions/0007-geoapify-maps-and-logistics.md`](decisions/0007-geoapify-maps-and-logistics.md).
+The delivered route surface is:
 
 ```text
 POST   /v1/trips
@@ -101,6 +114,9 @@ GET    /v1/trips/{trip_id}/saved-places
 POST   /v1/trips/{trip_id}/saved-places
 PATCH  /v1/trips/{trip_id}/saved-places/{saved_place_id}
 DELETE /v1/trips/{trip_id}/saved-places/{saved_place_id}
+GET    /v1/trips/{trip_id}/places/search?q=...&limit=...
+POST   /v1/trips/{trip_id}/saved-places/import
+POST   /v1/trips/{trip_id}/logistics/estimate
 ```
 
 The route -> service -> repository boundary is implemented and remains
@@ -114,7 +130,8 @@ The Phase 1 service decisions are:
 - local `HH:MM` values are interpreted in the trip timezone and DST gaps/folds fail;
 - concurrent item mutations serialize on the trip aggregate root;
 - deleting a trip or item is permanent; shrinking over a nonempty day returns `409`;
-- manual places are owner-scoped and no provider/map integration is introduced.
+- manual places are owner-scoped; provider-imported places keep source
+  attribution separately from user-editable place metadata.
 
 The Phase 2 service decisions are:
 
@@ -131,6 +148,19 @@ The Phase 2 service decisions are:
 - conflict warnings are deterministic and advisory, exclude linked anchors and
   cancelled records, and never mutate itinerary state.
 
+The Phase 3 service decisions are:
+
+- Geoapify is the tile, geocoding, and routing provider; map tiles use an
+  in-repository renderer with no map-package dependency.
+- provider search is submitted explicitly and imports only after user action;
+  re-import preserves user edits and candidate notes.
+- exact source attribution is stored with imported places and displayed with
+  search results, saved places, and the map location list.
+- route estimates use only coordinates and the selected mode, are fetched on
+  explicit request, and stay out of durable trip state.
+- transfer warnings compare route time plus a selected buffer with the actual
+  schedule gap. Missing coordinates or timestamps produce no route leg.
+
 ## Things explicitly deferred
 
 Do not add now:
@@ -140,7 +170,6 @@ Do not add now:
 - research evidence tables,
 - a travel-owned search agent,
 - Gmail connector,
-- maps provider,
 - external booking/email/calendar import,
 - PostGIS,
 - Redis,
@@ -163,7 +192,7 @@ Future integration remains HTTP, not Python package sharing.
 
 ## Cloud rule
 
-Phase 1 and Phase 2 are local-first.
+Phases 1–3 are local-first.
 
 Do not deploy or add Neon/GCP secrets as part of feature work unless separately authorized.
 
@@ -173,5 +202,5 @@ Preserve compatibility with the documented deployment path.
 
 Record the exact commits reviewed, checks actually run, remaining local or
 external verification gaps, and whether a later phase needs an ADR. Keep AI,
-cloud, maps, external imports, and authentication scope explicitly separated
-from the delivered Phase 2 slice.
+cloud, external imports, and authentication scope explicitly separated from
+the delivered Phase 3 slice.

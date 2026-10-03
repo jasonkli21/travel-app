@@ -129,8 +129,23 @@ Phase 2 extends the manual planner with booked anchors and optional candidates:
 - surface deterministic overlap warnings without automatically changing plans;
 - maintain richer manual place metadata and save a place as a trip candidate.
 
-External booking import, live provider evidence, maps, AI research, and
-authentication remain outside this local-first phase.
+External booking import, AI research, and authentication remain outside this
+phase.
+
+## Phase 3 product scope
+
+Phase 3 adds map context and manual-first location workflows:
+
+- show geocoded itinerary, reservation, and saved-candidate places on a trip map;
+- let the user submit a place/address search and explicitly save a selected
+  result as a trip candidate;
+- estimate travel time between consecutive scheduled, located itinerary items
+  for one day and flag tight transfers using a deterministic buffer rule;
+- retain provider-source attribution for imported places and keep route
+  estimates ephemeral.
+
+Provider observations remain advisory and never silently change the itinerary.
+The trip application remains usable without provider keys.
 
 ## Explicit non-goals for early phases
 

@@ -1,7 +1,7 @@
 # Local development
 
-Status: scaffold instructions  
-Date: 2026-10-02
+Status: Phase 3 local instructions
+Date: 2026-10-03
 
 ## Prerequisites
 
@@ -35,7 +35,16 @@ Set `TRAVEL_API_URL` in `frontend/.env.local` to change the proxy's backend addr
 it remains server-only. Environment variables supplied by the shell/container
 take precedence over environment files.
 
-The AI system is optional for the initial travel CRUD phases.
+Geoapify features are optional. To enable submitted place search and route
+estimates, set `GEOAPIFY_API_KEY` in the root `.env`; this key is read only by
+the backend. To enable map tiles, set `NEXT_PUBLIC_GEOAPIFY_API_KEY` in
+`frontend/.env.local`. The tile key is visible in browser requests, so restrict
+it to the local web origin and tile API in Geoapify. Restart the web process
+after changing the public tile key. Manual planning and coordinate entry work
+without either key.
+
+The AI system and Geoapify are optional. Manual itinerary and reservation
+flows continue to work without either service.
 
 ## Start PostgreSQL
 
@@ -103,8 +112,10 @@ make frontend-check
 ```
 
 Run `corepack pnpm build` from `frontend/` as well when changing its build or
-runtime setup. Backend checks do not require a database or real AI service.
-Online migration checks require an isolated PostgreSQL 16 database.
+runtime setup. Backend checks do not require a database or real AI/Geoapify
+service. PostgreSQL-backed Phase 1–3 tests and online migration checks require
+an isolated PostgreSQL 16 database. Provider-client tests use mocked HTTP
+responses and do not require credentials.
 
 ## Dependency locks
 
@@ -115,6 +126,9 @@ To refresh a lock after an approved manifest change, run `uv lock` in `backend/`
 or `corepack pnpm install --no-frozen-lockfile` in `frontend/`, review the lock diff,
 and rerun the affected checks. Do not update dependencies as a side effect of
 ordinary scaffold verification.
+
+Phase 3 adds no frontend package dependency. It adds reversible Alembic
+migration `0004` for source attribution fields on provider-imported places.
 
 ## Database migrations
 

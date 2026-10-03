@@ -19,9 +19,9 @@ When working on AI integration, also read `docs/06-ai-integration.md`.
 
 ## Current implementation status
 
-The repository is at **Phase 2 — reservations and saved places delivered locally**.
+The repository is at **Phase 3 — maps and travel logistics delivered locally**.
 
-The delivered scaffold, Phase 1 implementation, and Phase 2 implementation include:
+The delivered scaffold and Phase 1–3 implementations include:
 
 - Next.js frontend shell.
 - FastAPI application and health endpoint.
@@ -34,12 +34,15 @@ The delivered scaffold, Phase 1 implementation, and Phase 2 implementation inclu
 - Owner-scoped manual reservations with tentative/confirmed/cancelled states,
   trip-local scheduling, itinerary links, and deterministic conflict indicators.
 - Trip-scoped saved-place candidates and richer manual place metadata.
+- Geoapify-backed submitted place search/import with persisted source attribution.
+- A responsive trip map and on-demand route estimates with deterministic
+  transfer warnings.
 - Docker Compose Postgres for local development.
 - CI skeleton.
 - product/design/architecture/implementation/release documentation.
 
 Do not claim later phases are implemented because they appear in planning docs.
-External booking imports, maps, AI research/proposals, authentication, cloud
+External booking imports, AI research/proposals, authentication, cloud
 deployment, and attachments remain planned rather than implemented.
 
 ## Architectural invariants

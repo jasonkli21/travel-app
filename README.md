@@ -6,12 +6,13 @@ The application owns authoritative travel state. `personal-ai-system` owns reusa
 
 ## Current status
 
-**Phase 2 — reservations and saved places delivered locally.** The repository
-now has the Phase 1 owner-scoped itinerary planner plus manual tentative/
-confirmed/cancelled reservations, itinerary links, deterministic conflict
-indicators, richer places, trip-scoped saved candidates, and a responsive
-overview/reservations workspace. AI research, maps, external booking imports,
-and authentication remain deferred to later phases.
+**Phase 3 — maps and travel logistics delivered locally.** The repository has
+the Phase 1 owner-scoped itinerary planner, Phase 2 manual reservations and
+saved-place candidates, and a Phase 3 trip map, submitted place search/import,
+and on-demand route estimates with deterministic transfer warnings. Geoapify
+features are optional; manual planning works without provider keys. AI
+research, external booking imports, authentication, and cloud deployment
+remain planned.
 
 ## Stack
 
@@ -34,6 +35,7 @@ and authentication remain deferred to later phases.
               +-------------------------------+
               | Next.js / React / TypeScript  |
               | itinerary / places / bookings |
+              | map / location search / routes |
               +---------------+---------------+
                               |
                               v
@@ -82,7 +84,12 @@ corepack pnpm dev
 Then open `http://localhost:3000`.
 
 The backend reads the root `.env`; Next.js reads `frontend/.env.local`.
-Set `TRAVEL_API_URL` there when using a nondefault backend address.
+Set `TRAVEL_API_URL` there when using a nondefault backend address. To enable
+map tiles, set `NEXT_PUBLIC_GEOAPIFY_API_KEY` in `frontend/.env.local`; to
+enable submitted place search and route estimates, set `GEOAPIFY_API_KEY` in
+the root `.env`. Provider keys are optional and should be restricted in
+Geoapify; the browser-visible tile key should be limited to the local web
+origin.
 Use [`docs/07-local-development.md`](docs/07-local-development.md) for production
 build/start commands and lockfile maintenance.
 
@@ -90,7 +97,9 @@ Create a trip from the home page, open it, add a day title and itinerary items,
 attach a manually created place, move items with the accessible controls, then
 reload the page to verify PostgreSQL-backed persistence. Add a tentative or
 confirmed reservation, link it to an itinerary item, and save optional place
-candidates from the trip workspace. The API is available under `/v1`; the web
+candidates from the trip workspace. In the map section, you can search for a
+place, explicitly save a result as a candidate, and request travel estimates
+between scheduled places for one day. The API is available under `/v1`; the web
 app reaches it through the same-origin `/api/v1/*` proxy.
 
 ## Documentation

@@ -117,7 +117,11 @@ Avoid a single opaque "AI score" as the only explanation.
 
 Maps are valuable but not Phase 1-critical.
 
-Initial place records store latitude/longitude and external-provider identity when available. A map provider should be selected in a later ADR after free-tier/pricing/privacy evaluation.
+Phase 3 uses Geoapify for `osm-carto` map tiles, submitted place/address
+search, and on-demand route estimates. The trip workspace keeps an accessible
+location list alongside the map, persists attribution with explicitly
+imported candidates, and leaves route observations out of durable trip state.
+See ADR 0007 for the provider and local key setup.
 
 ## Visual direction
 

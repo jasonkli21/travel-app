@@ -3,6 +3,10 @@
 Status: accepted  
 Date: 2026-10-02
 
+The map-provider deferral was resolved by
+[ADR 0007](0007-geoapify-maps-and-logistics.md) for Phase 3. Blob storage
+remains deferred until attachments are implemented.
+
 ## Context
 
 Travel will likely need attachments and maps, but neither is necessary for the first manual itinerary vertical slice.

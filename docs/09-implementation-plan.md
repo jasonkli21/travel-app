@@ -1,6 +1,6 @@
 # Phased implementation plan
 
-Status: active roadmap; Phase 2 delivered locally
+Status: active roadmap; Phase 3 delivered locally
 Date: 2026-10-03
 
 Each phase should produce a useful, testable vertical slice.
@@ -9,7 +9,7 @@ Do not implement later phases simply because their design appears here.
 
 ## Phase 0 — Scaffold and architecture
 
-Current phase.
+Delivered.
 
 ### Deliverables
 
@@ -91,8 +91,10 @@ The task-level plan and provider decision are recorded in
 [`phase-3-implementation-plan.md`](phase-3-implementation-plan.md) and
 [`decisions/0007-geoapify-maps-and-logistics.md`](decisions/0007-geoapify-maps-and-logistics.md).
 
-Build the map, explicit place search/import, and on-demand itinerary logistics
-slice described there. Do not begin Phase 4 AI research as part of this work.
+The trip map, explicit place search/import, and on-demand itinerary logistics
+slice are delivered locally. Release evidence and review fixes are recorded in
+[`releases/phase-3-maps-logistics.md`](releases/phase-3-maps-logistics.md).
+Do not begin Phase 4 AI research as part of Phase 3 follow-up work.
 
 Do not require PostGIS unless measured query needs justify it.
 

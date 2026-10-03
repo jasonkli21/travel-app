@@ -13,8 +13,11 @@
 | `09-implementation-plan.md` | Phased implementation roadmap |
 | `phase-1-implementation-plan.md` | Task-level Phase 1 manual itinerary plan |
 | `phase-2-implementation-plan.md` | Task-level Phase 2 reservations and saved places plan |
+| `phase-3-implementation-plan.md` | Task-level Phase 3 maps and logistics plan |
+| `decisions/0007-geoapify-maps-and-logistics.md` | Geoapify provider, attribution, and usage decision |
 | `10-codex-handoff.md` | Current state and explicit next tasks |
 | `decisions/` | Architecture decision records |
 | `releases/phase-0-scaffold.md` | Verification actually performed on the bootstrap |
 | `releases/phase-1-itinerary.md` | Phase 1 implementation and verification record |
 | `releases/phase-2-reservations.md` | Phase 2 implementation and verification record |
+| `releases/phase-3-maps-logistics.md` | Phase 3 implementation and verification record |
