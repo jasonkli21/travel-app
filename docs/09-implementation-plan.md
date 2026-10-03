@@ -1,7 +1,7 @@
 # Phased implementation plan
 
 Status: active roadmap; Phase 2 delivered locally
-Date: 2026-10-02
+Date: 2026-10-03
 
 Each phase should produce a useful, testable vertical slice.
 
@@ -87,9 +87,12 @@ The delivered implementation and verification evidence are recorded in
 
 ## Phase 3 — Maps and travel logistics
 
-Decide map/place provider, attribution/retention terms, travel-time provider, and free-tier implications.
+The task-level plan and provider decision are recorded in
+[`phase-3-implementation-plan.md`](phase-3-implementation-plan.md) and
+[`decisions/0007-geoapify-maps-and-logistics.md`](decisions/0007-geoapify-maps-and-logistics.md).
 
-Then add map view, itinerary markers, place search/import, basic route/travel-time enrichment, and logistics warnings.
+Build the map, explicit place search/import, and on-demand itinerary logistics
+slice described there. Do not begin Phase 4 AI research as part of this work.
 
 Do not require PostGIS unless measured query needs justify it.
 
