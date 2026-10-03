@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from personal_travel.api.schemas import (
@@ -84,49 +85,68 @@ class LocationService:
         return [PlaceSearchResponse.model_validate(match.__dict__) for match in matches]
 
     def import_place(self, trip_id: UUID, data: PlaceImportRequest) -> SavedPlace:
-        with self._session.begin():
-            trip = self._get_trip(trip_id, for_update=True)
-            place = self._places.get_by_provider_identity(
-                owner_id=self._owner_id,
-                provider="geoapify",
-                provider_place_id=data.provider_place_id,
-            )
-            if place is None:
-                place = Place(
+        try:
+            with self._session.begin():
+                trip = self._get_trip(trip_id, for_update=True)
+                place = self._places.get_by_provider_identity(
                     owner_id=self._owner_id,
                     provider="geoapify",
                     provider_place_id=data.provider_place_id,
-                    name=data.name,
-                    address=data.address,
-                    category=data.category,
-                    latitude=Decimal(str(data.latitude)),
-                    longitude=Decimal(str(data.longitude)),
-                    provider_source_name=data.provider_source_name,
-                    provider_source_attribution=data.provider_source_attribution,
-                    provider_source_license=data.provider_source_license,
-                    provider_source_url=data.provider_source_url,
                 )
-                self._places.add(place)
-                self._session.flush()
+                if place is None:
+                    place = Place(
+                        owner_id=self._owner_id,
+                        provider="geoapify",
+                        provider_place_id=data.provider_place_id,
+                        name=data.name,
+                        address=data.address,
+                        category=data.category,
+                        latitude=Decimal(str(data.latitude)),
+                        longitude=Decimal(str(data.longitude)),
+                        provider_source_name=data.provider_source_name,
+                        provider_source_attribution=data.provider_source_attribution,
+                        provider_source_license=data.provider_source_license,
+                        provider_source_url=data.provider_source_url,
+                    )
+                    self._places.add(place)
+                    self._session.flush()
+                return self._save_candidate(trip, place, note=data.note)
+        except IntegrityError:
+            # Imports to different trips lock different trip rows. If both owners'
+            # transactions missed the same provider identity, the unique place key
+            # elects one insert winner. Reload that winner, then finish the other
+            # trip's candidate link in a fresh transaction.
+            self._session.rollback()
+            with self._session.begin():
+                trip = self._get_trip(trip_id, for_update=True)
+                place = self._places.get_by_provider_identity(
+                    owner_id=self._owner_id,
+                    provider="geoapify",
+                    provider_place_id=data.provider_place_id,
+                )
+                if place is None:
+                    raise
+                return self._save_candidate(trip, place, note=data.note)
 
-            existing_saved = next(
-                (saved for saved in trip.saved_places if saved.place_id == place.id),
-                None,
-            )
-            if existing_saved is not None:
-                return existing_saved
+    def _save_candidate(self, trip: Trip, place: Place, *, note: str | None) -> SavedPlace:
+        existing_saved = next(
+            (saved for saved in trip.saved_places if saved.place_id == place.id),
+            None,
+        )
+        if existing_saved is not None:
+            return existing_saved
 
-            saved_place = SavedPlace(
-                owner_id=self._owner_id,
-                trip_id=trip.id,
-                place_id=place.id,
-                note=data.note,
-            )
-            saved_place.place = place
-            trip.saved_places.append(saved_place)
-            self._saved_places.add(saved_place)
-            self._session.flush()
-            return saved_place
+        saved_place = SavedPlace(
+            owner_id=self._owner_id,
+            trip_id=trip.id,
+            place_id=place.id,
+            note=note,
+        )
+        saved_place.place = place
+        trip.saved_places.append(saved_place)
+        self._saved_places.add(saved_place)
+        self._session.flush()
+        return saved_place
 
     async def estimate_logistics(
         self,

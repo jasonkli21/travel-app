@@ -26,8 +26,9 @@ changes and keeps provider observations separate from durable app state.
   than the provider estimate plus a user-selectable buffer.
 - Visible provider/source attribution, missing-configuration behavior, API
   errors, and local setup instructions.
-- Focused backend and frontend coverage for provider mapping, ownership,
-  import idempotence, logistics eligibility/warning rules, and map UI states.
+- Focused backend coverage for provider mapping, ownership, import idempotence,
+  and logistics eligibility/warning rules, plus frontend map-geometry tests.
+  Verify the UI integration with lint, TypeScript, and a production build.
 
 ### Defer
 
@@ -146,11 +147,13 @@ coordinate bias.
   providers.
 - Reuse existing place/saved-place services and trip transaction boundaries.
 - Make provider-result import idempotent and avoid overwriting user-authored
-  fields or returning another owner's matching provider record.
+  fields or returning another owner's matching provider record. Recover from
+  the unique-key race when concurrent imports to different trips select the
+  same provider place.
 - Implement pure eligibility and warning calculation around the provider
   response; include route estimate in response only.
-- Cover cross-owner/trip cases, malformed provider data, empty/missing values,
-  and deterministic warning boundaries.
+- Cover cross-owner/trip cases, concurrent cross-trip import, malformed
+  provider data, empty/missing values, and deterministic warning boundaries.
 
 ### P3.3 — Map, search, and logistics UI
 
@@ -162,8 +165,11 @@ coordinate bias.
   controls, logistics summary/warnings, route polylines, attribution, and
   graceful missing-key states.
 - Extend the typed API client and clear only stale logistics output when the
-  underlying trip changes.
-- Add focused component/contract checks without external API keys.
+  underlying trip changes. Disable day/mode/buffer controls while an estimate
+  is pending so the response cannot be displayed under changed inputs.
+- Add focused map-geometry and contract checks without external API keys.
+  UI integration is verified with ESLint, TypeScript, and a production build;
+  do not introduce a component test framework solely for this small workspace.
 
 ### P3.4 — Docs and release record
 
@@ -186,7 +192,8 @@ evidence. Do not create one commit per checklist item.
   calls.
 - A selected provider result is imported only after explicit user action.
   Re-import is deterministic, preserves edits, and cannot create duplicate
-  saved-place relationships.
+  saved-place relationships, including concurrent imports of one provider
+  place into different trips owned by the same user.
 - A map displays every located trip item/reservation/candidate in the selected
   view, has usable mobile dimensions and visible attribution, and provides an
   equivalent accessible location list.
@@ -207,10 +214,14 @@ evidence. Do not create one commit per checklist item.
 ## Verification
 
 Use provider mocks for backend contracts; do not require a Geoapify account for
-tests. Check supported Geoapify JSON mapping, missing key/network/upstream
-failure behavior, search validation and trip scoping, import deduplication and
-edit preservation, route eligibility, time-buffer boundaries, frontend typed
-API contracts, map empty/missing-key behavior, and existing Phase 1/2 flows.
+tests. Automated checks cover supported Geoapify JSON mapping, missing-key and
+upstream error behavior, contract bounds, route eligibility, warning
+boundaries, provider-import idempotence and edit preservation (PostgreSQL test),
+cross-trip concurrent provider-import recovery (PostgreSQL test), and map
+projection/date-line/tile-wrapping math. Verify map empty/missing-key rendering
+and source-attribution presentation through code review, ESLint, TypeScript,
+and production build. No component-test runner is part of the frontend
+toolchain.
 
 Run the applicable repository commands:
 

@@ -840,14 +840,14 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
           <div className="mapControls">
             <label>
               Locations
-              <select value={mapDay} onChange={(event) => { setMapDay(event.target.value); setLogistics(null); setLocationError(null); }}>
+              <select value={mapDay} disabled={logisticsPending} onChange={(event) => { setMapDay(event.target.value); setLogistics(null); setLocationError(null); }}>
                 <option value="all">All trip days</option>
                 {trip.days.map((day) => <option key={day.id} value={day.id}>Day {day.day_index} · {formatDate(day.date)}</option>)}
               </select>
             </label>
             <label>
               Travel mode
-              <select value={logisticsMode} onChange={(event) => { setLogisticsMode(event.target.value as LogisticsMode); setLogistics(null); }}>
+              <select value={logisticsMode} disabled={logisticsPending} onChange={(event) => { setLogisticsMode(event.target.value as LogisticsMode); setLogistics(null); }}>
                 <option value="walk">Walking</option>
                 <option value="drive">Driving</option>
                 <option value="bicycle">Bicycle</option>
@@ -856,7 +856,7 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
             </label>
             <label>
               Transfer buffer
-              <select value={bufferMinutes} onChange={(event) => { setBufferMinutes(Number(event.target.value)); setLogistics(null); }}>
+              <select value={bufferMinutes} disabled={logisticsPending} onChange={(event) => { setBufferMinutes(Number(event.target.value)); setLogistics(null); }}>
                 {[0, 5, 10, 15, 20, 30].map((minutes) => <option key={minutes} value={minutes}>{minutes} min</option>)}
               </select>
             </label>

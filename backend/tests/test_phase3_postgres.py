@@ -1,6 +1,9 @@
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from os import environ
+from threading import Barrier, local
+from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
@@ -9,7 +12,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from personal_travel.api.dependencies import session_dependency
-from personal_travel.api.schemas import TripCreate
+from personal_travel.api.schemas import PlaceImportRequest, TripCreate
 from personal_travel.clients.geoapify import GeoapifyClient, GeoapifyPlace, GeoapifyRouteLeg
 from personal_travel.db.base import Base
 from personal_travel.main import app
@@ -17,6 +20,8 @@ from personal_travel.models.itinerary import ItineraryItem
 from personal_travel.models.place import Place
 from personal_travel.models.reservation import Reservation, SavedPlace
 from personal_travel.models.trip import Trip, TripDay
+from personal_travel.repositories.places import SqlAlchemyPlaceRepository
+from personal_travel.services.location import LocationService
 from personal_travel.services.trips import TripService
 
 TEST_DATABASE_URL = environ.get("TEST_DATABASE_URL")
@@ -185,6 +190,53 @@ def test_import_is_idempotent_preserves_edits_and_scopes_identity_by_owner(
     assert repeated.json()["place"]["provider_source_attribution"] == "© OpenStreetMap contributors"
     assert saved_list.status_code == 200
     assert len(saved_list.json()) == 1
+
+
+def test_concurrent_imports_share_provider_place_across_trips(
+    api_client: TestClient,
+    database_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trips = [create_trip(api_client), create_trip(api_client)]
+    barrier = Barrier(2)
+    thread_state = local()
+    original_lookup = SqlAlchemyPlaceRepository.get_by_provider_identity
+
+    def synchronized_lookup(
+        repository: SqlAlchemyPlaceRepository,
+        *,
+        owner_id: str,
+        provider: str,
+        provider_place_id: str,
+    ) -> Place | None:
+        place = original_lookup(
+            repository,
+            owner_id=owner_id,
+            provider=provider,
+            provider_place_id=provider_place_id,
+        )
+        if place is None and not getattr(thread_state, "waited", False):
+            thread_state.waited = True
+            barrier.wait(timeout=10)
+        return place
+
+    monkeypatch.setattr(SqlAlchemyPlaceRepository, "get_by_provider_identity", synchronized_lookup)
+    payload = PlaceImportRequest.model_validate(import_payload())
+
+    def import_for_trip(trip_id: str) -> tuple[str, str]:
+        with Session(database_engine, expire_on_commit=False) as session:
+            saved_place = LocationService(session, "local").import_place(UUID(trip_id), payload)
+            return str(saved_place.id), str(saved_place.place_id)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        imported = list(executor.map(import_for_trip, (str(trip["id"]) for trip in trips)))
+
+    assert imported[0][1] == imported[1][1]
+    assert imported[0][0] != imported[1][0]
+    for trip in trips:
+        saved_places = api_client.get(f"/v1/trips/{trip['id']}/saved-places")
+        assert saved_places.status_code == 200, saved_places.text
+        assert len(saved_places.json()) == 1
 
 
 def test_logistics_estimate_uses_snapshot_after_releasing_database_transaction(
