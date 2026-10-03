@@ -1,7 +1,14 @@
+from uuid import UUID
+
 from fastapi import APIRouter, status
 
 from personal_travel.api.dependencies import OwnerDependency, SessionDependency
-from personal_travel.api.schemas import COMMON_ERROR_RESPONSES, PlaceCreate, PlaceSummaryResponse
+from personal_travel.api.schemas import (
+    COMMON_ERROR_RESPONSES,
+    PlaceCreate,
+    PlaceSummaryResponse,
+    PlaceUpdate,
+)
 from personal_travel.api.serializers import serialize_place
 from personal_travel.services.places import PlaceService
 
@@ -28,6 +35,19 @@ def create_place(
     owner_id: OwnerDependency,
 ) -> PlaceSummaryResponse:
     result = PlaceService(session, owner_id).create(payload)
+    serialized = serialize_place(result)
+    assert serialized is not None
+    return serialized
+
+
+@router.patch("/{place_id}", response_model=PlaceSummaryResponse)
+def update_place(
+    place_id: UUID,
+    payload: PlaceUpdate,
+    session: SessionDependency,
+    owner_id: OwnerDependency,
+) -> PlaceSummaryResponse:
+    result = PlaceService(session, owner_id).update(place_id, payload)
     serialized = serialize_place(result)
     assert serialized is not None
     return serialized

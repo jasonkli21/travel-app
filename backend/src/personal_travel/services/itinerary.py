@@ -5,9 +5,11 @@ from sqlalchemy.orm import Session
 from personal_travel.api.schemas import ItemCreate, ItemUpdate, MoveItemRequest
 from personal_travel.models.itinerary import ItineraryItem
 from personal_travel.models.place import Place
+from personal_travel.models.reservation import Reservation
 from personal_travel.models.trip import Trip, TripDay
 from personal_travel.repositories.itinerary import SqlAlchemyItineraryItemRepository
 from personal_travel.repositories.places import SqlAlchemyPlaceRepository
+from personal_travel.repositories.reservations import SqlAlchemyReservationRepository
 from personal_travel.repositories.trips import SqlAlchemyTripRepository
 from personal_travel.services.errors import DomainError, not_found
 from personal_travel.services.time_utils import local_datetime_for_item, local_time_string
@@ -19,6 +21,7 @@ class ItineraryService:
         self._owner_id = owner_id
         self._trips = SqlAlchemyTripRepository(session)
         self._places = SqlAlchemyPlaceRepository(session)
+        self._reservations = SqlAlchemyReservationRepository(session)
         self._items = SqlAlchemyItineraryItemRepository(session)
 
     def create_item(self, trip_id: UUID, day_id: UUID, data: ItemCreate) -> ItineraryItem:
@@ -26,6 +29,7 @@ class ItineraryService:
             trip = self._get_trip(trip_id)
             day = self._find_day(trip, day_id)
             place = self._get_place(data.place_id)
+            reservation = self._get_reservation(trip.id, data.reservation_id)
             starts_at, ends_at = local_datetime_for_item(
                 day.date, data.start_time, data.end_time, trip.timezone
             )
@@ -40,6 +44,8 @@ class ItineraryService:
             )
             if place is not None:
                 item.place = place
+            if reservation is not None:
+                item.reservation = reservation
             day.items.append(item)
             self._items.add(item)
             self._session.flush()
@@ -65,6 +71,8 @@ class ItineraryService:
                 item.status = data.status
             if "place_id" in data.model_fields_set:
                 item.place = self._get_place(data.place_id)
+            if "reservation_id" in data.model_fields_set:
+                item.reservation = self._get_reservation(trip.id, data.reservation_id)
 
             if "start_time" in data.model_fields_set or "end_time" in data.model_fields_set:
                 current_start = local_time_string(item.starts_at, trip.timezone)
@@ -134,6 +142,18 @@ class ItineraryService:
         if place is None:
             raise not_found("place")
         return place
+
+    def _get_reservation(self, trip_id: UUID, reservation_id: UUID | None) -> Reservation | None:
+        if reservation_id is None:
+            return None
+        reservation = self._reservations.get(
+            owner_id=self._owner_id,
+            trip_id=trip_id,
+            reservation_id=reservation_id,
+        )
+        if reservation is None:
+            raise not_found("reservation")
+        return reservation
 
     @staticmethod
     def _find_day(trip: Trip, day_id: UUID) -> TripDay:

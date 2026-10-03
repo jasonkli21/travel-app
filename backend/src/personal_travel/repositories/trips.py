@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from personal_travel.models.itinerary import ItineraryItem
+from personal_travel.models.reservation import Reservation, SavedPlace
 from personal_travel.models.trip import Trip, TripDay
 
 
@@ -28,7 +29,12 @@ class SqlAlchemyTripRepository:
             .options(
                 selectinload(Trip.days)
                 .selectinload(TripDay.items)
-                .selectinload(ItineraryItem.place)
+                .selectinload(ItineraryItem.place),
+                selectinload(Trip.days)
+                .selectinload(TripDay.items)
+                .selectinload(ItineraryItem.reservation),
+                selectinload(Trip.reservations).selectinload(Reservation.place),
+                selectinload(Trip.saved_places).selectinload(SavedPlace.place),
             )
         )
         if for_update:
@@ -43,7 +49,12 @@ class SqlAlchemyTripRepository:
             .options(
                 selectinload(Trip.days)
                 .selectinload(TripDay.items)
-                .selectinload(ItineraryItem.place)
+                .selectinload(ItineraryItem.place),
+                selectinload(Trip.days)
+                .selectinload(TripDay.items)
+                .selectinload(ItineraryItem.reservation),
+                selectinload(Trip.reservations).selectinload(Reservation.place),
+                selectinload(Trip.saved_places).selectinload(SavedPlace.place),
             )
         )
         return list(self._session.scalars(statement))

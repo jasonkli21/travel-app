@@ -92,3 +92,51 @@ def local_time_string(value: datetime | None, timezone_name: str) -> str | None:
         return None
     zone = get_zoneinfo(timezone_name)
     return as_aware_utc(value).astimezone(zone).strftime("%H:%M")
+
+
+def local_date_time_parts(
+    value: datetime | None, timezone_name: str
+) -> tuple[date | None, str | None]:
+    if value is None:
+        return None, None
+    zone = get_zoneinfo(timezone_name)
+    local = as_aware_utc(value).astimezone(zone)
+    return local.date(), local.strftime("%H:%M")
+
+
+def local_datetime_for_reservation(
+    start_date: date | None,
+    start_value: str | None,
+    end_date: date | None,
+    end_value: str | None,
+    timezone_name: str,
+) -> tuple[datetime | None, datetime | None]:
+    if start_date is None and start_value is None and end_date is None and end_value is None:
+        return None, None
+    if start_date is None or start_value is None:
+        raise DomainError(
+            "invalid_reservation_schedule",
+            "a scheduled reservation must include start_date and start_time.",
+        )
+    if (end_date is None) != (end_value is None):
+        raise DomainError(
+            "invalid_reservation_schedule",
+            "end_date and end_time must be provided together.",
+        )
+
+    zone = get_zoneinfo(timezone_name)
+    start_time = parse_local_time(start_value, field_name="start_time")
+    end_time = parse_local_time(end_value, field_name="end_time")
+    assert start_time is not None
+    start = resolve_local_datetime(start_date, start_time, zone, field_name="start_time")
+    end = (
+        resolve_local_datetime(end_date, end_time, zone, field_name="end_time")
+        if end_date is not None and end_time is not None
+        else None
+    )
+    if end is not None and as_aware_utc(start) > as_aware_utc(end):
+        raise DomainError(
+            "invalid_reservation_time_range",
+            "start_time must be earlier than or equal to end_time across the reservation dates.",
+        )
+    return start, end
