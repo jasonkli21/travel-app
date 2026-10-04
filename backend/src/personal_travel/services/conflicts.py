@@ -16,7 +16,7 @@ class ReservationConflict:
     reason: str
 
 
-def _bounds(
+def schedule_bounds(
     starts_at: datetime | None, ends_at: datetime | None
 ) -> tuple[datetime, datetime] | None:
     # A single endpoint is intentionally a point event. Fully missing endpoints
@@ -45,7 +45,7 @@ def calculate_reservation_conflicts(
     trip: Trip,
 ) -> dict[UUID, list[ReservationConflict]]:
     scheduled_items = [
-        (day, item, _bounds(item.starts_at, item.ends_at))
+        (day, item, schedule_bounds(item.starts_at, item.ends_at))
         for day in trip.days
         for item in day.items
         if item.status != "cancelled"
@@ -54,7 +54,7 @@ def calculate_reservation_conflicts(
     for reservation in trip.reservations:
         if reservation.status == "cancelled":
             continue
-        reservation_bounds = _bounds(reservation.starts_at, reservation.ends_at)
+        reservation_bounds = schedule_bounds(reservation.starts_at, reservation.ends_at)
         if reservation_bounds is None:
             continue
         for day, item, item_bounds in scheduled_items:
