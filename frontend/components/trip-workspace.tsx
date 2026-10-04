@@ -91,6 +91,7 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
   const [error, setError] = useState<string | null>(null);
   const mutationInFlight = useRef(false);
   const [stale, setStale] = useState(false);
+  const [editorGeneration, setEditorGeneration] = useState(0);
   const [pending, setPending] = useState<string | null>(null);
   const [editingItem, setEditingItem] = useState<string | null>(null);
   const [addingDay, setAddingDay] = useState<string | null>(null);
@@ -114,13 +115,15 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
   const [logisticsPending, setLogisticsPending] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
 
-  const refresh = useCallback(async (): Promise<boolean> => {
+  const refresh = useCallback(async (
+    { resetDrafts = false }: { resetDrafts?: boolean } = {},
+  ): Promise<boolean> => {
     setError(null);
     let nextTrip: TripDetail;
     try {
       nextTrip = await travelApi.getTrip(tripId);
     } catch (nextError) {
-      setError(errorMessage(nextError));
+      setError(`${errorMessage(nextError)} Reloading clears open editors.`);
       setLoading(false);
       setStale(true);
       return false;
@@ -139,9 +142,21 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
       setPlaces(nextPlaces);
       setReservations(nextReservations);
       setSavedPlaces(nextSavedPlaces);
+      if (resetDrafts) {
+        // The user chose recovery after a stale or ambiguous write. Discard
+        // every open editor draft before re-enabling writes against this snapshot.
+        setEditingItem(null);
+        setAddingDay(null);
+        setEditingReservation(null);
+        setAddingReservation(false);
+        setEditingPlace(null);
+        setShowPlaceForm(false);
+        setShowTripEditor(false);
+        setEditorGeneration((current) => current + 1);
+      }
     } catch (nextError) {
       setStale(true);
-      setError(`The workspace could not be refreshed: ${errorMessage(nextError)}`);
+      setError(`The workspace could not be refreshed: ${errorMessage(nextError)} Reloading clears open editors.`);
       setLoading(false);
       return false;
     }
@@ -151,8 +166,12 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
   }, [tripId]);
 
   useEffect(() => {
-    void Promise.resolve().then(refresh);
+    void Promise.resolve().then(() => refresh());
   }, [refresh]);
+
+  const reloadWorkspace = () => {
+    void refresh({ resetDrafts: true });
+  };
 
   const run = async (
     key: string,
@@ -166,7 +185,7 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
     try {
       await operation();
       if (options.refreshAfter !== false && !await refresh()) {
-        setError("The change was saved, but the workspace could not be refreshed. Reload before editing again.");
+        setError("The change was saved, but the workspace could not be refreshed. Reload before editing again. Reloading clears open editors.");
       }
       // A committed write succeeded even if its follow-up read failed. Keeping
       // the create form open invites duplicate reservations/items on retry.
@@ -189,7 +208,7 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
     }
     if (uncertainMutationError(nextError)) {
       setStale(true);
-      setError("The change could not be confirmed. Reload and check the workspace before submitting again.");
+      setError("The change could not be confirmed. Reload and check the workspace before submitting again. Reloading clears open editors.");
     } else {
       setError(errorMessage(nextError));
     }
@@ -487,7 +506,7 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
         </header>
 
         {error ? <p className="errorBanner" role="alert">{error}</p> : null}
-        {stale ? <button className="secondary" type="button" onClick={() => void refresh()}>Reload workspace</button> : null}
+        {stale ? <button className="secondary" type="button" onClick={reloadWorkspace}>Reload workspace</button> : null}
 
         <div className="overviewPanel" aria-label="Trip summary">
           <div className="overviewStat"><strong>{trip.days.length}</strong><span>days</span></div>
@@ -638,6 +657,7 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
         </section>
 
         <TripResearchPanel
+          key={editorGeneration}
           trip={trip}
           pending={(pending !== null || stale)}
           onSaveCandidate={saveResearchCandidate}
@@ -651,7 +671,7 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
                 <div className="dayHeading">
                   <div>
                     <p className="date">Day {day.day_index} · {formatDate(day.date)}</p>
-                    <DayTitleForm key={`${day.id}-${day.title ?? ""}`} dayId={day.id} title={day.title} pending={pending === `day-${day.id}`} disabled={(pending !== null || stale)} onSave={(title) => run(`day-${day.id}`, async () => { await travelApi.updateDay(trip.id, day.id, title, trip.revision); })} />
+                    <DayTitleForm key={`${editorGeneration}-${day.id}-${day.title ?? ""}`} dayId={day.id} title={day.title} pending={pending === `day-${day.id}`} disabled={(pending !== null || stale)} onSave={(title) => run(`day-${day.id}`, async () => { await travelApi.updateDay(trip.id, day.id, title, trip.revision); })} />
                   </div>
                   <button className="secondary compact" type="button" onClick={() => setAddingDay((current) => current === day.id ? null : day.id)} disabled={(pending !== null || stale)}>{addingDay === day.id ? "Close form" : "+ Add item"}</button>
                 </div>
@@ -675,11 +695,11 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
                           <button className="iconButton dangerText" type="button" onClick={() => { if (window.confirm(`Delete ${item.title}?`)) void run(`delete-${item.id}`, async () => { await travelApi.deleteItem(trip.id, item.id, trip.revision); }); }} disabled={(pending !== null || stale)} aria-label={`Delete ${item.title}`}>Delete</button>
                         </div>
                       </div>
-                      {editingItem === item.id ? <ItemForm trip={trip} dayId={day.id} places={places} reservations={reservations} initial={item} pending={pending === `item-${item.id}`} disabled={(pending !== null || stale)} onSubmit={async (input) => { const saved = await run(`item-${item.id}`, async () => { await travelApi.updateItem(trip.id, item.id, input, trip.revision); }); if (saved) setEditingItem(null); return saved; }} onCreatePlace={createPlace} onCancel={() => setEditingItem(null)} /> : null}
+                      {editingItem === item.id ? <ItemForm key={`${editorGeneration}-${item.id}`} trip={trip} dayId={day.id} places={places} reservations={reservations} initial={item} pending={pending === `item-${item.id}`} disabled={(pending !== null || stale)} onSubmit={async (input) => { const saved = await run(`item-${item.id}`, async () => { await travelApi.updateItem(trip.id, item.id, input, trip.revision); }); if (saved) setEditingItem(null); return saved; }} onCreatePlace={createPlace} onCancel={() => setEditingItem(null)} /> : null}
                     </div>
                   ))}
                 </div>
-                {addingDay === day.id ? <ItemForm trip={trip} dayId={day.id} places={places} reservations={reservations} pending={pending === `add-${day.id}`} disabled={(pending !== null || stale)} onSubmit={async (input) => { const saved = await run(`add-${day.id}`, async () => { await travelApi.createItem(trip.id, day.id, input as CreateItemInput, trip.revision); }); if (saved) setAddingDay(null); return saved; }} onCreatePlace={createPlace} /> : null}
+                {addingDay === day.id ? <ItemForm key={`${editorGeneration}-new-${day.id}`} trip={trip} dayId={day.id} places={places} reservations={reservations} pending={pending === `add-${day.id}`} disabled={(pending !== null || stale)} onSubmit={async (input) => { const saved = await run(`add-${day.id}`, async () => { await travelApi.createItem(trip.id, day.id, input as CreateItemInput, trip.revision); }); if (saved) setAddingDay(null); return saved; }} onCreatePlace={createPlace} /> : null}
               </article>
             ))}
           </div>
@@ -690,7 +710,7 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
             <div><p className="eyebrow">BOOKED ANCHORS</p><h2>Reservations</h2><p className="muted">Tentative and confirmed bookings stay separate from optional saved-place candidates.</p></div>
             <button className="primary" type="button" onClick={() => { setAddingReservation((current) => !current); setEditingReservation(null); }} disabled={(pending !== null || stale)}>{addingReservation ? "Close form" : "+ Add reservation"}</button>
           </div>
-          {addingReservation ? <ReservationForm places={places} pending={pending === "reservation-new"} disabled={(pending !== null || stale)} onSubmit={(input) => saveReservation(input)} onCancel={() => setAddingReservation(false)} /> : null}
+          {addingReservation ? <ReservationForm key={`${editorGeneration}-new`} places={places} pending={pending === "reservation-new"} disabled={(pending !== null || stale)} onSubmit={(input) => saveReservation(input)} onCancel={() => setAddingReservation(false)} /> : null}
           <div className="reservationList">
             {reservations.length === 0 ? <div className="emptyPanel"><h3>No reservations yet</h3><p className="muted">Add a confirmed anchor or a tentative booking when you have one.</p></div> : reservations.map((reservation) => (
               <article className="reservationCard" key={reservation.id}>
@@ -711,7 +731,7 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
                   <button className="secondary compact" type="button" onClick={() => { setEditingReservation((current) => current === reservation.id ? null : reservation.id); setAddingReservation(false); }} disabled={(pending !== null || stale)}>{editingReservation === reservation.id ? "Close editor" : "Edit reservation"}</button>
                   <button className="iconButton dangerText" type="button" onClick={() => { if (window.confirm(`Permanently delete the ${reservation.provider_name} reservation?`)) void run(`delete-reservation-${reservation.id}`, async () => { await travelApi.deleteReservation(trip.id, reservation.id, trip.revision); }); }} disabled={(pending !== null || stale)}>Delete</button>
                 </div>
-                {editingReservation === reservation.id ? <ReservationForm key={`${reservation.id}-${reservation.updated_at}`} places={places} initial={reservation} pending={pending === `reservation-${reservation.id}`} disabled={(pending !== null || stale)} onSubmit={(input) => saveReservation(input, reservation.id)} onCancel={() => setEditingReservation(null)} /> : null}
+                {editingReservation === reservation.id ? <ReservationForm key={`${editorGeneration}-${reservation.id}-${reservation.updated_at}`} places={places} initial={reservation} pending={pending === `reservation-${reservation.id}`} disabled={(pending !== null || stale)} onSubmit={(input) => saveReservation(input, reservation.id)} onCancel={() => setEditingReservation(null)} /> : null}
               </article>
             ))}
           </div>
@@ -725,8 +745,8 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
           <p className="muted">Save a manual place to this trip without turning it into a booking or itinerary item.</p>
           <button className="secondary" type="button" onClick={() => { setShowPlaceForm((current) => !current); setEditingPlace(null); }} disabled={(pending !== null || stale)}>{showPlaceForm ? "Close place form" : "+ Add place"}</button>
         </div>
-        {showPlaceForm ? <PlaceForm pending={pending === "place-new"} disabled={(pending !== null || stale)} onSubmit={(input) => savePlace(input)} onCancel={() => setShowPlaceForm(false)} /> : null}
-        {editingPlace ? <PlaceForm key={editingPlace} initial={places.find((place) => place.id === editingPlace)} pending={pending === `place-${editingPlace}`} disabled={(pending !== null || stale)} onSubmit={(input) => savePlace(input, editingPlace)} onCancel={() => setEditingPlace(null)} /> : null}
+        {showPlaceForm ? <PlaceForm key={`${editorGeneration}-new`} pending={pending === "place-new"} disabled={(pending !== null || stale)} onSubmit={(input) => savePlace(input)} onCancel={() => setShowPlaceForm(false)} /> : null}
+        {editingPlace ? <PlaceForm key={`${editorGeneration}-${editingPlace}`} initial={places.find((place) => place.id === editingPlace)} pending={pending === `place-${editingPlace}`} disabled={(pending !== null || stale)} onSubmit={(input) => savePlace(input, editingPlace)} onCancel={() => setEditingPlace(null)} /> : null}
         <div className="placeGroup">
           <p className="sectionLabel">All places</p>
           <div className="placeList">
@@ -739,7 +759,7 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
         <div className="placeGroup">
           <p className="sectionLabel">This trip’s candidates</p>
           <div className="placeList">
-            {savedPlaces.length === 0 ? <p className="emptyText">No saved candidates yet.</p> : savedPlaces.map((savedPlace) => <div className="placeRow" key={savedPlace.id}><strong>{savedPlace.place.name}</strong>{savedPlace.place.category ? <span>{savedPlace.place.category}</span> : null}<PlaceAttribution place={savedPlace.place} /><SavedPlaceNoteForm key={`${savedPlace.id}-${savedPlace.updated_at}`} savedPlace={savedPlace} pending={pending === `saved-place-${savedPlace.id}`} disabled={(pending !== null || stale)} onSave={(note) => run(`saved-place-${savedPlace.id}`, async () => { await travelApi.updateSavedPlace(trip.id, savedPlace.id, { note }, trip.revision); })} /><button className="iconButton dangerText" type="button" onClick={() => void run(`remove-saved-place-${savedPlace.id}`, async () => { await travelApi.deleteSavedPlace(trip.id, savedPlace.id, trip.revision); })} disabled={(pending !== null || stale)}>Remove candidate</button></div>)}
+            {savedPlaces.length === 0 ? <p className="emptyText">No saved candidates yet.</p> : savedPlaces.map((savedPlace) => <div className="placeRow" key={savedPlace.id}><strong>{savedPlace.place.name}</strong>{savedPlace.place.category ? <span>{savedPlace.place.category}</span> : null}<PlaceAttribution place={savedPlace.place} /><SavedPlaceNoteForm key={`${editorGeneration}-${savedPlace.id}-${savedPlace.updated_at}`} savedPlace={savedPlace} pending={pending === `saved-place-${savedPlace.id}`} disabled={(pending !== null || stale)} onSave={(note) => run(`saved-place-${savedPlace.id}`, async () => { await travelApi.updateSavedPlace(trip.id, savedPlace.id, { note }, trip.revision); })} /><button className="iconButton dangerText" type="button" onClick={() => void run(`remove-saved-place-${savedPlace.id}`, async () => { await travelApi.deleteSavedPlace(trip.id, savedPlace.id, trip.revision); })} disabled={(pending !== null || stale)}>Remove candidate</button></div>)}
           </div>
         </div>
         <div className="aiBoundary"><span>Optional research</span><code>travel-api → personal-ai-system</code><p>Research and provider evidence remain separate from these authoritative manual records.</p></div>

@@ -45,6 +45,34 @@ test("proxy preserves JSON body, request ID and 204 deletion responses", async (
   assert.equal(await response.text(), "");
 });
 
+test("proxy forwards only the explicitly supported revision precondition", async () => {
+  let forwarded;
+  const fetchImpl = async (_upstream, options) => {
+    forwarded = options.headers;
+    return Response.json({ ok: true });
+  };
+  await proxyRequest(new Request(url, {
+    method: "PATCH",
+    headers: {
+      host: "localhost:3000",
+      origin: "http://localhost:3000",
+      "content-type": "application/json",
+      "x-expected-revision": "12",
+      cookie: "session=private",
+      authorization: "Bearer private",
+      "x-arbitrary-client-header": "do-not-forward",
+    },
+    body: JSON.stringify({ title: "New title" }),
+  }), ["trips", "trip-id"], { fetchImpl });
+
+  assert.deepEqual([...forwarded.keys()].sort(), ["content-type", "x-expected-revision"]);
+  assert.equal(forwarded.get("x-expected-revision"), "12");
+
+  forwarded = null;
+  await proxyRequest(new Request(url, { method: "DELETE" }), ["trips", "trip-id"], { fetchImpl });
+  assert.equal(forwarded.has("x-expected-revision"), false);
+});
+
 test("proxy bounds chunked request bodies and reports backend failures", async () => {
   const request = new Request(url, { method: "POST", body: "x".repeat(65537) });
   assert.equal((await proxyRequest(request, ["trips"])).status, 413);

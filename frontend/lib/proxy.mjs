@@ -67,6 +67,8 @@ export async function proxyRequest(request, path, {
   const headers = new Headers();
   const contentType = request.headers.get("content-type");
   if (contentType) headers.set("content-type", contentType);
+  const expectedRevision = request.headers.get("x-expected-revision");
+  if (expectedRevision !== null) headers.set("x-expected-revision", expectedRevision);
   try {
     const response = await fetchImpl(
       `${backendBaseUrl.trim().replace(/\/+$/, "")}/v1/${path.join("/")}${url.search}`,
