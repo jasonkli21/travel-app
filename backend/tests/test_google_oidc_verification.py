@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import socketserver
+import threading
 import time
 from collections import OrderedDict
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
@@ -278,101 +282,71 @@ def test_google_oidc_fails_closed_when_signing_keys_are_unavailable(
         principal_from_google_token(google_token(signer), oidc_settings())
 
 
-def test_google_key_fetch_is_bounded_and_cache_is_single_entry() -> None:
-    calls: list[float | None] = []
+@contextmanager
+def local_key_server(parts: list[bytes], delay: float = 0.0) -> Iterator[tuple[str, list[int]]]:
+    calls: list[int] = []
 
-    class SyntheticResponse:
-        status_code = 200
-        headers = {"cache-control": "public, max-age=99999"}
+    class Handler(socketserver.BaseRequestHandler):
+        def handle(self) -> None:
+            self.request.recv(4096)
+            calls.append(1)
+            for part in parts:
+                try:
+                    self.request.sendall(part)
+                except OSError:
+                    break
+                time.sleep(delay)
 
-        def __enter__(self) -> SyntheticResponse:
-            return self
+    class Server(socketserver.ThreadingTCPServer):
+        allow_reuse_address = True
+        daemon_threads = True
 
-        def __exit__(self, *_args: object) -> None:
-            return None
-
-        def iter_content(self, *, chunk_size: int):
-            assert chunk_size == 8192
-            yield b"{}"
-
-    class SyntheticSession:
-        def close(self) -> None:
-            return None
-
-        def request(self, method: str, url: str, **kwargs: object) -> SyntheticResponse:
-            assert url == GOOGLE_CERT_URL
-            assert method == "GET"
-            assert kwargs["stream"] is True
-            assert kwargs["allow_redirects"] is False
-            calls.append(kwargs["timeout"])
-            return SyntheticResponse()
-
-    request = _BoundedRequest()
-    request.session = SyntheticSession()  # type: ignore[assignment]
-
-    request(GOOGLE_CERT_URL, timeout=30)
-    request(GOOGLE_CERT_URL, timeout=30)
-
-    assert len(calls) == 1 and 0 < calls[0] <= 3
+    with Server(("127.0.0.1", 0), Handler) as server:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            yield f"http://127.0.0.1:{server.server_address[1]}/certs", calls
+        finally:
+            server.shutdown()
+            thread.join(timeout=1)
 
 
-def test_google_key_response_is_capped_before_buffering() -> None:
-    class OversizedResponse:
-        status_code = 200
-        headers = {"cache-control": "public, max-age=300"}
-
-        def __enter__(self) -> OversizedResponse:
-            return self
-
-        def __exit__(self, *_args: object) -> None:
-            return None
-
-        def iter_content(self, *, chunk_size: int):
-            assert chunk_size == 8192
-            yield b"x" * 8192
-            yield b"x" * 8192
-            yield b"x" * (64 * 1024)
-
-    class SyntheticSession:
-        def close(self) -> None:
-            return None
-
-        def request(self, *_args: object, **_kwargs: object) -> OversizedResponse:
-            return OversizedResponse()
-
-    request = _BoundedRequest()
-    request.session = SyntheticSession()  # type: ignore[assignment]
-    with pytest.raises(TransportError):
-        request(GOOGLE_CERT_URL)
+def test_google_key_fetch_is_bounded_and_cache_is_single_entry(monkeypatch) -> None:
+    body = b"{}"
+    response = (
+        b"HTTP/1.1 200 OK\r\nCache-Control: public, max-age=99999\r\n"
+        + f"Content-Length: {len(body)}\r\n\r\n".encode()
+        + body
+    )
+    with local_key_server([response]) as (url, calls):
+        monkeypatch.setattr("personal_travel.auth.google_oidc.GOOGLE_CERT_URL", url)
+        request = _BoundedRequest()
+        assert request(url, timeout=30).data == body
+        assert request(url, timeout=30).data == body
+        assert calls == [1]
 
 
-def test_google_key_trickle_exceeds_one_elapsed_budget() -> None:
-    class TricklingResponse:
-        status_code = 200
-        headers = {"cache-control": "public, max-age=300"}
+def test_google_key_response_is_capped_before_buffering(monkeypatch) -> None:
+    body = b"x" * (64 * 1024 + 1)
+    response = b"HTTP/1.1 200 OK\r\n" + f"Content-Length: {len(body)}\r\n\r\n".encode() + body
+    with local_key_server([response]) as (url, _calls):
+        monkeypatch.setattr("personal_travel.auth.google_oidc.GOOGLE_CERT_URL", url)
+        with pytest.raises(TransportError):
+            _BoundedRequest()(url)
 
-        def __enter__(self):
-            return self
 
-        def __exit__(self, *_args: object) -> None:
-            return None
-
-        def iter_content(self, *, chunk_size: int):
-            for _ in range(5):
-                time.sleep(0.02)
-                yield b"x"
-
-    class SyntheticSession:
-        def close(self) -> None:
-            return None
-
-        def request(self, *_args: object, **_kwargs: object) -> TricklingResponse:
-            return TricklingResponse()
-
-    bounded = _BoundedRequest()
-    bounded.session = SyntheticSession()  # type: ignore[assignment]
-    with pytest.raises(TransportError):
-        bounded(GOOGLE_CERT_URL, timeout=0.03)
+@pytest.mark.parametrize("phase", ["headers", "body"])
+def test_google_key_trickle_exceeds_one_elapsed_budget(monkeypatch, phase: str) -> None:
+    if phase == "headers":
+        parts = [b"HTTP/1.1 200 OK\r\nX-Slow: "] + [b"x"] * 20
+    else:
+        parts = [b"HTTP/1.1 200 OK\r\nContent-Length: 20\r\n\r\n"] + [b"x"] * 20
+    with local_key_server(parts, delay=0.015) as (url, _calls):
+        monkeypatch.setattr("personal_travel.auth.google_oidc.GOOGLE_CERT_URL", url)
+        started = time.monotonic()
+        with pytest.raises(TransportError):
+            _BoundedRequest()(url, timeout=0.06)
+        assert time.monotonic() - started < 0.16
 
 
 @pytest.mark.parametrize(

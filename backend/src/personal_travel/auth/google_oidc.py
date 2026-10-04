@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import math
+import socket
 import threading
 import time
 from collections import OrderedDict
@@ -12,7 +14,6 @@ from dataclasses import dataclass
 from typing import Any, TypeGuard
 from urllib.parse import urlsplit
 
-import requests
 from google.auth.exceptions import GoogleAuthError, TransportError
 from google.auth.transport.requests import Request
 from google.oauth2 import id_token
@@ -54,6 +55,10 @@ class _BoundedRequest(Request):
         self._expires_at = 0.0
         self._cache_lock = threading.Lock()
 
+    def _remaining(self, timeout: float) -> float:
+        shared = getattr(_auth_deadline, "value", float("inf"))
+        return max(0.0, min(timeout, shared - time.monotonic()))
+
     def __call__(
         self,
         url: str,
@@ -64,14 +69,14 @@ class _BoundedRequest(Request):
         **kwargs: Any,
     ) -> Any:
         if method.upper() == "GET" and url == GOOGLE_CERT_URL and body is None:
-            budget = min(timeout or 3, 3)
+            budget = self._remaining(min(timeout or 3, 3))
             deadline = time.monotonic() + budget
             if not self._cache_lock.acquire(timeout=budget):
                 raise TransportError("Google key cache is busy.")  # type: ignore[no-untyped-call]
             try:
                 if self._response is not None and time.monotonic() < self._expires_at:
                     return self._response
-                remaining = deadline - time.monotonic()
+                remaining = self._remaining(deadline - time.monotonic())
                 if remaining <= 0:
                     raise TransportError("Google key fetch exceeded its deadline.")  # type: ignore[no-untyped-call]
                 response = self._request_bounded(
@@ -105,7 +110,7 @@ class _BoundedRequest(Request):
                 method=method,
                 body=body,
                 headers=headers,
-                timeout=min(timeout or 3, 3),
+                timeout=self._remaining(min(timeout or 3, 3)),
                 max_bytes=MAX_CERT_RESPONSE_BYTES,
             )
         raise TransportError(  # type: ignore[no-untyped-call]
@@ -123,30 +128,56 @@ class _BoundedRequest(Request):
         max_bytes: int,
     ) -> _CachedResponse:
         deadline = time.monotonic() + timeout
+        parsed = urlsplit(url)
+        if timeout <= 0 or parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            raise TransportError("Google identity request exceeded its deadline.")  # type: ignore[no-untyped-call]
+        connection_type = (
+            http.client.HTTPSConnection if parsed.scheme == "https" else http.client.HTTPConnection
+        )
+        connection = connection_type(parsed.hostname, parsed.port, timeout=timeout)
+        active_socket: socket.socket | None = None
+
+        def interrupt() -> None:
+            # A per-read socket timeout can be renewed forever by trickling
+            # headers. Shutdown wakes a blocked getresponse/read at the deadline.
+            sock = active_socket or connection.sock
+            if sock is not None:
+                try:
+                    sock.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+                sock.close()
+
+        watchdog = threading.Timer(timeout, interrupt)
+        watchdog.daemon = True
+        watchdog.start()
         try:
-            with self.session.request(
-                method,
-                url,
-                data=body,
-                headers=headers,
-                timeout=timeout,
-                stream=True,
-                allow_redirects=False,
-            ) as response:
-                payload = bytearray()
-                for chunk in response.iter_content(chunk_size=8192):
-                    if time.monotonic() >= deadline:
-                        raise OSError("Google identity request exceeded its deadline.")
-                    payload.extend(chunk)
-                    if len(payload) > max_bytes:
-                        raise OSError("Google identity response exceeded its byte limit.")
-                return _CachedResponse(
-                    status=response.status_code,
-                    data=bytes(payload),
-                    headers=dict(response.headers),
-                )
-        except (requests.RequestException, OSError) as error:
+            path = parsed.path or "/"
+            if parsed.query:
+                path += f"?{parsed.query}"
+            connection.request(method, path, body=body, headers=dict(headers or {}))
+            active_socket = connection.sock
+            response = connection.getresponse()
+            payload = bytearray()
+            while True:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("Google identity request exceeded its deadline.")
+                chunk = response.read(min(1024, max_bytes + 1 - len(payload)))
+                if not chunk:
+                    break
+                payload.extend(chunk)
+                if len(payload) > max_bytes:
+                    raise OSError("Google identity response exceeded its byte limit.")
+            return _CachedResponse(
+                status=response.status,
+                data=bytes(payload),
+                headers={name.lower(): value for name, value in response.getheaders()},
+            )
+        except (OSError, TimeoutError, http.client.HTTPException) as error:
             raise TransportError(error) from error  # type: ignore[no-untyped-call]
+        finally:
+            watchdog.cancel()
+            connection.close()
 
 
 def _cache_max_age(value: str) -> int:
@@ -190,13 +221,14 @@ def authoritative_allowed_email(claims: Mapping[str, Any], settings: Settings) -
 
 
 _verification_lock = threading.Lock()
+_auth_deadline = threading.local()
 _token_cache_lock = threading.Lock()
 _verified_tokens: OrderedDict[str, tuple[int, dict[str, Any]]] = OrderedDict()
 _key_request = _BoundedRequest()
 
 
 def _claims(token: str, audience: str) -> dict[str, Any]:
-    deadline = time.monotonic() + 3
+    deadline = min(time.monotonic() + 3, getattr(_auth_deadline, "value", float("inf")))
     fingerprint = hashlib.sha256(f"{audience}\0{token}".encode()).hexdigest()
     now = int(time.time())
     with _token_cache_lock:
@@ -214,9 +246,17 @@ def _claims(token: str, audience: str) -> dict[str, Any]:
         try:
             if time.monotonic() >= deadline:
                 raise IdentityProviderUnavailable
-            verified = id_token.verify_oauth2_token(  # type: ignore[no-untyped-call]
-                token, _key_request, audience=audience
-            )
+            previous = getattr(_auth_deadline, "value", None)
+            _auth_deadline.value = deadline
+            try:
+                verified = id_token.verify_oauth2_token(  # type: ignore[no-untyped-call]
+                    token, _key_request, audience=audience
+                )
+            finally:
+                if previous is None:
+                    del _auth_deadline.value
+                else:
+                    _auth_deadline.value = previous
             if time.monotonic() >= deadline:
                 raise IdentityProviderUnavailable
         finally:
@@ -294,8 +334,12 @@ def cloud_run_service_id_token(audience: str, expected_service_account: str) -> 
     """Fetch and independently verify the configured Cloud Run transport identity."""
     if not audience.startswith("https://") or not expected_service_account.strip():
         raise IdentityProviderUnavailable
+    deadline = time.monotonic() + 3
+    _auth_deadline.value = deadline
     try:
         token = id_token.fetch_id_token(_key_request, audience)  # type: ignore[no-untyped-call]
+        if time.monotonic() >= deadline:
+            raise IdentityProviderUnavailable
         if not isinstance(token, str) or not token or len(token) > MAX_TOKEN_LENGTH:
             raise InvalidIdentityToken
         claims = _claims(token, audience)
@@ -305,6 +349,8 @@ def cloud_run_service_id_token(audience: str, expected_service_account: str) -> 
         raise
     except Exception as error:
         raise IdentityProviderUnavailable from error
+    finally:
+        del _auth_deadline.value
     issuer = claims.get("iss")
     token_audience = claims.get("aud")
     authorized_party = claims.get("azp")

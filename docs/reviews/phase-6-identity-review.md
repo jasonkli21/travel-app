@@ -13,6 +13,20 @@ passed against the production Next build and migrated disposable database.
 These are implementation-agent results. The coordinator must independently
 review the final commit and decide whether this identity stage can close.
 
+## Deadline follow-up (local implementation evidence)
+
+The signing-key transport now interrupts its live socket at the elapsed
+deadline, including while parsing trickling HTTP headers or reading a
+trickling body. The same three-second budget covers verification-lock wait,
+key retrieval and signature verification; Cloud Run service-token retrieval
+uses that shared budget as well. The callback's consume, exchange, verify and
+session-save sequence shares one 7.5-second budget under the web proxy's
+eight-second deadline. Abandoned SQL workers check the deadline before their
+transaction commits, so a slow session insert rolls back. The local loopback
+header/body trickle tests, PostgreSQL abandoned-write test and full migrated
+backend suite passed: **182 passed, zero skipped**. Ruff and mypy passed. This
+follow-up awaits independent coordinator review alongside the prior findings.
+
 ## Required remediation
 
 1. **UI writes omit CSRF (high).** `api-request.mjs` never reads the session

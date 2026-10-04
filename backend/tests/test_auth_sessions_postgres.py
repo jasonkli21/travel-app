@@ -21,6 +21,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 from starlette.testclient import TestClient
 
+import personal_travel.api.routes.auth as auth_routes
 from personal_travel.auth.contracts import VerifiedPrincipal
 from personal_travel.auth.google_oidc import stable_google_owner_id
 from personal_travel.auth.sessions import create_session, secret_digest
@@ -412,6 +413,45 @@ def test_google_code_flow_binds_state_browser_cookie_nonce_and_single_use(
         json={"code": "synthetic-code", "state": state},
     )
     assert replay.status_code == 401
+
+
+def test_callback_timeout_rolls_back_abandoned_session_write(
+    api_client: TestClient, database_engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = google_settings()
+    use_settings(api_client, settings)
+    start = api_client.get("/v1/auth/google/start")
+    values = parse_qs(urlsplit(start.json()["authorization_url"]).query)
+    state = values["state"][0]
+    token, certificate, _subject = signed_token(values["nonce"][0])
+    set_google_key_fixture(monkeypatch, certificate)
+
+    async def exchange(_code: str, _verifier: str, _settings: Settings) -> str:
+        return token
+
+    original_create = auth_routes.create_session
+
+    def slow_create(*args: object, **kwargs: object):
+        result = original_create(*args, **kwargs)
+        time.sleep(0.12)
+        return result
+
+    monkeypatch.setattr(auth_routes, "_exchange_code", exchange)
+    monkeypatch.setattr(auth_routes, "create_session", slow_create)
+    monkeypatch.setattr(auth_routes, "CALLBACK_DEADLINE_SECONDS", 0.06)
+    callback = api_client.post(
+        "/v1/auth/google/callback",
+        cookies={
+            settings.auth_oauth_flow_cookie_name: cookie_value(
+                start, settings.auth_oauth_flow_cookie_name
+            )
+        },
+        json={"code": "synthetic-code", "state": state},
+    )
+    assert callback.status_code == 503
+    time.sleep(0.15)  # let the abandoned worker reach its deadline check
+    with Session(database_engine) as session:
+        assert session.scalar(select(AuthSession)) is None
 
 
 def test_ai_user_token_must_be_valid_and_match_current_session_before_body_parse(

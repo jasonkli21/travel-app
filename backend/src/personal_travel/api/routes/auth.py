@@ -7,6 +7,7 @@ import base64
 import hashlib
 import json
 import secrets
+import time
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 from urllib.parse import urlencode
@@ -41,6 +42,7 @@ GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 LOGIN_ATTEMPT_TTL_SECONDS = 600
 MAX_TOKEN_RESPONSE_BYTES = 16 * 1024
 OAUTH_EXCHANGE_DEADLINE_SECONDS = 5.0
+CALLBACK_DEADLINE_SECONDS = 7.5  # Next's callback proxy gives the API eight seconds.
 
 
 class OAuthCallbackRequest(BaseModel):
@@ -123,7 +125,7 @@ def start_google_sign_in(
 
 
 def _consume_login_attempt(
-    session: Session, *, state: str, browser_secret: str | None
+    session: Session, *, state: str, browser_secret: str | None, deadline: float
 ) -> OAuthLoginAttempt:
     if not browser_secret or len(browser_secret) > 128:
         raise DomainError(
@@ -157,7 +159,13 @@ def _consume_login_attempt(
             expires_at=attempt.expires_at,
         )
         session.delete(attempt)
+        _require_callback_time(deadline)
     return values
+
+
+def _require_callback_time(deadline: float) -> None:
+    if time.monotonic() >= deadline:
+        raise TimeoutError("Authentication callback exceeded its deadline.")
 
 
 async def _exchange_code(code: str, code_verifier: str, settings: Settings) -> str:
@@ -208,6 +216,7 @@ async def google_callback(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> dict[str, bool]:
     _require_google_mode(settings)
+    deadline = time.monotonic() + CALLBACK_DEADLINE_SECONDS
     session_factory = request.app.state.auth_session_factory
 
     def consume_attempt() -> OAuthLoginAttempt:
@@ -216,10 +225,11 @@ async def google_callback(
                 session,
                 state=payload.state,
                 browser_secret=request.cookies.get(settings.auth_oauth_flow_cookie_name),
+                deadline=deadline,
             )
 
     try:
-        async with asyncio.timeout(5):
+        async with asyncio.timeout_at(deadline):
             attempt = await run_sync(consume_attempt, abandon_on_cancel=True)
     except TimeoutError:
         raise DomainError(
@@ -229,7 +239,7 @@ async def google_callback(
         ) from None
     try:
         token = await _exchange_code(payload.code, attempt.code_verifier, settings)
-        async with asyncio.timeout(4):
+        async with asyncio.timeout_at(deadline):
             principal = await run_sync(
                 principal_from_google_token, token, settings, abandon_on_cancel=True
             )
@@ -266,13 +276,16 @@ async def google_callback(
 
     def save_session() -> tuple[str, str, ActiveSession]:
         with session_factory() as session, session.begin():
+            _require_callback_time(deadline)
             previous_session: ActiveSession | None = request.scope.get("auth_session")
             if previous_session is not None:
                 revoke_session(session, previous_session.token_hash, now=now)
-            return create_session(session, principal, ttl_seconds=session_ttl_seconds, now=now)
+            result = create_session(session, principal, ttl_seconds=session_ttl_seconds, now=now)
+            _require_callback_time(deadline)
+            return result
 
     try:
-        async with asyncio.timeout(5):
+        async with asyncio.timeout_at(deadline):
             raw_session, csrf_token, active = await run_sync(save_session, abandon_on_cancel=True)
     except TimeoutError:
         raise DomainError(

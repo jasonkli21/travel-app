@@ -54,6 +54,15 @@ explicitly guarded `frontend/scripts/mounted-identity-smoke.mjs` with
 `backend/tests/fixtures/synthetic_identity_server.py`. It is synthetic
 integration evidence, not a live provider/deployment result.
 
+The identity deadline follow-up replaces the signing-key stream's renewable
+per-read timeout with a live socket watchdog, tested against a real local
+HTTP server trickling both headers and body bytes. OAuth callback work now
+shares one 7.5-second deadline beneath the Next.js eight-second timeout;
+worker-owned SQL transactions check it before commit. A disposable PostgreSQL
+test confirms an abandoned session insert rolls back. The full backend suite
+passed **182 tests, zero skipped**; Ruff and mypy passed. No live Google or
+Cloud Run endpoint was used in these checks.
+
 ## Remaining gates
 
 Independent coordinator security review is pending. No Google OAuth client, Cloud Run IAM binding or upstream user-identity deployment was provisioned; no live sign-in, hosted service invocation or private-input test occurred. Before enabling hosted AI or private imports, verify those live boundaries and accept a separate upstream booking/document extraction and retention contract. P6.2 storage/parser, P6.3 extraction, P6.4 confirmation and P6.5 import review UI are not implemented. Research/proposal and private-import gates stay off by default.
