@@ -1,6 +1,6 @@
 # Phased implementation plan
 
-Status: active roadmap; Phase 4 delivered locally
+Status: active roadmap; Phase 4 delivered locally; Phase 5 groundwork partial
 Date: 2026-10-03
 
 Each phase should produce a useful, testable vertical slice.
@@ -135,11 +135,12 @@ and [`releases/phase-4-ai-research.md`](releases/phase-4-ai-research.md).
 
 ## Phase 5 — Structured AI proposals
 
-Detailed plan: [Phase 5](phase-5-implementation-plan.md). Planned, not delivered.
-Prerequisites include an accepted upstream proposal contract and revisions for
-all manual mutations/shared place dependencies. The first removal operation
-requires an explicit user-selected removable-item allowlist; status alone
-does not establish optionality.
+Detailed plan: [Phase 5](phase-5-implementation-plan.md). P5.0–P5.2 local
+groundwork is delivered; the phase is incomplete. Revisions and an internal
+preview validator exist, but accepted upstream proposal contract, generation,
+storage, apply/replay, and proposal UI remain prerequisites/work. The first
+removal operation requires an explicit user-selected removable-item allowlist;
+status alone does not establish optionality.
 
 Build:
 
@@ -261,7 +262,8 @@ External contract/credential gates must be reported explicitly; local
 groundwork or fake-backed tests alone do not complete an enabled integration.
 The five detailed plans use the reviewed `56c0cbf` baseline and specify goals,
 boundaries, contracts, work packages, failure matrices, commits and exit gates.
-They are plans only; no Phase 5–9 feature is implemented by this documentation.
+These documents describe planned scope; the Phase 5 release note identifies
+the limited P5.0–P5.2 implementation and the unfinished Phase 5–9 features.
 
 ## Later ideas
 

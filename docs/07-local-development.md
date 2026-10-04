@@ -182,10 +182,12 @@ and rerun the affected checks. Do not update dependencies as a side effect of
 ordinary scaffold verification.
 
 Phase 4 adds no frontend package dependency, database migration, or travel-side
-research-session table. The Phase 0–4 review adds migration `0005` for legacy
-schedule/order repair and SQL integrity. The travel research client consumes
-the AI service's versioned HTTP
-contract and does not share its Python packages.
+research-session table. Migration `0005` repairs legacy schedule/order data
+and adds SQL integrity. Phase 5 groundwork adds migration `0006` with
+nonnegative trip/place revisions; it is additive and initializes existing
+rows to zero. The travel research client consumes the AI service's versioned
+HTTP contract and does not share its Python packages. The local proposal DTO
+is not an AI or public travel API contract.
 
 ## Database migrations
 
@@ -208,7 +210,8 @@ uv run --locked alembic upgrade head
 
 Then run `uv run --locked alembic check` to verify ORM/migration parity.
 Migration `0005` requires an online connection; offline SQL can be generated
-through `0004`, but is not a complete upgrade to head.
+through `0004`, but is not a complete upgrade to head. Migration `0006` is the
+current head for this partial groundwork.
 
 ## Backup and migration recovery
 

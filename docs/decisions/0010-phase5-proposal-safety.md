@@ -77,15 +77,17 @@ the expected and current revisions; it performs no write. Omitted headers
 retain legacy last-writer behavior but still advance revisions for actual
 changes.
 
-Revision increments once per committed request when its authoritative value or
-relationship set changes. Create/delete operations that change the aggregate
-advance it once. A patch whose normalized values equal the stored values, an
-empty patch, a move that leaves the same order/date/schedule, and a repeated
-provider import that adds no candidate are no-ops and do not advance a
-revision. A failed transaction, failed precondition, or rejected domain change
-does not advance a revision. Place create starts at revision zero; creating a
-manual/provider candidate advances only the owning trip revision for the new
-candidate relationship.
+Revision increments once per committed request when an existing aggregate's
+authoritative value or relationship set changes. A new trip or place starts at
+revision zero; creating a child item, reservation, or candidate advances the
+trip revision. Deleting the root trip checks its revision and removes the
+aggregate, so no successor revision is retained. A patch whose normalized
+values equal the stored values, an empty patch, a move that leaves the same
+order/date/schedule, and a repeated provider import that adds no candidate are
+no-ops and do not advance a revision. A failed transaction, failed
+precondition, or rejected domain change does not advance a revision. Place
+creation starts at revision zero; creating a manual/provider candidate advances
+only the owning trip revision for the new candidate relationship.
 
 ## Dependency footprint, preview, expiry, and replay
 

@@ -15,7 +15,7 @@
 | `phase-2-implementation-plan.md` | Task-level Phase 2 reservations and saved places plan |
 | `phase-3-implementation-plan.md` | Task-level Phase 3 maps and logistics plan |
 | `phase-4-implementation-plan.md` | Task-level bounded AI research consumer plan |
-| `phase-5-implementation-plan.md` | Planned versioned proposals, preview and atomic apply |
+| `phase-5-implementation-plan.md` | Versioned proposals plan and local groundwork checkpoint |
 | `phase-6-implementation-plan.md` | Planned verified identity, secure manual sources and booking import |
 | `phase-7-implementation-plan.md` | Planned typed rich research, constraints and consented preferences |
 | `phase-8-implementation-plan.md` | Planned private attachments, snapshot exports and travel view |
@@ -30,3 +30,4 @@
 | `releases/phase-2-reservations.md` | Phase 2 implementation and verification record |
 | `releases/phase-3-maps-logistics.md` | Phase 3 implementation and verification record |
 | `releases/phase-4-ai-research.md` | Phase 4 implementation and original verification record |
+| `releases/phase-5-groundwork.md` | P5.0–P5.2 groundwork, verification, and remaining gates |

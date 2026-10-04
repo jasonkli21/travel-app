@@ -6,21 +6,26 @@ The application owns authoritative travel state. `personal-ai-system` owns reusa
 
 ## Current status
 
-**Phase 4 — bounded AI research delivered locally.** The repository has
+**Phase 4 delivered, with partial Phase 5 local groundwork.** The repository has
 the Phase 1 owner-scoped itinerary planner, Phase 2 manual reservations and
 saved-place candidates, and a Phase 3 trip map, submitted place search/import,
 and on-demand route estimates with deterministic transfer warnings. Phase 4
 adds a gated typed integration with `personal-ai-system`'s accepted
 `research-v1` API, bounded trip-day context, cited results, and user-entered
 manual candidates. Research is disabled by default and does not modify the
-itinerary. Geoapify features are optional; manual planning works without
-provider keys. External booking imports, AI proposals, authentication, and
-cloud deployment remain planned.
+itinerary. The Phase 5 groundwork adds trip/place revisions, optional stale
+write preconditions, and an internal immutable proposal preview validator.
+Phase 5 is incomplete: no accepted itinerary-proposal API exists upstream, and
+Travel has no proposal generation, storage, apply, or rejection routes. The
+local DTO is not an upstream wire contract. Geoapify features are optional;
+manual planning works without provider keys. External booking imports,
+AI proposals, authentication, and cloud deployment remain planned.
 
 The [Phase 0–4 audit](docs/reviews/phase-0-4-audit.md) records the architecture
 review, integrity/security/recovery fixes and verification. Migration `0005`
 repairs legacy moved-item schedules and enforces ordering/coordinate integrity;
-read the [migration recovery instructions](docs/07-local-development.md) before
+Phase 5 groundwork migration `0006` adds trip/place revisions. Read the
+[migration recovery instructions](docs/07-local-development.md) before
 upgrading an existing database. Local ownership is still not authentication.
 
 ## Stack

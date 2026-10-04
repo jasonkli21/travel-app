@@ -1,6 +1,6 @@
 # Phase 5 implementation plan — structured AI proposals
 
-**Status:** planned; no Phase 5 implementation delivered
+**Status:** P5.0–P5.2 local groundwork delivered; Phase 5 remains incomplete
 **Date:** 2026-10-03
 **Baseline:** `56c0cbf`, reviewed local Phases 0–4
 **Roadmap:** [phased implementation plan](09-implementation-plan.md)
@@ -42,6 +42,17 @@ An ADR must record the explicit-removal/anchor policy, accepted contract, revisi
 footprint, evidence expiry and replay semantics before enabling generation.
 If upstream acceptance is missing, implement/test only the local version and
 proposal-validation groundwork; report the generation gate as incomplete.
+
+## Current delivery checkpoint
+
+The local groundwork adds revisions and optional expected-revision checks to
+existing manual/provider writes, plus an internal strict DTO and pure bounded
+preview validator. Its exact implementation and verification are recorded in
+[`releases/phase-5-groundwork.md`](releases/phase-5-groundwork.md). It does not
+implement a proposal route, accepted upstream client, generation, durable
+proposal lifecycle, apply/replay, or proposal UI. The inspected upstream
+revision is recorded in ADR 0010; no compatible itinerary-patch API was
+present. Continue at the accepted-contract and P5.3 lifecycle gates below.
 
 ## Proposed travel contracts
 

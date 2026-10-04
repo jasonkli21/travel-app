@@ -77,7 +77,9 @@ service boundary before implementation.
 ## Future AI work
 
 Memory-aware research, structured extraction, itinerary proposals, and
-model-driven actions remain deferred. Later AI output that could affect travel
-state must be versioned and typed, checked against current ownership and hard
-constraints, previewed to the traveler, and applied only through existing
-travel-domain services after explicit confirmation.
+model-driven actions remain deferred. Phase 5 local revisions and an internal
+preview validator do not define or call an accepted upstream proposal API.
+Later AI output that could affect travel state must be versioned and typed,
+checked against current ownership and hard constraints, previewed to the
+traveler, and applied only through existing travel-domain services after
+explicit confirmation.

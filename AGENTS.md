@@ -19,7 +19,9 @@ When working on AI integration, also read `docs/06-ai-integration.md`.
 
 ## Current implementation status
 
-The repository is at **Phase 4 — bounded AI research delivered locally**.
+Phase 4 bounded AI research is delivered locally. **Phase 5 has only local
+P5.0–P5.2 groundwork and remains incomplete**; see
+[`docs/releases/phase-5-groundwork.md`](docs/releases/phase-5-groundwork.md).
 
 The delivered scaffold and Phase 1–4 implementations include:
 
@@ -41,6 +43,10 @@ The delivered scaffold and Phase 1–4 implementations include:
   validated server-consumed SSE, cited results, and a research panel.
 - Atomic manual place-plus-trip-candidate creation; AI results never mutate
   authoritative trip state.
+- Monotonic trip/shared-place revisions, optional `X-Expected-Revision`
+  preconditions on existing writes, and stale-write 409 recovery in the UI.
+- Internal bounded typed proposal DTOs and immutable deterministic preview
+  validation; these are not exposed as an AI or travel API contract.
 - Phase 0–4 audit remediation: migration `0005` repairs legacy moved-item dates,
   SQL order/coordinate integrity, local host/origin guards, bounded external
   deadlines, database readiness and migrated disposable-schema test fixtures.
@@ -49,7 +55,9 @@ The delivered scaffold and Phase 1–4 implementations include:
 - product/design/architecture/implementation/release documentation.
 
 The travel-side AI research gate defaults off and external AI/provider gates
-must be configured separately. Do not claim later phases are implemented
+must be configured separately. No accepted upstream itinerary-proposal
+capability, generation route/client, proposal storage, apply/reject lifecycle,
+or proposal UI exists. Do not claim Phase 5 complete or later phases delivered
 because they appear in planning docs. External booking imports, AI proposals,
 authentication, cloud deployment, and attachments remain planned.
 

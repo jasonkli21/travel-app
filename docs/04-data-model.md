@@ -1,6 +1,6 @@
 # Data model
 
-Status: Phase 4 delivered locally; Phase 0–4 integrity review applied
+Status: Phase 4 delivered locally; partial Phase 5 revision/preview groundwork
 Date: 2026-10-03
 
 The initial migration implements the core itinerary graph. Phase 1 adds
@@ -22,6 +22,7 @@ title
 start_date
 end_date
 timezone
+revision INTEGER NOT NULL DEFAULT 0 CHECK revision >= 0
 created_at
 updated_at
 ```
@@ -53,6 +54,7 @@ Constraints:
 ```text
 id UUID PK
 owner_id
+revision INTEGER NOT NULL DEFAULT 0 CHECK revision >= 0
 name
 latitude?
 longitude?
@@ -217,8 +219,11 @@ collaboration machinery.
 
 Multi-query aggregate reads take a shared root lock; mutations take an
 exclusive root lock and refresh existing ORM collections. Reusable place
-metadata is independently locked. Manual cross-tab updates still use
-last-writer semantics; Phase 5 must add explicit version checks.
+metadata is independently locked. Writes may provide the aggregate's current
+revision with `X-Expected-Revision`; a supplied stale value returns 409 before
+mutation. Omitted headers preserve legacy last-writer compatibility while
+actual changes still advance revisions. Editing a shared place advances only
+its own revision and never fans out trip updates.
 
 Do not introduce fractional indexing/CRDTs without a real collaboration requirement.
 

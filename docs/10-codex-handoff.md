@@ -1,6 +1,6 @@
 # Codex handoff
 
-Status: Phase 4 delivered handoff
+Status: Phase 4 delivered; partial Phase 5 local groundwork handoff
 Date: 2026-10-03
 
 ## Objective
@@ -10,15 +10,22 @@ Phase 3 maps/location/logistics slice, and Phase 4 bounded AI research consumer
 are implemented locally. Review evidence and commit references are recorded in
 the phase release documents.
 
+Phase 5 has local P5.0–P5.2 groundwork only: revision/precondition accounting
+and an internal deterministic preview validator. See
+[`releases/phase-5-groundwork.md`](releases/phase-5-groundwork.md). No accepted
+upstream itinerary-proposal API, proposal generation, storage, apply/replay,
+rejection, or proposal UI is implemented.
+
 The Phase 4 consumer uses the accepted `research-v1` API in
 `personal-ai-system`; do not change that API from this repository. Booking and
 email import, AI proposals, authentication, and cloud deployment remain
 deferred.
 
 The [comprehensive Phase 0–4 audit](reviews/phase-0-4-audit.md) documents current
-fixes and verification. Migration `0005` is the current head and requires
-online legacy-data inspection/repair and a pre-upgrade backup. See local
-development and ADR 0009 before changing concurrency or local HTTP boundaries.
+fixes and verification. Migration `0006` is the current head; `0005` still
+requires online legacy-data inspection/repair and a pre-upgrade backup before
+upgrading an existing database. See local development and ADR 0009 before
+changing concurrency or local HTTP boundaries.
 
 ## Next implementation work
 
@@ -28,9 +35,11 @@ Detailed [Phase 5](phase-5-implementation-plan.md),
 [Phase 8](phase-8-implementation-plan.md) and
 [Phase 9](phase-9-implementation-plan.md) plans are now recorded against
 `56c0cbf`. They do not mark any later capability delivered. Begin with Phase
-5's accepted upstream contract/policy and revisions for every manual mutation
-and independent shared-place dependency. Keep generation gated until the
-contract is accepted; do not invent upstream APIs in this repository.
+5's independent review checkpoint, then the accepted upstream proposal
+contract and P5.3 durable lifecycle/apply gates. Existing writes now accept an
+optional `X-Expected-Revision`; omitted headers preserve legacy compatibility.
+Keep generation gated until the upstream contract is accepted; do not invent
+upstream APIs in this repository.
 
 Phase 6 establishes verified identity before private imports, with explicit
 local-owner migration and one secure source/blob lifecycle reused by Phase 8.
@@ -78,6 +87,13 @@ Backend:
 - Migration `0005` repairs legacy moved-item dates/order and enforces unique
   day/order plus paired/ranged coordinates. Timed moves preserve local times
   on the destination date and reject DST gaps/folds transactionally.
+- Migration `0006` adds nonnegative trip and reusable-place revisions. Existing
+  write routes accept optional expected revisions; stale supplied revisions
+  fail before mutation with a stable 409, while unchanged values do not bump
+  revisions. Shared-place edits do not fan out to referencing trips.
+- Internal strict bounded proposal DTOs and immutable full-itinerary preview
+  validation reuse manual DST and reservation-overlap rules. These models are
+  not routed, stored, sent upstream, or applied.
 - typed Pydantic request/response contracts and a common error envelope.
 - deterministic inclusive day generation and date-range reconciliation.
 - local-time item conversion with IANA timezone/DST validation.
@@ -100,7 +116,8 @@ Frontend:
 - responsive trip/day/item/place/reservation/candidate forms with loading,
   empty, and error states.
 - Workflow form modules, paired manual coordinate entry, synchronous mutation
-  guards and a blocked/reloadable stale state after refresh failure.
+  guards, revision headers for writes, and a blocked/reloadable stale state on
+  precondition or refresh failure.
 - accessible move-up/move-down and destination-day controls.
 - trip overview counts, reservation status distinction, linked-item context,
   and visible conflict warnings.
@@ -133,6 +150,8 @@ Phase 3 evidence, commit references, and provider/database limitations are in
 [`releases/phase-3-maps-logistics.md`](releases/phase-3-maps-logistics.md).
 Phase 4 evidence, review findings, commit references, and external service
 limitations are in [`releases/phase-4-ai-research.md`](releases/phase-4-ai-research.md).
+Phase 5 groundwork evidence, exact local checks, and external gates are in
+[`releases/phase-5-groundwork.md`](releases/phase-5-groundwork.md).
 
 The implementation plan is preserved in
 [`phase-1-implementation-plan.md`](phase-1-implementation-plan.md), and the

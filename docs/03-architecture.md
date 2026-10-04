@@ -175,6 +175,11 @@ transaction using the existing place and saved-place tables.
 
 ### Future proposed edit
 
+This is a design flow, not a delivered integration. ADR 0010 records the
+current upstream contract boundary. Local revision and preview groundwork
+does not expose an AI route, establish a wire contract, or authorize proposal
+generation or application.
+
 ```text
 UI request
  -> travel API
