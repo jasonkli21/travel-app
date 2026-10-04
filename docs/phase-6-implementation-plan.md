@@ -1,12 +1,19 @@
 # Phase 6 implementation plan — authenticated booking and document import
 
-**Status:** planned; no Phase 6 implementation delivered
+**Status:** P6.0 identity decision and P6.1 verified-identity foundation
+implemented locally (review pending); booking/document import remains planned
 **Date:** 2026-10-03
 **Baseline:** reviewed Phase 0–4 commit `56c0cbf`; Phase 5 version/replay slice required
 **Roadmap:** [phased implementation plan](09-implementation-plan.md)
 **Prerequisites:** [audit](reviews/phase-0-4-audit.md), [Phase 5](phase-5-implementation-plan.md)
 
 ## Goal and scope boundary
+
+The current identity-only checkpoint does not deliver booking/document import
+or complete Phase 6. Its release status is recorded in
+[`releases/phase-6-identity.md`](releases/phase-6-identity.md). No accepted
+upstream extraction or retention contract exists, and no private input is
+enabled. Remaining P6.0/P6.1 security review precedes P6.2 storage work.
 
 A verified owner can manually submit a booking email/document, review extracted
 candidate reservation fields with source context, correct uncertainties and
@@ -170,11 +177,14 @@ P6.5 UI + release/security verification
 
 ### P6.0 — Accept the sensitive-data design
 
-Select identity provider/session/verifier, source types/limits, upstream
-authenticated extraction contract, retention and work-recovery semantics.
+ADR 0011 accepts Google OIDC, the server-side browser session, verified stable
+owner mapping and independent AI service/user credentials for the identity
+boundary. No upstream booking/document extraction or retention contract is
+accepted; source types, limits, and recovery semantics remain open for a later
+stage.
 
-**Acceptance:** private imports cannot be enabled until identity, service
-authentication and retention are concrete; document data cannot drive tools.
+**Status:** identity decision accepted locally; private imports stay disabled
+until a separate HTTP/authentication/retention decision is accepted.
 
 ### P6.1 — Implement identity and migrate local ownership
 
@@ -188,6 +198,9 @@ owner records. Upload authentication must run before body parsing/byte access.
 **Acceptance:** cross-owner and missing/expired/forged credentials fail before
 SQL/provider/blob access. Dry-run migration detects collisions and preserves
 FKs, revisions, provider-place uniqueness and counts.
+
+**Status:** implemented locally; coordinator review and final verification are
+pending. Current evidence is in the identity release checkpoint.
 
 ### P6.2 — Build the minimal private blob lifecycle
 

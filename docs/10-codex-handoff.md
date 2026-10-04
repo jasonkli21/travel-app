@@ -1,6 +1,7 @@
 # Codex handoff
 
-Status: Phases 1–5 delivered and independently reviewed locally; Phase 6 next
+Status: Phases 1–5 delivered and independently reviewed locally; P6.0/P6.1
+identity foundation implemented locally, review pending; remaining Phase 6 work planned
 Date: 2026-10-04
 
 ## Objective
@@ -18,21 +19,26 @@ All proposal gates remain off by default. The earlier groundwork record stays
 in [`releases/phase-5-groundwork.md`](releases/phase-5-groundwork.md).
 
 The Phase 4 consumer uses the accepted `research-v1` API in
-`personal-ai-system`; do not change that API from this repository. Booking and
-email import, authentication, and cloud deployment remain deferred. Phase 5
-proposal generation is implemented and reviewed locally, with gates default off.
+`personal-ai-system`; do not change that API from this repository. P6.0/P6.1
+adds an optional verified Google identity/session boundary and explicit
+local-owner migration. Live OAuth/service IAM remains unconfigured. Booking and
+email import, private storage/extraction, and cloud deployment remain deferred.
+Phase 5 proposal generation is implemented and reviewed locally, with gates
+default off.
 
 The [comprehensive Phase 0–4 audit](reviews/phase-0-4-audit.md) documents current
-fixes and verification. Migration `0008` is the current head; `0005` still
+fixes and verification. Migration `0009` is the current head; `0005` still
 requires online legacy-data inspection/repair and a pre-upgrade backup before
 upgrading an existing database. See local development and ADR 0009 before
 changing concurrency or local HTTP boundaries.
 
 ## Next implementation work
 
-Independent Phase 5 review is closed; proceed to Phase 6 identity/storage/
-extraction gates. Its closure is recorded in the lifecycle review and coordinator
-checkpoint. The upstream uvloop clock-domain issue was fixed in
+Independent Phase 5 review is closed. The Phase 6 identity design/local
+implementation is in review; storage, accepted extraction, booking imports and
+confirmation remain later identity-gated work. Its scope and release evidence
+are recorded in the [identity checkpoint](releases/phase-6-identity.md) and
+the coordinator file. The upstream uvloop clock-domain issue was fixed in
 `personal-ai-system` revision `6045f004fbdc4887c2bb67da9ae19a571314fc27` and
 verified over local HTTP with Uvicorn `auto` and `asyncio`; default-off gates
 remain intentional after local review.
@@ -52,8 +58,10 @@ compatibility. A successful stale/uncertain recovery reload resets open editor
 drafts against the newly loaded snapshot. Keep proposal generation gated; do
 not invent upstream APIs in this repository.
 
-Phase 6 establishes verified identity before private imports, with explicit
-local-owner migration and one secure source/blob lifecycle reused by Phase 8.
+Phase 6's P6.0/P6.1 identity stage establishes verified identity before private
+imports, with explicit local-owner migration. Secure source/blob lifecycle and
+accepted extraction have not started; only that later storage/access lifecycle
+is reused by Phase 8.
 Phase 7 requires category/evidence/rights contracts and consented preference
 projection. Phase 8 adds private document access and explicit static snapshots,
 not offline synchronization. Phase 9 proves auth, quotas, SQL/blob restore and
@@ -114,6 +122,17 @@ Backend:
   place-update locks and database-side summary counts.
 - typed `PersonalAIClient` health and gated `research-v1` operations, including
   bounded SSE consumption and durable detail reconciliation.
+- optional Google OIDC verification, stable `issuer + NUL + sub` owner mapping,
+  bounded Google-key cache/fetch, and a single verified-email allowlist.
+- opaque database-backed browser sessions, CSRF digests, expiry/revocation,
+  state/nonce/S256 PKCE login attempts, and safe logout.
+- request-principal owner authorization before domain body/provider access,
+  including research/proposal routes; local mode remains explicit and
+  unauthenticated.
+- typed separation of the AI user ID-token assertion from the independent
+  Cloud Run service IAM transport credential.
+- migration `0009` identity/session/login-attempt/migration-audit tables and
+  explicit backed-up local-owner graph migration tooling.
 - owner-scoped trip/day research with bounded day context and safe errors.
 - Streamed JSON/SSE byte bounds and whole-operation deadlines; synchronous
   SQL projections run in worker threads and release locks before provider work.
@@ -124,6 +143,10 @@ Frontend:
 
 - Next.js App Router trips list and trip workspace.
 - same-origin `/api/v1/*` proxy and centralized typed client.
+- protected dynamic private pages, a minimal Google sign-in/callback/session
+  flow, logout/expiry UI, and an allowlisted same-origin auth proxy.
+- server-only forwarding of opaque session/CSRF cookies; the AI user token is
+  sourced only from its HttpOnly cookie and never accepted from browser headers.
 - responsive trip/day/item/place/reservation/candidate forms with loading,
   empty, and error states.
 - Workflow form modules, paired manual coordinate entry, synchronous mutation
@@ -307,3 +330,16 @@ Record the exact commits reviewed, checks actually run, remaining local or
 external verification gaps, and whether a later phase needs an ADR. Keep AI,
 cloud, external imports, and authentication scope explicitly separated from
 the delivered Phase 3 slice.
+
+## Phase 6 identity handoff
+
+P6.0 identity decision and P6.1 verified-owner foundation are implemented
+locally, pending an independent security review. Read ADR 0011 and the
+[identity release checkpoint](releases/phase-6-identity.md) for the exact
+contract, checks and remaining gates. Google OIDC, opaque sessions, CSRF,
+request-principal ownership, the Next.js sign-in/proxy path, separated AI
+credentials and explicit owner migration are in scope. No private booking or
+document intake, storage, extraction or confirmation is implemented. The
+default local mode is still unauthenticated and the AI capability gates stay
+off. Do not treat local synthetic verification as live Google OAuth, Cloud Run
+IAM, or an accepted extraction/retention contract.

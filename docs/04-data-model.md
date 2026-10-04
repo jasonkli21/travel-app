@@ -155,6 +155,60 @@ Phase 4 manual research candidates create the `places` row and `saved_places`
 relationship in one transaction. Research session IDs, questions, answers,
 citations, and evidence have no travel-side table or migration.
 
+## Implemented Phase 6 identity foundation — migration `0009`
+
+Identity is optional and server-owned. In Google mode, owner IDs are stable
+hashes of the canonical Google issuer plus verified `sub`; email is only a
+single-user allowlist/display field. Local mode remains the default and is not
+authenticated. Migration `0009` adds:
+
+### `auth_identities`
+
+```text
+owner_id PK, issuer, subject, email, status, migration_version
+created_at, updated_at
+```
+
+The `(issuer, subject)` pair is unique. A mapping is created or updated only
+from a verified Google token; disabled identities cannot load sessions.
+
+### `auth_sessions`
+
+```text
+token_hash PK, owner_id FK -> auth_identities ON DELETE CASCADE
+csrf_token_hash, issued_at, expires_at, revoked_at?
+```
+
+The browser receives a random opaque value; only its SHA-256 digest is stored.
+Sessions expire without sliding, and logout records revocation. Neither the
+raw browser session ID nor CSRF secret is persisted.
+
+### `oauth_login_attempts`
+
+```text
+state_hash PK, browser_secret_hash, nonce, code_verifier
+created_at, expires_at
+```
+
+Attempts are single-use, expire after ten minutes, and bind callback state to
+the browser's HttpOnly flow cookie. Raw OAuth client credentials stay in server
+configuration; no access or refresh tokens are stored.
+
+### `owner_migration_audits`
+
+```text
+id UUID PK, source_owner_id, target_owner_id, actor_owner_id
+plan_digest, backup_sha256, row_counts JSON, occurred_at
+```
+
+This append-only audit record accompanies an explicit local-owner migration.
+The dry-run digest binds counts to a hash of the complete source and target
+travel graph, including trip days/items and proposal snapshots. Apply requires
+the same digest/run ID, a verified target identity, backup-file SHA-256 and
+exact source-to-target confirmation. It takes a transaction lock, checks all
+constraints before commit, preserves revisions and rolls back on failure.
+There is no first-login claim path and the tool has not been run on user data.
+
 ## Planned tables, not implemented
 
 ### `attachments`

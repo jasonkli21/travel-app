@@ -311,3 +311,31 @@ imports disabled; token failures never fall back to it. Test synthetic signed
 credentials and all existing route families, forged identity, session expiry/
 logout, CSRF, foreign ownership and migration collision/rollback. Then the
 coordinator independently reviews this stage before the next implementation.
+
+## Phase 6 identity implementation checkpoint — local implementation ready for review
+
+Updated 2026-10-04. Phase 5 is closed at `ff420a9`. P6.0 identity decision and
+P6.1 identity foundation are implemented locally; the coordinator's independent
+security review is the next gate. Read
+[`docs/releases/phase-6-identity.md`](releases/phase-6-identity.md) and ADR 0011,
+then inspect the final commits and current tree. Keep research/proposal gates
+and private imports disabled. Do not start P6.2 storage or P6.3 extraction
+from this checkpoint.
+
+The stage covers Google OIDC verification, short-lived server-side session and
+OAuth attempt records, all-route request-principal ownership, CSRF/logout,
+Next.js callback/proxy/page protection, typed independent AI user/service
+credentials, and explicit backed-up local-owner migration. The full migrated
+PostgreSQL suite passed 170 tests with no skips. Ruff check/format, mypy,
+frontend lint/typecheck/28 tests and production build passed. Local tests use
+synthetic signed tokens; no live Google OAuth or Cloud Run IAM boundary was
+provisioned or exercised. A mounted browser sign-in/logout run remains an
+additional review check. See the release record for exact scope and gates.
+
+The user requested fresh `gpt-6-sol` Medium agents for implementation and
+substantive review fixes after the October 4 restart, followed by the
+coordinator's independent review and a light final pass. The upstream pin for
+this identity decision is `6045f00`; no upstream code change is part of this
+stage. Continue only after independently checking the auth and migration
+boundaries. The accepted booking/document extraction/retention contract is
+still missing, so private source handling remains deferred.

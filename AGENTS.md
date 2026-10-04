@@ -21,8 +21,13 @@ When working on AI integration, also read `docs/06-ai-integration.md`.
 
 Phases 1–5 are delivered and independently reviewed locally. Proposal gates
 remain off by default; live provider and deployment readiness are separate
-gates. Accepted contracts, release evidence, and review closure are recorded in
-[`docs/releases/phase-5-local-proposals.md`](docs/releases/phase-5-local-proposals.md).
+gates. The Phase 6 identity decision and local P6.1 foundation are implemented
+in a review-pending stage, but Phase 6 booking/document import, secure source
+storage, and extraction are not implemented. Google OAuth and Cloud Run IAM
+remain unprovisioned external gates. Phase 5 closure is recorded in
+[`docs/releases/phase-5-local-proposals.md`](docs/releases/phase-5-local-proposals.md);
+identity-stage scope and limits are in
+[`docs/releases/phase-6-identity.md`](docs/releases/phase-6-identity.md).
 
 Current delivered capabilities include:
 
@@ -60,8 +65,13 @@ The travel-side research and proposal gates default off; upstream capability,
 storage, and provider gates must be configured separately. The upstream
 clock-domain fix passes local fake HTTP verification with Uvicorn `auto`
 (uvloop on this host) and `asyncio`. Proposal gates remain off by default after independent local review. Migration `0008` adds exact upstream revision and
-operation-support provenance. Phase 6+ remain planned. External booking
-imports, authentication, cloud deployment, and attachments remain planned.
+operation-support provenance; migration `0009` adds verified identity,
+opaque sessions, OAuth attempts, and migration audit. Google mode derives each
+domain owner from the server-verified Google issuer and subject; explicit local
+mode remains available and unauthenticated. No domain route trusts browser
+owner headers. Local-to-verified-owner migration is explicit, backed up, and
+never triggered by first login. Phase 6 booking/document imports and private
+storage/extraction, cloud deployment, and attachments remain planned.
 
 ## Architectural invariants
 

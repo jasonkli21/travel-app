@@ -23,6 +23,12 @@ headers with a one-key in-memory cache, and rejects `iat` values more than 60
 seconds in the future. The sources are Google's [OpenID Connect guide](https://developers.google.com/identity/openid-connect/openid-connect),
 the [Google ID-token verification guide](https://developers.google.com/identity/gsi/web/guides/verify-google-id-token),
 and the [`google-auth` ID-token API](https://google-auth.readthedocs.io/en/latest/reference/google.oauth2.id_token.html).
+Private Cloud Run invocation uses a separate Google-signed service ID token,
+with the receiving service URL or configured audience and least-privilege
+Invoker IAM binding, as described in [Cloud Run service-to-service
+authentication](https://docs.cloud.google.com/run/docs/authenticating/service-to-service).
+Google documents service-account ID-token claims separately from end-user
+identity in its [token types reference](https://docs.cloud.google.com/docs/authentication/token-types).
 
 The upstream identity implementation maps the canonical issuer and verified
 subject as `usr_` plus the first 32 hexadecimal characters of
@@ -53,6 +59,15 @@ revision/CSRF headers. FastAPI independently resolves the opaque session on
 every domain request before reading a request body or entering domain/provider
 services. `/health`, `/ready`, and non-mutating OpenAPI documentation remain
 public and return no owner data.
+
+The short-lived Google user ID token is kept in a separate Secure, HttpOnly
+cookie only when the Cloud Run AI transport is configured. In that mode the
+travel session expires no later than 60 seconds before the Google ID token, so
+an expired user assertion cannot leave a longer-lived authenticated session
+that silently loses its upstream identity. The API proxy maps that cookie to
+`X-User-ID-Token`; the independent service identity uses `Authorization:
+Bearer ...` only on the backend-to-backend hop. The browser cannot set either
+credential directly.
 
 `TRAVEL_AUTH_MODE=local` remains the explicit default for local CRUD and tests.
 It is confined by the existing local host/origin boundary. Private source
@@ -106,4 +121,3 @@ used against real user data as part of local verification.
 - No Google client has been provisioned, no IAM role has been assigned, no
   cloud resource has been contacted, and no private input was used for this
   local implementation.
-

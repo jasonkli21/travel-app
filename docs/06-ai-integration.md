@@ -69,10 +69,29 @@ travel times are not durable facts.
 
 ## Authentication boundary
 
-The local `owner_id="local"` seam is not authentication. This integration is
-for local-first use only. Private cloud data, booking imports, and user-specific
-AI sessions require an authenticated identity and an explicitly authorized
-service boundary before implementation.
+Local `owner_id="local"` mode is not authentication. The P6.1 identity
+foundation adds an optional Google OIDC session boundary for travel-domain
+requests; browser-provided owner IDs and service credentials are never trusted.
+Research and proposal gates remain off unless separately configured.
+
+When Google mode and an AI gate are enabled, configuration must also select
+`google_cloud_run_iam`. The signed-in user's Google ID token is audience-bound
+to the configured OAuth client and is verified against the active travel
+session owner before request-body parsing. The proxy can source this token only
+from its Secure, HttpOnly cookie. Separately, `PersonalAIClient` obtains and
+verifies a Cloud Run service ID token for the configured service audience and
+service-account email; it sends that credential in `Authorization` and the
+user assertion in `X-User-ID-Token`. The upstream independently verifies both
+boundaries. The service identity is transport authentication, not the travel
+owner. This integration does not claim that live service IAM or upstream user
+audience alignment has been provisioned or exercised.
+
+The current local default uses `TRAVEL_AUTH_MODE=local`, and private AI imports
+remain disabled. No accepted upstream booking/document extraction contract or
+retention policy exists; the research and proposal contracts do not satisfy
+that prerequisite. Do not send private booking/document input or create an
+extraction endpoint until its separate HTTP/authentication/retention contract
+is accepted.
 
 ## Accepted itinerary-proposal contract
 
@@ -108,18 +127,17 @@ revision, fresh dependency footprint, and unexpired proposal. SQL applies
 operations, one revision, audit state, and the immutable replay result in one
 transaction. Repeated apply returns that exact outcome.
 
-The end-to-end local fake HTTP flow passed with Uvicorn's asyncio loop. On this
-host Uvicorn auto-selects uvloop 0.23.0; its `loop.time()` clock is about
-11.16 million seconds ahead of `time.monotonic()`. The pinned upstream code
-passes one clock's absolute deadline into code using the other, so generation
-immediately becomes `generation_outcome_unknown` under that runner. Proposal
-gates stay off in this runtime until upstream fixes the deadline conversion.
-See the [Phase 5 release record](releases/phase-5-local-proposals.md).
+The upstream monotonic-deadline conversion was corrected and the local fake
+HTTP flow passed under both Uvicorn `auto` (uvloop on this host) and `asyncio`.
+Proposal gates still default off and require separate upstream capability,
+storage and provider configuration. See the [Phase 5 release
+record](releases/phase-5-local-proposals.md).
 
 ## Future AI work
 
 Memory-aware research, structured extraction, booking/document import,
-authentication, and hosted AI use remain deferred. Later AI output that could
+and hosted AI use remain deferred. The P6.1 identity foundation is local and
+review pending. Later AI output that could
 affect travel state must be versioned and typed, checked against current
 ownership and hard constraints, previewed to the traveler, and applied only
 through existing travel-domain services after explicit confirmation.

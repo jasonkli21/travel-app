@@ -247,17 +247,38 @@ column types do not imply PostgreSQL locking semantics. See
 
 ## Identity
 
-Phase 0/1 uses `owner_id = "local"` as an identity seam.
-
-This mirrors the personal AI system's useful repository shape while preserving the warning:
+Local mode uses `owner_id = "local"` as an explicit development seam.
 
 > `local` is not authenticated identity.
 
-Before real cloud bookings/email/private documents are stored, add authentication and server-derived owner identity.
+The local seam is not authenticated identity. The implemented P6.1 foundation
+adds optional Google authorization-code OIDC, S256 PKCE, one normalized
+verified-email allowlist, and a server-owned stable owner derived from the
+canonical Google issuer and `sub`. The backend verifies Google ID-token
+signature, issuer, audience, expiry, issue time, verified email, and (during
+login) nonce through `google-auth` and bounded Google key retrieval. Browser
+sessions use random opaque IDs stored only as SHA-256 digests, expire without
+sliding, and can be revoked by logout. A Next.js server callback/proxy forwards
+only allowlisted cookies and the backend independently checks every identity.
+
+All domain APIs derive the owner from the request principal before body parsing
+or domain/provider SQL. Browser owner headers and arbitrary bearer credentials
+are rejected. Unsafe requests require a matching CSRF proof and an allowed
+Origin; private HTML pages are dynamic and check the active backend session.
+Google mode fails closed on bad sessions or unavailable verification storage.
+An explicit, backed-up CLI moves the full `local` owner graph only after a
+verified target identity exists; it never runs during first sign-in.
+
+`TRAVEL_AUTH_MODE=local` remains the default and keeps local CRUD
+unauthenticated behind configured local host/origin checks. Live Google OAuth,
+upstream user-audience alignment, and Cloud Run service IAM remain separate
+enablement gates. No private booking/document import, attachment storage, or
+extraction is implemented. See [ADR 0011](decisions/0011-phase6-google-identity-and-ai-auth.md).
 
 Local API/web host and browser-origin allowlists plus loopback bindings protect
-against unintended browser access. Clients without Origin remain possible;
-this is not an authenticated boundary. Bodies are capped at 64 KiB. Safe error
-envelopes, request IDs, route-template/status/duration logs and bounded SQL
-waits are delivered now. `/health` is process liveness and `/ready` checks SQL
-availability. Hosted metrics, quotas and auth remain later-phase work.
+against unintended browser access in local mode. Local clients without Origin
+remain possible by design; local mode is not an authenticated boundary. Bodies
+are capped at 64 KiB. Safe error envelopes, request IDs, route-template/status/
+duration logs and bounded SQL waits remain in place. `/health` and `/ready`
+remain public probes; non-mutating OpenAPI documentation also remains public.
+Hosted metrics and quotas remain later-phase work.

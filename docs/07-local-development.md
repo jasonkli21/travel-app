@@ -1,6 +1,6 @@
 # Local development
 
-Status: Phase 5 local instructions
+Status: Phases 1–5 plus the review-pending Phase 6 identity foundation
 Date: 2026-10-04
 
 ## Prerequisites
@@ -54,6 +54,47 @@ that list if calling the API directly. The web proxy validates its browser
 Host against `TRAVEL_WEB_ALLOWED_HOSTS` and accepts only the same browser
 origin; forwarded host headers are not trusted. Clients without Origin are
 still unauthenticated. Do not expose this local owner on a public interface.
+
+## Identity modes and local-owner migration
+
+`TRAVEL_AUTH_MODE=local` is the default and preserves unauthenticated local
+CRUD. Invalid browser credentials never switch local requests into another
+identity mode. Google sign-in is optional and requires a server-side OAuth web
+client, a one-person `GOOGLE_OAUTH_ALLOWED_EMAIL`, client ID/secret, and an
+exact callback URI ending in `/auth/google/callback`. Set the same client ID
+and callback URI in `frontend/.env.local`; only the client ID and redirect URI
+are exposed to the Next server, never to browser code. Use HTTPS except for
+explicit loopback development, and keep `ALLOWED_HOSTS`, `CORS_ORIGINS`, and
+`TRAVEL_WEB_ALLOWED_HOSTS` aligned with the actual local URL. Do not enable
+Google mode until those credentials and redirect settings are provisioned and
+tested. The local identity tests use synthetic RSA-signed fixtures instead of
+live Google credentials.
+
+Research/proposal use in Google mode also requires the independent
+`PERSONAL_AI_AUTH_MODE=google_cloud_run_iam` gate, with the user token audience
+matching the OAuth client, plus the configured Cloud Run service audience and
+service-account identity. No live IAM binding or upstream audience alignment
+is included in local verification. Keep AI feature gates off unless the full
+service boundary is separately configured.
+
+Migration `0009` adds identities and sessions; it does not claim old rows on
+first sign-in. To move a local owner, provision/verify the target by a Google
+sign-in, create and independently verify a database backup outside the
+repository, then inspect a dry-run report:
+
+```bash
+cd backend
+uv run --locked python scripts/migrate_local_owner.py --target-owner-id '<verified-owner-id>'
+```
+
+Apply only the exact inspected plan, after checking the graph counts and
+conflicts and independently verifying the backup SHA-256. Preserve the emitted
+`run_id` and `plan_digest` and pass them back with a literal source/target
+confirmation and backup path/digest using `--apply`. A changed graph, provider
+or idempotency collision, invalid owner relation, changed target identity, or
+bad backup fails closed. The command is operator-driven and was verified only
+against disposable synthetic PostgreSQL data; it has not been run on real user
+data.
 
 API/proxy request bodies are limited to 64 KiB. Database defaults bound connect
 time to 5 seconds, pool acquisition to 5 seconds, statements to 15 seconds and
@@ -244,7 +285,7 @@ uv run --locked alembic upgrade head
 
 Then run `uv run --locked alembic check` to verify ORM/migration parity.
 Migration `0005` requires an online connection; offline SQL can be generated
-through `0004`, but is not a complete upgrade to head. Migration `0008` is the
+through `0004`, but is not a complete upgrade to head. Migration `0009` is the
 current head.
 
 ## Backup and migration recovery

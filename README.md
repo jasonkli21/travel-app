@@ -20,12 +20,19 @@ proposal lifecycle, accepted typed HTTP integration, immutable previews,
 atomic apply/replay and rejection, and an explicit review/apply UI. Proposal
 gates remain off by default. The accepted upstream revision and exact local
 checks are in [the Phase 5 release record](docs/releases/phase-5-local-proposals.md).
-Phase 5 independent local review is closed.
+Phase 5 independent local review is closed. The Phase 6 identity decision and
+P6.1 local identity foundation are implemented as a separate, review-pending
+stage; this does not deliver Phase 6 booking/document imports or complete Phase
+6. The identity stage adds optional Google OIDC, opaque server-side sessions,
+request-principal ownership and explicit local-owner migration. Google OAuth,
+upstream AI identity alignment and Cloud Run service IAM are not provisioned or
+live-verified; local mode remains the default and private imports stay disabled.
 The upstream monotonic-deadline conversion was fixed and the local fake HTTP
 proposal flow passes under both Uvicorn `auto` (uvloop on this host) and
 `asyncio`. Proposal gates default off and require separate provider configuration. Geoapify features are optional; manual
-planning works without provider keys. External booking imports, authentication,
-and cloud deployment remain planned.
+planning works without provider keys. External booking imports, private storage
+and extraction, and cloud deployment remain planned. See the [Phase 6 identity
+checkpoint](docs/releases/phase-6-identity.md).
 
 The [Phase 0–4 audit](docs/reviews/phase-0-4-audit.md) records the architecture
 review, integrity/security/recovery fixes and verification. Migration `0005`
@@ -35,6 +42,9 @@ storage, and `0008` adds upstream revision and operation-support provenance.
 Read the
 [migration recovery instructions](docs/07-local-development.md) before
 upgrading an existing database. Local ownership is still not authentication.
+Migration `0009` adds the identity/session/OAuth/migration-audit records. Google
+identity is only active when explicitly configured; the default local owner
+mode remains unauthenticated by design.
 
 ## Stack
 
