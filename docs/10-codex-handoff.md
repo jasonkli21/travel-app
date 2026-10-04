@@ -35,11 +35,14 @@ Detailed [Phase 5](phase-5-implementation-plan.md),
 [Phase 8](phase-8-implementation-plan.md) and
 [Phase 9](phase-9-implementation-plan.md) plans are now recorded against
 `56c0cbf`. They do not mark any later capability delivered. Begin with Phase
-5's independent review checkpoint, then the accepted upstream proposal
-contract and P5.3 durable lifecycle/apply gates. Existing writes now accept an
-optional `X-Expected-Revision`; omitted headers preserve legacy compatibility.
-Keep generation gated until the upstream contract is accepted; do not invent
-upstream APIs in this repository.
+5's accepted upstream proposal contract and P5.3 durable lifecycle/apply gates;
+the independent review and remediation are recorded in
+[`reviews/phase-5-groundwork-review.md`](reviews/phase-5-groundwork-review.md).
+Existing writes now accept an optional `X-Expected-Revision`, which the web
+proxy explicitly allowlists and forwards; omitted headers preserve legacy
+compatibility. A successful stale/uncertain recovery reload resets open editor
+drafts against the newly loaded snapshot. Keep generation gated until the
+upstream contract is accepted; do not invent upstream APIs in this repository.
 
 Phase 6 establishes verified identity before private imports, with explicit
 local-owner migration and one secure source/blob lifecycle reused by Phase 8.
@@ -116,8 +119,10 @@ Frontend:
 - responsive trip/day/item/place/reservation/candidate forms with loading,
   empty, and error states.
 - Workflow form modules, paired manual coordinate entry, synchronous mutation
-  guards, revision headers for writes, and a blocked/reloadable stale state on
-  precondition or refresh failure.
+  guards, revision headers forwarded through the explicit proxy allowlist, and
+  a blocked/reloadable stale state on precondition or refresh failure. A
+  successful explicit recovery reload closes/resets open editors; ordinary
+  refreshes preserve drafts.
 - accessible move-up/move-down and destination-day controls.
 - trip overview counts, reservation status distinction, linked-item context,
   and visible conflict warnings.

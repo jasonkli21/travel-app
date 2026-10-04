@@ -38,12 +38,13 @@ work.
 - ADR 0010 is committed as `76da3b2`; P5.1 revisions/preconditions are
   committed as `9c99580`; P5.2 internal bounded validation/preview is committed
   as `e3070b4`; stable reservation warning ordering and its regression are
-  committed as `7b5b4d0`. Generation, durable proposal lifecycle, apply/replay,
-  rejection, and proposal UI remain unimplemented; Phase 5 is incomplete.
-- The implementation agent is recording the release/handoff checkpoint. The
-  coordinator resumes idle waiting until that documentation commit is ready
-  for independent review. Do not begin P5.3 or another phase before that review
-  and the contract gate.
+  committed as `7b5b4d0`. Review findings were fixed in `dd0974c`, and the
+  repeatable mounted recovery fixture was added in `ea1576b`: the web proxy now
+  forwards only the explicit revision precondition, and a successful recovery
+  reload clears mounted form drafts. Release, review, and handoff evidence
+  records follow those fixes. Generation, durable proposal lifecycle,
+  apply/replay, rejection, and proposal UI remain unimplemented; Phase 5 is
+  incomplete.
 
 ## Verification evidence at this checkpoint
 
@@ -51,17 +52,27 @@ work.
   real stale/concurrent writes, injected transaction rollback, DST move
   rejection, legacy upgrade coverage, and Alembic ORM/migration parity.
 - Ruff check and format check passed; strict mypy passed.
-- Frontend ESLint and TypeScript passed; all 17 Node tests passed, including a
-  stale API 409 flowing through the actual request parser into reload recovery.
+- Frontend ESLint and strict TypeScript passed; all 18 Node tests passed. The
+  revision regression passes under Node 22.23.3 and exercises typed DELETE and
+  shared-place PATCH calls through the proxy to stale 409 recovery, plus
+  omitted-header compatibility.
+- Pinned pnpm 10.17.1 frozen offline install passed with 340 packages reused.
+  The existing build-script approval policy was unchanged. Next production
+  build passed.
+- A mounted Chrome run using `frontend/tests/fixtures/revision-recovery-api.mjs`
+  confirmed that stale save -> explicit reload closes the item editor and
+  reopening shows the server's newer value. Quick-place creation retained an
+  unrelated draft. It used only loopback services and no app database.
 - Next production standalone build passed, and the packaged server returned the
   primary page with HTTP 200. No backend/API health service was running during
   that smoke check.
 - `personal-ai-system` and live AI/Geoapify services were not modified or
   invoked. The upstream contract gate remains open.
 
-The release record lists exact implementation commits and limitations; the
-documentation checkpoint follows those commits in Git history. Independent
-review remains pending.
+The release and [review record](reviews/phase-5-groundwork-review.md) list exact
+remediation evidence and remaining gates. The independent review findings are
+resolved. The upstream itinerary-proposal contract remains absent; do not begin
+P5.3 or later phases until that external prerequisite is accepted.
 
 ## Verification requirements
 

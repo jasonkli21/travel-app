@@ -67,10 +67,14 @@ These are travel-side design targets, not claims of an existing AI API.
 
 Add revision fields to existing detail responses. Updated UI writes send an
 expected revision; stale preconditions return a stable 409 and reload/review
-path. Preserve old manual client payloads initially by allowing an omitted
-precondition, while **still incrementing revisions on every write**. Document
-legacy last-writer semantics; proposals always require a footprint. Avoid
-turning existing collection responses into a breaking pagination envelope.
+path. The proxy forwards only the explicitly supported precondition. After a
+successful explicit stale/uncertain recovery reload, discard open form drafts
+before enabling edits against the new snapshot; ordinary refreshes preserve
+unrelated drafts. Preserve old manual client payloads initially by allowing an
+omitted precondition, while **still incrementing revisions on every write**.
+Document legacy last-writer semantics; proposals always require a footprint.
+Avoid turning existing collection responses into a breaking pagination
+envelope.
 
 Context projection sends only necessary dates/timezone, local schedules,
 user-selected labels and opaque proposal-scoped handles. Travel maps those
