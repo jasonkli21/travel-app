@@ -1,6 +1,6 @@
 # Codex handoff
 
-Status: Phase 4 delivered; Phase 5 implementation present for independent review
+Status: Phases 1–5 delivered and independently reviewed locally; Phase 6 next
 Date: 2026-10-04
 
 ## Objective
@@ -10,7 +10,7 @@ Phase 3 maps/location/logistics slice, and Phase 4 bounded AI research consumer
 are implemented locally. Review evidence and commit references are recorded in
 the phase release documents.
 
-Phase 5 P5.0–P5.5 is implemented locally and awaits independent review. The
+Phase 5 P5.0–P5.5 is implemented and independently reviewed locally. The
 accepted upstream contract, durable storage, lifecycle, apply/replay, rejection,
 gated generation client, and explicit review UI are described in
 [`releases/phase-5-local-proposals.md`](releases/phase-5-local-proposals.md).
@@ -20,7 +20,7 @@ in [`releases/phase-5-groundwork.md`](releases/phase-5-groundwork.md).
 The Phase 4 consumer uses the accepted `research-v1` API in
 `personal-ai-system`; do not change that API from this repository. Booking and
 email import, authentication, and cloud deployment remain deferred. Phase 5
-proposal generation is implemented locally but remains gated and under review.
+proposal generation is implemented and reviewed locally, with gates default off.
 
 The [comprehensive Phase 0–4 audit](reviews/phase-0-4-audit.md) documents current
 fixes and verification. Migration `0008` is the current head; `0005` still
@@ -30,12 +30,12 @@ changing concurrency or local HTTP boundaries.
 
 ## Next implementation work
 
-The next action is independent re-review of the complete Phase 5 implementation
-and release evidence. Do not start Phase 6 until that review is recorded and
-any findings are resolved. The upstream uvloop clock-domain issue was fixed in
+Independent Phase 5 review is closed; proceed to Phase 6 identity/storage/
+extraction gates. Its closure is recorded in the lifecycle review and coordinator
+checkpoint. The upstream uvloop clock-domain issue was fixed in
 `personal-ai-system` revision `6045f004fbdc4887c2bb67da9ae19a571314fc27` and
 verified over local HTTP with Uvicorn `auto` and `asyncio`; default-off gates
-remain intentional while independent review is pending.
+remain intentional after local review.
 
 Detailed [Phase 5](phase-5-implementation-plan.md),
 [Phase 6](phase-6-implementation-plan.md),
@@ -45,7 +45,7 @@ Detailed [Phase 5](phase-5-implementation-plan.md),
 `56c0cbf`. They do not mark any later capability delivered. Phase 5's accepted
 upstream proposal contract and P5.3 durable lifecycle/apply are implemented;
 the independent review and remediation are recorded in
-[`reviews/phase-5-groundwork-review.md`](reviews/phase-5-groundwork-review.md).
+[`reviews/phase-5-lifecycle-review.md`](reviews/phase-5-lifecycle-review.md).
 Existing writes now accept an optional `X-Expected-Revision`, which the web
 proxy explicitly allowlists and forwards; omitted headers preserve legacy
 compatibility. A successful stale/uncertain recovery reload resets open editor

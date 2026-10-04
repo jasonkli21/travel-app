@@ -1,6 +1,6 @@
 # Phased implementation plan
 
-Status: active roadmap; Phase 4 delivered; Phase 5 implementation present for independent review
+Status: active roadmap; Phases 1–5 delivered and reviewed locally; Phase 6 next
 Date: 2026-10-03
 
 Each phase should produce a useful, testable vertical slice.
@@ -136,7 +136,7 @@ and [`releases/phase-4-ai-research.md`](releases/phase-4-ai-research.md).
 ## Phase 5 — Structured AI proposals
 
 Detailed plan: [Phase 5](phase-5-implementation-plan.md). The P5.0–P5.5 local
-implementation is present for independent review; proposal gates remain off by
+implementation has passed independent local review; proposal gates remain off by
 default. It pins the accepted upstream contract, adds durable owner-scoped
 storage and atomic apply/replay, gated generation, and the explicit review UI.
 The first removal operation requires an explicit user-selected removable-item

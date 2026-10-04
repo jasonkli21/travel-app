@@ -19,10 +19,9 @@ When working on AI integration, also read `docs/06-ai-integration.md`.
 
 ## Current implementation status
 
-Phases 1–4 are delivered locally. The Phase 5 implementation is present for
-independent review; it remains gated off and must not be described as a
-completed phase. Its accepted contract, release evidence, and local upstream
-runtime caveat are recorded in
+Phases 1–5 are delivered and independently reviewed locally. Proposal gates
+remain off by default; live provider and deployment readiness are separate
+gates. Accepted contracts, release evidence, and review closure are recorded in
 [`docs/releases/phase-5-local-proposals.md`](docs/releases/phase-5-local-proposals.md).
 
 Current delivered capabilities include:
@@ -60,8 +59,7 @@ Current delivered capabilities include:
 The travel-side research and proposal gates default off; upstream capability,
 storage, and provider gates must be configured separately. The upstream
 clock-domain fix passes local fake HTTP verification with Uvicorn `auto`
-(uvloop on this host) and `asyncio`. Proposal gates remain off pending
-independent Phase 5 review. Migration `0008` adds exact upstream revision and
+(uvloop on this host) and `asyncio`. Proposal gates remain off by default after independent local review. Migration `0008` adds exact upstream revision and
 operation-support provenance. Phase 6+ remain planned. External booking
 imports, authentication, cloud deployment, and attachments remain planned.
 

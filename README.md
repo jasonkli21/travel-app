@@ -8,8 +8,7 @@ plus the separately versioned itinerary-proposal capability.
 
 ## Current status
 
-**Phases 1–4 are delivered locally; the Phase 5 implementation is present for
-review.** The repository has
+**Phases 1–5 are delivered and independently reviewed locally.** The repository has
 the Phase 1 owner-scoped itinerary planner, Phase 2 manual reservations and
 saved-place candidates, and a Phase 3 trip map, submitted place search/import,
 and on-demand route estimates with deterministic transfer warnings. Phase 4
@@ -21,11 +20,10 @@ proposal lifecycle, accepted typed HTTP integration, immutable previews,
 atomic apply/replay and rejection, and an explicit review/apply UI. Proposal
 gates remain off by default. The accepted upstream revision and exact local
 checks are in [the Phase 5 release record](docs/releases/phase-5-local-proposals.md).
-Phase 5 awaits independent review.
+Phase 5 independent local review is closed.
 The upstream monotonic-deadline conversion was fixed and the local fake HTTP
 proposal flow passes under both Uvicorn `auto` (uvloop on this host) and
-`asyncio`. Keep proposal gates off pending independent Phase 5 review and
-separate provider configuration. Geoapify features are optional; manual
+`asyncio`. Proposal gates default off and require separate provider configuration. Geoapify features are optional; manual
 planning works without provider keys. External booking imports, authentication,
 and cloud deployment remain planned.
 

@@ -174,7 +174,10 @@ class ProposalService:
             detail, _ = await run_in_threadpool(self._load_detail, trip_id, seed.proposal_id)
             return detail
         await self._accept_remote(seed, remote)
-        return await self.get(trip_id, seed.proposal_id)
+        # A running result has already consumed the client's reconciliation
+        # budget. Return stored state; explicit status reads can reconcile later.
+        detail, _ = await run_in_threadpool(self._load_detail, trip_id, seed.proposal_id)
+        return detail
 
     async def get(self, trip_id: UUID, proposal_id: UUID) -> ProposalDetailResponse:
         detail, seed = await run_in_threadpool(self._load_detail, trip_id, proposal_id)
@@ -747,7 +750,7 @@ def _failed_result(
         "state": "failed",
         "upstream_proposal_id": remote.proposal_id,
         "operations": None,
-        "operation_support": [item.model_dump(mode="json") for item in remote.operation_support],
+        "operation_support": [],
         "preview": None,
         "citations": [],
         "expires_at": expires_at or remote.expires_at,

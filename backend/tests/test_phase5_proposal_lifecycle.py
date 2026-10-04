@@ -1101,6 +1101,39 @@ def test_apply_and_reject_race_has_one_terminal_winner(
     assert refreshed["revision"] == revision
 
 
+def test_running_generation_returns_without_renewing_reconciliation_budget(
+    proposal_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trip, _item_id, _place_id = create_trip_with_item(proposal_client)
+
+    async def running_create(
+        _client: PersonalAIClient, *, payload: dict[str, object], idempotency_key: UUID
+    ) -> UpstreamProposalResult:
+        context = TravelItineraryContext.model_validate_json(json.dumps(payload["context"]))
+        now = datetime.now(UTC)
+        return UpstreamProposalResult(
+            proposal_id=uuid4(),
+            state="running",
+            support_mode="context_only",
+            trip_handle=context.trip_handle,
+            operations=(),
+            operation_support=(),
+            citations=(),
+            created_at=now,
+            expires_at=now + timedelta(hours=1),
+        )
+
+    async def forbidden_lookup(_client: PersonalAIClient, key: UUID):
+        raise AssertionError("generation renewed the external reconciliation budget")
+
+    monkeypatch.setattr(PersonalAIClient, "create_itinerary_proposal", running_create)
+    monkeypatch.setattr(PersonalAIClient, "get_itinerary_proposal_by_key", forbidden_lookup)
+    response = request_proposal(proposal_client, trip, uuid4())
+    assert response.status_code == 201, response.text
+    assert response.json()["state"] == "outcome_unknown"
+
+
 def test_unknown_generation_reconciles_by_same_key_without_a_second_post(
     proposal_client: TestClient,
     monkeypatch: pytest.MonkeyPatch,

@@ -1,7 +1,7 @@
 # Phase 5 local proposal implementation
 
 Date: 2026-10-04
-Status: P5.0–P5.5 implementation present for independent review; proposal gates off
+Status: P5.0–P5.5 independently reviewed and delivered locally; gates default off
 
 ## Scope and contract
 
@@ -44,7 +44,7 @@ blocks edits until reload.
 All browser, Travel API, and upstream capability gates default off. The
 upstream provider gate is separate. Local owner mode is not authentication;
 booking imports, private cloud use, auth, and deployment remain out of scope.
-Do not start Phase 6 before independent review closes this implementation.
+Independent local review is closed; Phase 6 remains a separate implementation.
 
 ## Initial verification baseline
 
@@ -170,3 +170,24 @@ The implementation is checkpointed in these commits:
 Independent review must assess atomic apply/replay, all mutation revision
 paths, footprint completeness and lock ordering, privacy, and whether the
 default-off gates remain safe. Phase 5 remains pending independent re-review.
+
+## Coordinator closure of Phase 5 local scope
+
+Independent re-review closed all substantive findings. A final small fix prevents
+renewed reconciliation budgets for upstream running results as well as exceptions;
+failed results carry no dangling evidence support. The upstream loop regression
+no longer assumes a platform-specific clock offset (upstream commit `96cf73b`);
+the accepted runtime contract pin remains `6045f004fbdc4887c2bb67da9ae19a571314fc27`.
+
+Coordinator verification: 136 travel PostgreSQL tests passed, zero skips; Ruff
+check/format and mypy passed. Upstream 540 tests passed with 12 existing
+manual/provider skips, and Ruff passed. Frontend 20 tests, ESLint, generated
+types/TypeScript and production build passed. Migration 0008 and repeatable
+mounted fixture coverage were re-reviewed. No substantive residual finding
+remains in the local Phase 5 scope. Default-off provider/capability gates,
+live provider quality, hosted authentication and cloud verification remain
+separate; no live service or deployment was performed.
+
+Next: assess Phase 6 identity, secure source lifecycle and accepted extraction
+prerequisites; delegate one logical stage at a time to fresh Luna Extra High
+agents. Preserve the upstream pre-existing frontend build-info modification.

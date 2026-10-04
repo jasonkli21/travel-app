@@ -1,6 +1,6 @@
 # Architecture
 
-Status: Phase 0–4 delivered; Phase 5 implementation present for review, gates off
+Status: Phases 0–5 delivered and reviewed locally; external gates remain off
 Date: 2026-10-04
 
 ## System shape
@@ -203,7 +203,7 @@ never trigger an automatic POST with a new key or reset the external request
 budget. Apply replay returns the exact stored outcome. The upstream monotonic
 deadline is converted to a remaining duration at async timeout boundaries; the
 local fake HTTP flow passes with Uvicorn's `auto` (uvloop here) and `asyncio`
-loops. Proposal gates remain off while independent Phase 5 review is pending.
+loops. Proposal gates remain off by default after independent local review.
 
 ## Async work
 

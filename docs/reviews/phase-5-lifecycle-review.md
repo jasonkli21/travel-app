@@ -74,3 +74,24 @@ Current travel verification: `TEST_DATABASE_URL=postgresql+psycopg://jasonkli@12
 
 Re-review fixes and run relevant complete checks before closing Phase 5 or
 starting Phase 6. No live provider, authentication or cloud readiness is implied.
+
+## Coordinator closure of Phase 5 local scope
+
+Independent re-review closed all substantive findings. A final small fix prevents
+renewed reconciliation budgets for upstream running results as well as exceptions;
+failed results carry no dangling evidence support. The upstream loop regression
+no longer assumes a platform-specific clock offset (upstream commit `96cf73b`);
+the accepted runtime contract pin remains `6045f004fbdc4887c2bb67da9ae19a571314fc27`.
+
+Coordinator verification: 136 travel PostgreSQL tests passed, zero skips; Ruff
+check/format and mypy passed. Upstream 540 tests passed with 12 existing
+manual/provider skips, and Ruff passed. Frontend 20 tests, ESLint, generated
+types/TypeScript and production build passed. Migration 0008 and repeatable
+mounted fixture coverage were re-reviewed. No substantive residual finding
+remains in the local Phase 5 scope. Default-off provider/capability gates,
+live provider quality, hosted authentication and cloud verification remain
+separate; no live service or deployment was performed.
+
+Next: assess Phase 6 identity, secure source lifecycle and accepted extraction
+prerequisites; delegate one logical stage at a time to fresh Luna Extra High
+agents. Preserve the upstream pre-existing frontend build-info modification.

@@ -1,6 +1,6 @@
 # Phase 5 implementation plan — structured AI proposals
 
-**Status:** P5.0–P5.5 implemented locally; awaiting independent review; gates off
+**Status:** P5.0–P5.5 implemented and independently reviewed locally; gates default off
 **Date:** 2026-10-04
 **Baseline:** `27cc9b1`, reviewed local Phase 0–4 plus P5.0–P5.2 groundwork
 **Roadmap:** [phased implementation plan](09-implementation-plan.md)
@@ -28,7 +28,7 @@ before Phase 6 imports or any private hosted use.
 
 | Concern | Decision |
 | --- | --- |
-| Upstream capability | Accepted at `personal-ai-system` revision `8535cad3a146b1a19cab0958c439f170d19b8095`. Pin `itinerary-proposal-v1`, `travel-itinerary-context-v1`, and `itinerary-proposal-policy-v2`; consume only the documented HTTP routes and strict DTOs. Keep travel, upstream capability, and provider gates independent and off by default. |
+| Upstream capability | Accepted at `personal-ai-system` revision `6045f004fbdc4887c2bb67da9ae19a571314fc27`. Pin `itinerary-proposal-v1`, `travel-itinerary-context-v1`, and `itinerary-proposal-policy-v2`; consume only the documented HTTP routes and strict DTOs. Keep travel, upstream capability, and provider gates independent and off by default. |
 | Operation set | Add an item using an existing reviewed place/candidate; move an item; update local times; remove an optional item. No mutation of places, reservations or confirmed/required anchors. Initially bound a patch to 25 operations; finalize that limit with the accepted contract. |
 | Required vs optional | The current status enum is not an optionality flag. Initially permit removal only for unlinked, non-booked/non-completed items explicitly selected as removable by the user in this request. Persist that handle allowlist with the proposal. Moves/time edits cannot alter booked or confirmed reservation anchors. Do not infer optionality or add a new general protection model in this slice. |
 | Versioning | Add a nonnegative monotonically increasing trip revision and reusable-place revision. Every authoritative aggregate mutation increments the trip revision, including day/reservation/candidate edits; every place metadata edit increments its place revision. Root locks still protect SQL invariants. Timestamps are not concurrency tokens. |
@@ -40,9 +40,8 @@ before Phase 6 imports or any private hosted use.
 
 An ADR must record the explicit-removal/anchor policy, accepted contract, revision
 footprint, evidence expiry and replay semantics before enabling generation.
-ADR 0010 records these decisions. The gates remain off until the local runtime
-issue documented in the release record is resolved and independent review is
-complete.
+ADR 0010 records these decisions. The runtime issue and independent review
+findings are resolved locally; capability and provider gates default off.
 
 ## Current delivery checkpoint
 
@@ -53,8 +52,7 @@ scope and exact verification are in
 [`releases/phase-5-local-proposals.md`](releases/phase-5-local-proposals.md).
 The accepted upstream contract and safety policy are pinned in ADR 0010. The
 proposal API, storage, lifecycle, gated client, and UI are implemented. The
-stage awaits independent review; do not call Phase 5 complete until that
-review closes. Keep all proposal gates off by default.
+stage has passed independent local review. Keep all proposal gates off by default.
 
 ## Travel API contracts
 
@@ -234,7 +232,7 @@ cases, not to mirror implementation details.
 4. feat: integrate gated proposal generation and review UI.
 5. docs: record release and remediation evidence.
 
-The Phase 5 implementation is committed for independent review. The release
+The Phase 5 implementation has passed independent local review. The release
 record separates each executed check from unrun cases and runtime limitations.
 Keep generation gated until the uvloop deadline issue and review gate are
 closed. Lessons for Phase 6: reuse version/replay and safe transaction
