@@ -17,11 +17,11 @@ external gates honestly and never declare a phase complete prematurely.
 
 ## Restart schedule
 
-The existing one-time heartbeat identities were updated in place; no duplicate
-automations were created. Their internal names retain the earlier times:
-
-- `resume-travel-implementation-october-3-at-10-30pm`: Oct 3, 2026 22:25 PDT.
-- `resume-travel-implementation-october-4-at-3-45am`: Oct 4, 2026 03:30 PDT.
+The obsolete Oct 3 heartbeat was deleted. The existing
+`resume-travel-implementation-october-4-at-3-45am` heartbeat was updated in
+place, with no duplicate, to a one-time restart at Oct 4, 2026 03:50 PDT
+(`DTSTART:20261004T105000Z`). The unzoned schedule had been interpreted as UTC
+and was incorrect; the explicit UTC start time supersedes it.
 
 On restart inspect live agents and Git state first; do not duplicate active
 work.
@@ -30,11 +30,12 @@ work.
 
 - This stage began from clean reviewed Phase 0–4 baseline `dc53d25` on
   `codex/phase-0-scaffold-corrections`.
-- Upstream `personal-ai-system` was inspected read-only at `0c397dcd92d8503581c0727a6da9a0fbadfe3e6f`
-  (`codex/phase-6-decision-support`, equal to `origin/main`). It defines
-  research, decision, domain-comparison, and iterative-research APIs, but has
-  no accepted itinerary-patch DTO, route, capability gate, or fixture. Do not
-  expand this stage into upstream work or invent an API.
+- At initial audit, upstream `personal-ai-system` was inspected read-only at
+  `0c397dcd92d8503581c0727a6da9a0fbadfe3e6f`
+  (`codex/phase-6-decision-support`, equal to `origin/main`). It defined
+  research, decision, domain-comparison, and iterative-research APIs, but had
+  no accepted itinerary-proposal contract. The original read-only scope was
+  superseded by the user's later explicit authorization below.
 - ADR 0010 is committed as `76da3b2`; P5.1 revisions/preconditions are
   committed as `9c99580`; P5.2 internal bounded validation/preview is committed
   as `e3070b4`; stable reservation warning ordering and its regression are
@@ -92,12 +93,51 @@ The new wire contract remains proposed until upstream implementation and
 independent review establish acceptance. Travel generation stays gated until
 then. Keep existing groundwork and review commits intact.
 
-Next stage: fresh Luna Extra High agent implements a bounded separately gated
-upstream itinerary-proposal HTTP capability in personal-ai-system, with strict
-opaque-handle input/output, short immutable request context, evidence expiry,
-idempotency and privacy/auth bounds, existing provider/context abstractions,
-offline adversarial fixtures and logical commits. Coordinator reviews before
-pinning an accepted upstream revision and resuming travel P5.3–P5.5.
+The authorized upstream prerequisite was delegated to a fresh Luna Extra High
+agent with strict opaque-handle input/output, bounded request context, evidence
+expiry, owner-scoped idempotency, existing provider/context abstractions, and
+offline adversarial verification. The coordinator now independently reviews
+the result before pinning an accepted revision and resuming travel P5.3–P5.5.
+
+## Upstream prerequisite implementation checkpoint — pending review
+
+The user authorized the upstream prerequisite by replying “continue” after
+the coordinator asked. The bounded implementation is now committed in
+`personal-ai-system` on `codex/phase-6-decision-support`:
+
+- `38e2f1c` proposes `itinerary-proposal-v1` and policy ADR 0019.
+- `d13cf36` adds strict request/result DTOs, gated generation through the
+  existing context assembler and `GeminiLLMClient`, verified research
+  evidence, owner-scoped Firestore replay and result reads, by-idempotency-key
+  reconciliation, safe route errors, export coverage, request/provider
+  safeguards, and fake-backed route tests.
+- `efcd481` adds a deterministic offline adversarial evaluator and
+  `itinerary-proposal-eval` target.
+
+The proposed operations are limited to candidate-based adds, item moves,
+setting or clearing local times, and explicitly allowlisted removals, with at
+most 25 operations. Context and model references use opaque handles; evidence
+citations are reconstructed from owner-scoped research records. Travel retains
+all authority over current SQL state, revisions, deterministic preview, and
+apply. The exact synthetic candidate/operation fixture is in upstream
+`backend/tests/fixtures/itinerary-proposal-example.json`.
+
+At `efcd481`, upstream offline checks passed: 526 backend tests passed and 12
+existing manual/provider tests skipped; full Ruff; context, research,
+decision, domain, iterative-research, and six-case itinerary-proposal
+evaluations; backend source/wheel build; and `git diff --check`. Local fake
+HTTP verification covers POST, GET by proposal ID, GET by idempotency key,
+and the request-size limit. No provider, Firestore emulator, GCP project, or
+deployment was contacted. Firestore transaction behavior, TTL setup, live
+provider quality, and deletion processing remain unverified or incomplete.
+The backend has no configured mypy/typecheck target. The pre-existing
+`frontend/tsconfig.tsbuildinfo` modification was preserved.
+
+This is an implementation for review, not an accepted upstream contract. The
+feature and provider gates default off. Do not pin the route for travel or
+begin P5.3 until the coordinator independently reviews this checkpoint and
+accepts the contract. The local fake-backed evidence does not establish live
+provider or deployment readiness.
 
 ## Verification requirements
 
