@@ -7,6 +7,7 @@ from personal_travel.config import get_settings
 from personal_travel.db.base import Base
 from personal_travel.models import (  # noqa: F401
     ItineraryItem,
+    ItineraryProposal,
     Place,
     Reservation,
     SavedPlace,

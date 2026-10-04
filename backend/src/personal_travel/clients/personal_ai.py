@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal, cast
+from urllib.parse import urlsplit
 from uuid import UUID
 
 import httpx
@@ -14,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 from personal_travel.clients.http import InvalidUpstreamResponse, read_json, sse_lines
 from personal_travel.config import get_settings
 from personal_travel.domain.types import ResearchState
+from personal_travel.domain.upstream_proposals import UpstreamProposalResult
 from personal_travel.domain.urls import validate_http_url
 
 TerminalResearchState = Literal["completed", "insufficient", "failed", "expired"]
@@ -22,6 +25,7 @@ MAX_RESEARCH_EVENT_BYTES = 16 * 1024
 MAX_RESEARCH_STREAM_BYTES = 128 * 1024
 MAX_RESEARCH_EVENTS = 128
 MAX_RESEARCH_RESPONSE_BYTES = 1_000_000
+MAX_PROPOSAL_RESPONSE_BYTES = 128 * 1024
 
 
 class PersonalAIError(RuntimeError):
@@ -87,15 +91,30 @@ class PersonalAIResearchResult(BaseModel):
     citations: list[_ResearchCitation] = Field(default_factory=list)
 
 
+class PersonalAIProposalError(RuntimeError):
+    """Safe proposal-client failure; its text never contains upstream data."""
+
+
+class PersonalAIProposalUnknown(PersonalAIProposalError):
+    """The POST outcome is ambiguous and can only be reconciled by its stable key."""
+
+
 class PersonalAIClient:
     """Typed HTTP boundary to personal-ai-system."""
 
-    def __init__(self, base_url: str | None = None, timeout_seconds: float | None = None) -> None:
+    def __init__(
+        self,
+        base_url: str | None = None,
+        timeout_seconds: float | None = None,
+        *,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
         settings = get_settings()
         self._base_url = str(base_url or settings.personal_ai_base_url).rstrip("/")
         self._timeout = (
             timeout_seconds if timeout_seconds is not None else settings.personal_ai_timeout_seconds
         )
+        self._transport = transport
 
     async def health(self) -> PersonalAIHealth:
         try:
@@ -140,6 +159,135 @@ class PersonalAIClient:
                 )
         except TimeoutError:
             raise PersonalAIError("personal-ai-system research exceeded its deadline") from None
+
+    async def create_itinerary_proposal(
+        self, *, payload: dict[str, object], idempotency_key: UUID
+    ) -> UpstreamProposalResult:
+        """POST once, then reconcile an ambiguous outcome by the same stable key."""
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self._timeout
+        try:
+            async with asyncio.timeout_at(deadline):
+                async with httpx.AsyncClient(
+                    timeout=self._timeout, transport=self._transport
+                ) as client:
+                    try:
+                        result = await self._proposal_request(
+                            client,
+                            "POST",
+                            "/v1/travel/itinerary-proposals",
+                            payload,
+                            deadline=deadline,
+                        )
+                    except (
+                        httpx.HTTPError,
+                        TimeoutError,
+                        InvalidUpstreamResponse,
+                        ValidationError,
+                    ):
+                        result = None
+                    if result is not None and result.state != "running":
+                        return result
+                    reconciled = await self._proposal_request(
+                        client,
+                        "GET",
+                        f"/v1/travel/itinerary-proposals/by-key/{idempotency_key}",
+                        None,
+                        deadline=deadline,
+                        missing_is_none=True,
+                    )
+                    if reconciled is not None:
+                        return reconciled
+                    raise PersonalAIProposalUnknown("proposal outcome is unknown")
+        except PersonalAIProposalUnknown:
+            raise
+        except (
+            TimeoutError,
+            httpx.HTTPError,
+            InvalidUpstreamResponse,
+            ValidationError,
+            ValueError,
+        ):
+            raise PersonalAIProposalUnknown("proposal outcome is unknown") from None
+
+    async def get_itinerary_proposal_by_key(
+        self, idempotency_key: UUID
+    ) -> UpstreamProposalResult | None:
+        return await self._get_itinerary_proposal(
+            f"/v1/travel/itinerary-proposals/by-key/{idempotency_key}", missing_is_none=True
+        )
+
+    async def get_itinerary_proposal(self, proposal_id: UUID) -> UpstreamProposalResult:
+        result = await self._get_itinerary_proposal(
+            f"/v1/travel/itinerary-proposals/{proposal_id}", missing_is_none=False
+        )
+        assert result is not None
+        return result
+
+    async def _get_itinerary_proposal(
+        self, path: str, *, missing_is_none: bool
+    ) -> UpstreamProposalResult | None:
+        try:
+            async with asyncio.timeout(self._timeout):
+                async with httpx.AsyncClient(
+                    timeout=self._timeout, transport=self._transport
+                ) as client:
+                    return await self._proposal_request(
+                        client,
+                        "GET",
+                        path,
+                        None,
+                        deadline=asyncio.get_running_loop().time() + self._timeout,
+                        missing_is_none=missing_is_none,
+                    )
+        except (
+            TimeoutError,
+            httpx.HTTPError,
+            InvalidUpstreamResponse,
+            ValidationError,
+            ValueError,
+        ):
+            raise PersonalAIProposalError("proposal service is unavailable") from None
+
+    async def _proposal_request(
+        self,
+        client: httpx.AsyncClient,
+        method: Literal["GET", "POST"],
+        path: str,
+        payload: dict[str, object] | None,
+        *,
+        deadline: float,
+        missing_is_none: bool = False,
+    ) -> UpstreamProposalResult | None:
+        remaining = deadline - asyncio.get_running_loop().time()
+        if remaining <= 0:
+            raise TimeoutError
+        async with asyncio.timeout_at(deadline):
+            async with client.stream(
+                method,
+                f"{self._base_url}{path}",
+                json=payload,
+                timeout=httpx.Timeout(remaining),
+            ) as response:
+                if missing_is_none and response.status_code == 404:
+                    return None
+                response.raise_for_status()
+                try:
+                    raw = await read_json(response, max_bytes=MAX_PROPOSAL_RESPONSE_BYTES)
+                    result = UpstreamProposalResult.model_validate_json(
+                        json.dumps(raw, ensure_ascii=False, separators=(",", ":"))
+                    )
+                except (
+                    InvalidUpstreamResponse,
+                    ValidationError,
+                    ValueError,
+                    TypeError,
+                    RecursionError,
+                ):
+                    raise InvalidUpstreamResponse("invalid proposal response") from None
+        for citation in result.citations:
+            _validate_public_citation_url(citation.url)
+        return result
 
     async def _research(
         self,
@@ -254,6 +402,20 @@ class PersonalAIClient:
             expires_at=detail.expires_at,
             failure_code=detail.failure_code,
         )
+
+
+def _validate_public_citation_url(value: str) -> None:
+    validate_http_url(value)
+    parsed = urlsplit(value)
+    host = (parsed.hostname or "").rstrip(".").lower()
+    if host in {"localhost", "localhost.localdomain"} or host.endswith(".localhost"):
+        raise InvalidUpstreamResponse("proposal citation URL is not public")
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return
+    if not address.is_global:
+        raise InvalidUpstreamResponse("proposal citation URL is not public")
 
 
 async def _bounded_json(response: httpx.Response) -> object:

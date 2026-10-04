@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     personal_ai_base_url: AnyHttpUrl = AnyHttpUrl("http://localhost:8001")
     personal_ai_timeout_seconds: float = Field(default=45.0, gt=0, le=50)
     personal_ai_research_enabled: bool = False
+    personal_ai_proposals_enabled: bool = False
+    personal_ai_proposal_timeout_seconds: float = Field(default=45.0, gt=0, le=49)
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     allowed_hosts: str = "localhost,127.0.0.1,::1"
     geoapify_api_key: SecretStr | None = None

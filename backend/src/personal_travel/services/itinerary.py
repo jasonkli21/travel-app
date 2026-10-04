@@ -237,20 +237,24 @@ class ItineraryService:
         raise not_found("itinerary item")
 
     def _reindex(self, *days: TripDay) -> None:
-        # Immediate SQL uniqueness checks make in-place swaps unsafe. First move
-        # every affected item above all occupied positions, then compact. Both
-        # flushes are inside the same trip-locked transaction.
-        items = [item for day in days for item in day.items]
-        temporary_start = (
-            max(
-                max((item.sort_order for item in items), default=-1),
-                max((len(day.items) - 1 for day in days), default=-1),
-            )
-            + 1
+        reindex_days(self._session, *days)
+
+
+def reindex_days(session: Session, *days: TripDay) -> None:
+    # Immediate SQL uniqueness checks make in-place swaps unsafe. First move
+    # every affected item above all occupied positions, then compact. Both
+    # flushes are inside the same trip-locked transaction.
+    items = [item for day in days for item in day.items]
+    temporary_start = (
+        max(
+            max((item.sort_order for item in items), default=-1),
+            max((len(day.items) - 1 for day in days), default=-1),
         )
-        for offset, item in enumerate(items):
-            item.sort_order = temporary_start + offset
-        self._session.flush()
-        for day in days:
-            for sort_order, item in enumerate(day.items):
-                item.sort_order = sort_order
+        + 1
+    )
+    for offset, item in enumerate(items):
+        item.sort_order = temporary_start + offset
+    session.flush()
+    for day in days:
+        for sort_order, item in enumerate(day.items):
+            item.sort_order = sort_order
