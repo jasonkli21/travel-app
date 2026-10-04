@@ -190,6 +190,131 @@ export interface TripResearchResult {
   citations: ResearchCitation[];
 }
 
+export type ProposalState =
+  | "generating"
+  | "outcome_unknown"
+  | "ready"
+  | "stale"
+  | "expired"
+  | "failed"
+  | "applied"
+  | "rejected";
+
+export type ProposalOperation =
+  | {
+      kind: "add_item";
+      day_handle: string;
+      candidate_handle: string;
+      item_type: ItemType;
+      position: number;
+      start_time?: string | null;
+      end_time?: string | null;
+    }
+  | { kind: "move_item"; item_handle: string; day_handle: string; position: number }
+  | {
+      kind: "set_item_times";
+      item_handle: string;
+      start_time?: string | null;
+      end_time?: string | null;
+    }
+  | { kind: "remove_item"; item_handle: string };
+
+export interface ProposalPreviewItem {
+  handle: string;
+  title: string;
+  item_type: ItemType;
+  status: ItemStatus;
+  sort_order: number;
+  start_time: string | null;
+  end_time: string | null;
+  place_handle: string | null;
+  reservation_handle: string | null;
+}
+
+export interface ProposalPreviewDay {
+  handle: string;
+  day_index: number;
+  date: string;
+  title: string | null;
+  items: ProposalPreviewItem[];
+}
+
+export type ProposalDiffItem =
+  | (Pick<ProposalPreviewItem, "title" | "item_type" | "start_time" | "end_time"> & {
+      day_index: number;
+      date: string;
+      sort_order: number;
+    })
+  | null;
+
+export interface ProposalPreviewDiff {
+  operation_index: number;
+  kind: ProposalOperation["kind"];
+  before: ProposalDiffItem;
+  after: ProposalDiffItem;
+}
+
+export interface ProposalPreviewWarning {
+  code: string;
+  day_handle: string;
+  item_handle: string;
+  reservation_handle: string;
+  message: string;
+}
+
+export interface ProposalPreview {
+  trip_handle: string;
+  base_trip_revision: number;
+  place_revisions: { place_id: string; handle: string; revision: number }[];
+  operation_count: number;
+  before: ProposalPreviewDay[];
+  after: ProposalPreviewDay[];
+  diff: ProposalPreviewDiff[];
+  warnings: ProposalPreviewWarning[];
+}
+
+export interface ProposalCitation {
+  evidence_handle: string;
+  url: string;
+  title: string | null;
+  observed_at: string;
+  expires_at: string;
+}
+
+export interface ProposalDetail {
+  proposal_id: string;
+  state: ProposalState;
+  lifecycle_state: Exclude<ProposalState, "stale" | "expired">;
+  support_mode: "context_only" | "research_evidence";
+  trip_handle: string;
+  created_at: string;
+  expires_at: string | null;
+  base_trip_revision: number;
+  current_trip_revision: number | null;
+  base_place_revisions: { place_id: string; revision: number }[];
+  current_place_revisions: { place_id: string; revision: number | null }[];
+  operations: ProposalOperation[];
+  citations: ProposalCitation[];
+  preview: ProposalPreview | null;
+  applied_outcome: ProposalApplyOutcome | null;
+  failure_code: string | null;
+}
+
+export interface ProposalApplyOutcome {
+  proposal_id: string;
+  state: "applied";
+  applied_revision: number;
+  applied_at: string;
+  preview: ProposalPreview;
+}
+
+export interface CreateProposalInput {
+  idempotency_key: string;
+  instruction: string;
+  removable_item_ids: string[];
+  research_session_ids?: string[];
+}
+
 export interface CreateTripInput {
   title: string;
   start_date: string;
@@ -328,6 +453,27 @@ export const travelApi = {
     method: "POST",
     body: JSON.stringify(input),
   }),
+  createProposal: (tripId: string, input: CreateProposalInput, revision: number) =>
+    request<ProposalDetail>(`/trips/${tripId}/proposals`, {
+      method: "POST",
+      body: JSON.stringify(input),
+      headers: expectedRevision(revision),
+    }),
+  getProposal: (tripId: string, proposalId: string) =>
+    request<ProposalDetail>(`/trips/${tripId}/proposals/${proposalId}`),
+  getProposalByKey: (tripId: string, idempotencyKey: string) =>
+    request<ProposalDetail>(
+      `/trips/${tripId}/proposals/by-key/${idempotencyKey}`,
+    ),
+  applyProposal: (tripId: string, proposalId: string, revision: number) =>
+    request<ProposalApplyOutcome>(`/trips/${tripId}/proposals/${proposalId}/apply`, {
+      method: "POST",
+      headers: expectedRevision(revision),
+    }),
+  rejectProposal: (tripId: string, proposalId: string) =>
+    request<ProposalDetail>(`/trips/${tripId}/proposals/${proposalId}/reject`, {
+      method: "POST",
+    }),
   createPlace: (input: CreatePlaceInput) =>
     request<PlaceSummary>("/places", { method: "POST", body: JSON.stringify(input) }),
   updatePlace: (placeId: string, input: UpdatePlaceInput, revision: number) =>

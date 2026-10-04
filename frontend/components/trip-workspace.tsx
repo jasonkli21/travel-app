@@ -23,6 +23,7 @@ import {
 } from "../lib/api";
 import TripMap, { type TripMapMarker, type TripMapRoute } from "./trip-map";
 import TripResearchPanel from "./trip-research-panel";
+import ProposalPanel from "./trip-workspace/proposal-panel";
 import { errorMessage } from "../lib/errors";
 import { uncertainMutationError } from "../lib/mutation-outcome.mjs";
 import { revisionConflictRecovery } from "../lib/revision-conflict.mjs";
@@ -171,6 +172,11 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
 
   const reloadWorkspace = () => {
     void refresh({ resetDrafts: true });
+  };
+
+  const setProposalPending = (isPending: boolean) => {
+    mutationInFlight.current = isPending;
+    setPending(isPending ? "proposal" : null);
   };
 
   const run = async (
@@ -472,6 +478,11 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
     return saved;
   };
 
+  const workspacePlaceFootprint = places
+    .map((place) => `${place.id}:${place.revision}`)
+    .sort()
+    .join("|");
+
   return (
     <main className="shell">
       <aside className="sidebar">
@@ -486,6 +497,7 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
           <a className="active" href="#itinerary">Itinerary</a>
           <a href="#map">Map</a>
           <a href="#research">Research</a>
+          <a href="#proposals">Proposals</a>
           <a href="#reservations">Reservations</a>
           <a href="#saved-places">Saved places</a>
         </nav>
@@ -661,6 +673,15 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
           trip={trip}
           pending={(pending !== null || stale)}
           onSaveCandidate={saveResearchCandidate}
+        />
+
+        <ProposalPanel
+          trip={trip}
+          workspacePlaceFootprint={workspacePlaceFootprint}
+          busy={pending !== null}
+          disabled={stale}
+          onPendingChange={setProposalPending}
+          onCommitted={() => refresh({ resetDrafts: true })}
         />
 
         <section className="itinerarySection" id="itinerary">

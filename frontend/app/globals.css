@@ -70,6 +70,40 @@ h3 { margin: 3px 0 0; }
 .researchSourceTimes { color: var(--muted); font-size: 11px; line-height: 1.4; }
 .researchCandidateForm { margin-top: 4px; }
 .researchCandidateForm .formHint { margin: 0; }
+.proposalPanel { display: grid; gap: 16px; margin-top: 38px; scroll-margin-top: 20px; }
+.proposalPanel > h2 { margin-bottom: 0; }
+.proposalForm, .proposalReview { display: grid; gap: 14px; border: 1px solid var(--line); border-radius: 13px; background: var(--panel); box-shadow: var(--shadow); padding: 18px; }
+.proposalForm textarea { min-height: 84px; }
+.proposalAllowlist { display: grid; gap: 8px; border: 1px solid var(--line); border-radius: 9px; margin: 0; padding: 12px; }
+.proposalAllowlist legend { color: var(--ink); font-size: 13px; font-weight: 750; padding: 0 5px; }
+.proposalAllowlist .formHint { margin: 0; }
+.proposalCheckbox { display: flex; align-items: flex-start; gap: 8px; color: var(--ink); font-size: 13px; font-weight: 500; }
+.proposalCheckbox input { flex: 0 0 auto; width: 17px; height: 17px; margin: 0; accent-color: var(--accent); }
+.proposalDisclosure { border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0; background: var(--accent-soft); color: #34483a; padding: 11px 13px; }
+.proposalDisclosure strong { font-size: 13px; }
+.proposalDisclosure p { font-size: 12px; line-height: 1.5; margin: 6px 0 0; }
+.proposalState { display: grid; gap: 6px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); font-size: 13px; line-height: 1.45; padding: 11px 13px; }
+.proposalState span { color: var(--muted); }
+.proposalState-stale, .proposalState-expired, .proposalState-failed, .proposalState-rejected { border-color: #e2b9b1; background: #fff8f5; color: var(--danger); }
+.proposalState-applied { border-color: #c6d9ca; background: #f1f7f1; }
+.proposalMessage { border-radius: 8px; background: var(--accent-soft); color: var(--ink); font-size: 13px; line-height: 1.45; margin: 0; padding: 10px 12px; }
+.proposalPreview { display: grid; gap: 16px; }
+.proposalPreview h4, .proposalReview h4 { font-size: 15px; margin: 0 0 8px; }
+.proposalDiff { display: grid; gap: 8px; list-style: none; margin: 0; padding: 0; }
+.proposalDiff li { display: grid; grid-template-columns: minmax(130px, .5fr) 1fr auto 1fr; align-items: center; gap: 9px; border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+.proposalDiff li strong { font-size: 12px; }
+.proposalDiff li span { color: var(--muted); font-size: 12px; line-height: 1.4; }
+.proposalResultDays { display: grid; gap: 8px; }
+.proposalResultDay { border: 1px solid var(--line); border-radius: 9px; padding: 11px 12px; }
+.proposalResultDay h5 { font-size: 13px; margin: 0 0 8px; }
+.proposalResultDay ol { display: grid; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.proposalResultDay li { display: grid; grid-template-columns: 95px minmax(0, 1fr) auto; align-items: baseline; gap: 8px; border-top: 1px solid var(--line); padding-top: 7px; }
+.proposalResultDay li span, .proposalResultDay li small { color: var(--muted); font-size: 11px; }
+.proposalResultDay li strong { font-size: 13px; }
+.proposalWarnings { border: 1px solid #e2b9b1; border-radius: 9px; background: #fff8f5; color: var(--danger); padding: 11px 13px; }
+.proposalWarnings ul { display: grid; gap: 5px; margin: 0; padding-left: 18px; }
+.proposalWarnings li { font-size: 12px; line-height: 1.45; }
+.proposalNoWarnings { border: 1px solid #c6d9ca; border-radius: 8px; background: #f1f7f1; color: #37573f; font-size: 12px; margin: 0; padding: 9px 11px; }
 .mapControls { display: grid; grid-template-columns: repeat(3, minmax(120px, 1fr)) auto; align-items: end; gap: 10px; margin-top: 18px; }
 .mapControls > button { min-height: 40px; }
 .mapFrame { display: grid; gap: 12px; margin-top: 14px; }
@@ -240,6 +274,10 @@ input:focus, select:focus, textarea:focus, button:focus-visible, a:focus-visible
   .reservationBadges { justify-content: flex-start; }
   .searchResult { align-items: stretch; flex-direction: column; }
   .searchResult button { width: 100%; }
+  .proposalForm, .proposalReview { padding: 12px; }
+  .proposalDiff li { grid-template-columns: minmax(0, 1fr); gap: 5px; }
+  .proposalDiff li > span[aria-hidden="true"] { display: none; }
+  .proposalResultDay li { grid-template-columns: 1fr; gap: 2px; }
 }
 
 .createTripForm fieldset { display: grid; gap: 14px; }
