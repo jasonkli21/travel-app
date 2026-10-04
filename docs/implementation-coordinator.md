@@ -83,12 +83,21 @@ build; all passed. The checked-in browser fixture and the implementation
 agent's mounted Chrome evidence were reviewed. No substantive residual finding
 remains in this scoped groundwork. Full Phase 5 is still incomplete.
 
-The pending user question asks whether this repository effort may implement
-and independently review the missing upstream capability in personal-ai-system.
-The user's direction to inspect that repository was fulfilled read-only; it
-was not authorization to invent an accepted upstream contract. Future restarts
-must check for the user's answer or a newly accepted upstream capability before
-starting dependent work. Keep existing groundwork and review commits intact.
+After the coordinator explicitly asked permission to implement/review the
+missing upstream capability, the user replied "continue". The coordinator is
+proceeding with that upstream prerequisite as the next sequential stage. This
+supersedes the earlier read-only scope restriction for this bounded capability;
+it does not authorize cloud deployment or unrelated upstream Phase 9 work.
+The new wire contract remains proposed until upstream implementation and
+independent review establish acceptance. Travel generation stays gated until
+then. Keep existing groundwork and review commits intact.
+
+Next stage: fresh Luna Extra High agent implements a bounded separately gated
+upstream itinerary-proposal HTTP capability in personal-ai-system, with strict
+opaque-handle input/output, short immutable request context, evidence expiry,
+idempotency and privacy/auth bounds, existing provider/context abstractions,
+offline adversarial fixtures and logical commits. Coordinator reviews before
+pinning an accepted upstream revision and resuming travel P5.3–P5.5.
 
 ## Verification requirements
 
