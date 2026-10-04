@@ -272,12 +272,21 @@ def test_invalid_upstream_payload_is_safe_and_does_not_change_trip(
         client: PersonalAIClient | None = None,
         *,
         clock=None,
+        auth_context=None,
     ) -> None:
         if client is None:
             client = PersonalAIClient(
                 base_url="http://personal-ai.test", timeout_seconds=0.1, transport=transport
             )
-        original_init(service, session, owner_id, settings, client, clock=clock)
+        original_init(
+            service,
+            session,
+            owner_id,
+            settings,
+            client,
+            clock=clock,
+            auth_context=auth_context,
+        )
 
     monkeypatch.setattr(ProposalService, "__init__", init_with_fake_http)
     with caplog.at_level(logging.DEBUG):

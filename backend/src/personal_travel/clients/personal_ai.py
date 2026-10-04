@@ -4,6 +4,7 @@ import asyncio
 import ipaddress
 import json
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal, cast
@@ -13,6 +14,8 @@ from uuid import UUID
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from personal_travel.auth.contracts import PersonalAIAuthContext
+from personal_travel.auth.google_oidc import cloud_run_service_id_token
 from personal_travel.clients.http import InvalidUpstreamResponse, read_json, sse_lines
 from personal_travel.config import get_settings
 from personal_travel.domain.types import ResearchState
@@ -108,6 +111,8 @@ class PersonalAIClient:
         timeout_seconds: float | None = None,
         *,
         transport: httpx.AsyncBaseTransport | None = None,
+        auth_context: PersonalAIAuthContext | None = None,
+        service_token_fetcher: Callable[[str, str], str] | None = None,
     ) -> None:
         settings = get_settings()
         self._base_url = str(base_url or settings.personal_ai_base_url).rstrip("/")
@@ -115,6 +120,26 @@ class PersonalAIClient:
             timeout_seconds if timeout_seconds is not None else settings.personal_ai_timeout_seconds
         )
         self._transport = transport
+        self._auth_context = auth_context
+        self._service_token_fetcher = service_token_fetcher or cloud_run_service_id_token
+
+    async def _outbound_headers(self) -> dict[str, str]:
+        if self._auth_context is None:
+            return {}
+        try:
+            service_token = await asyncio.to_thread(
+                self._service_token_fetcher,
+                self._auth_context.service_audience,
+                self._auth_context.service_account,
+            )
+        except Exception:
+            raise PersonalAIError("personal-ai-system service identity is unavailable") from None
+        if not service_token or len(service_token) > 8192:
+            raise PersonalAIError("personal-ai-system service identity is unavailable")
+        return {
+            "Authorization": f"Bearer {service_token}",
+            "X-User-ID-Token": self._auth_context.user_id_token,
+        }
 
     async def health(self) -> PersonalAIHealth:
         try:
@@ -154,8 +179,12 @@ class PersonalAIClient:
         # sequence also needs a wall-clock deadline, including trickling SSE.
         try:
             async with asyncio.timeout(self._timeout):
+                headers = await self._outbound_headers()
                 return await self._research(
-                    question=question, freshness=freshness, idempotency_key=idempotency_key
+                    question=question,
+                    freshness=freshness,
+                    idempotency_key=idempotency_key,
+                    headers=headers,
                 )
         except TimeoutError:
             raise PersonalAIError("personal-ai-system research exceeded its deadline") from None
@@ -168,6 +197,7 @@ class PersonalAIClient:
         deadline = loop.time() + self._timeout
         try:
             async with asyncio.timeout_at(deadline):
+                headers = await self._outbound_headers()
                 async with httpx.AsyncClient(
                     timeout=self._timeout, transport=self._transport
                 ) as client:
@@ -178,6 +208,7 @@ class PersonalAIClient:
                             "/v1/travel/itinerary-proposals",
                             payload,
                             deadline=deadline,
+                            headers=headers,
                         )
                     except (
                         httpx.HTTPError,
@@ -195,12 +226,15 @@ class PersonalAIClient:
                         None,
                         deadline=deadline,
                         missing_is_none=True,
+                        headers=headers,
                     )
                     if reconciled is not None:
                         return reconciled
                     raise PersonalAIProposalUnknown("proposal outcome is unknown")
         except PersonalAIProposalUnknown:
             raise
+        except PersonalAIError:
+            raise PersonalAIProposalError("proposal service is unavailable") from None
         except (
             TimeoutError,
             httpx.HTTPError,
@@ -229,6 +263,7 @@ class PersonalAIClient:
     ) -> UpstreamProposalResult | None:
         try:
             async with asyncio.timeout(self._timeout):
+                headers = await self._outbound_headers()
                 async with httpx.AsyncClient(
                     timeout=self._timeout, transport=self._transport
                 ) as client:
@@ -239,8 +274,10 @@ class PersonalAIClient:
                         None,
                         deadline=asyncio.get_running_loop().time() + self._timeout,
                         missing_is_none=missing_is_none,
+                        headers=headers,
                     )
         except (
+            PersonalAIError,
             TimeoutError,
             httpx.HTTPError,
             InvalidUpstreamResponse,
@@ -258,6 +295,7 @@ class PersonalAIClient:
         *,
         deadline: float,
         missing_is_none: bool = False,
+        headers: dict[str, str] | None = None,
     ) -> UpstreamProposalResult | None:
         remaining = deadline - asyncio.get_running_loop().time()
         if remaining <= 0:
@@ -267,6 +305,7 @@ class PersonalAIClient:
                 method,
                 f"{self._base_url}{path}",
                 json=payload,
+                headers=headers,
                 timeout=httpx.Timeout(remaining),
             ) as response:
                 if missing_is_none and response.status_code == 404:
@@ -295,6 +334,7 @@ class PersonalAIClient:
         question: str,
         freshness: Literal["general", "current"],
         idempotency_key: UUID,
+        headers: dict[str, str],
     ) -> PersonalAIResearchResult:
         """Create or replay one research session, run pending work, and read its result."""
 
@@ -304,6 +344,7 @@ class PersonalAIClient:
                 async with client.stream(
                     "POST",
                     f"{self._base_url}/v1/research",
+                    headers=headers,
                     json={
                         "schema_version": "research-v1",
                         "question": question,
@@ -318,7 +359,9 @@ class PersonalAIClient:
                 if created.state == "pending":
                     try:
                         async with client.stream(
-                            "POST", f"{self._base_url}/v1/research/{created.id}/run"
+                            "POST",
+                            f"{self._base_url}/v1/research/{created.id}/run",
+                            headers=headers,
                         ) as response:
                             response.raise_for_status()
                             terminal_event = await _consume_research_events(
@@ -335,7 +378,9 @@ class PersonalAIClient:
                         pass
 
                 async with client.stream(
-                    "GET", f"{self._base_url}/v1/research/{created.id}"
+                    "GET",
+                    f"{self._base_url}/v1/research/{created.id}",
+                    headers=headers,
                 ) as detail_response:
                     detail_response.raise_for_status()
                     detail = _ResearchSession.model_validate(await _bounded_json(detail_response))

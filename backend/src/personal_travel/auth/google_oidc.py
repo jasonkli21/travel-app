@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import threading
 import time
 from collections import OrderedDict
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypeGuard
+from urllib.parse import urlsplit
 
+import requests
 from google.auth.exceptions import GoogleAuthError, TransportError
 from google.auth.transport.requests import Request
 from google.oauth2 import id_token
@@ -22,6 +25,7 @@ TOKEN_CACHE_SIZE = 256
 TOKEN_CACHE_MARGIN_SECONDS = 60
 GOOGLE_ISSUERS = {"accounts.google.com", "https://accounts.google.com"}
 GOOGLE_CERT_URL = "https://www.googleapis.com/oauth2/v1/certs"
+CANONICAL_GOOGLE_ISSUER = "https://accounts.google.com"
 MAX_CERT_CACHE_SECONDS = 3600
 MAX_CERT_RESPONSE_BYTES = 64 * 1024
 
@@ -63,16 +67,14 @@ class _BoundedRequest(Request):
             with self._cache_lock:
                 if self._response is not None and time.monotonic() < self._expires_at:
                     return self._response
-                response = super().__call__(  # type: ignore[no-untyped-call]
-                    url,
+                response = self._request_bounded(
+                    url=url,
                     method=method,
                     body=body,
                     headers=headers,
                     timeout=min(timeout or 3, 3),
-                    **kwargs,
+                    max_bytes=MAX_CERT_RESPONSE_BYTES,
                 )
-                if len(response.data) > MAX_CERT_RESPONSE_BYTES:
-                    raise OSError("Google signing-key response exceeded its byte limit.")
                 cache_seconds = _cache_max_age(response.headers.get("cache-control", ""))
                 self._response = _CachedResponse(
                     status=response.status,
@@ -81,14 +83,58 @@ class _BoundedRequest(Request):
                 )
                 self._expires_at = time.monotonic() + cache_seconds
                 return response
-        return super().__call__(  # type: ignore[no-untyped-call]
-            url,
-            method=method,
-            body=body,
-            headers=headers,
-            timeout=min(timeout or 3, 3),
-            **kwargs,
+        parsed = urlsplit(url)
+        if (
+            method.upper() == "GET"
+            and body is None
+            and parsed.scheme == "http"
+            and parsed.hostname == "metadata.google.internal"
+            and parsed.path.startswith("/computeMetadata/v1/")
+        ):
+            return self._request_bounded(
+                url=url,
+                method=method,
+                body=body,
+                headers=headers,
+                timeout=min(timeout or 3, 3),
+                max_bytes=MAX_CERT_RESPONSE_BYTES,
+            )
+        raise TransportError(  # type: ignore[no-untyped-call]
+            "Google identity transport rejected an unexpected endpoint."
         )
+
+    def _request_bounded(
+        self,
+        *,
+        url: str,
+        method: str,
+        body: bytes | None,
+        headers: Mapping[str, str] | None,
+        timeout: float,
+        max_bytes: int,
+    ) -> _CachedResponse:
+        try:
+            with self.session.request(
+                method,
+                url,
+                data=body,
+                headers=headers,
+                timeout=timeout,
+                stream=True,
+                allow_redirects=False,
+            ) as response:
+                payload = bytearray()
+                for chunk in response.iter_content(chunk_size=8192):
+                    payload.extend(chunk)
+                    if len(payload) > max_bytes:
+                        raise OSError("Google identity response exceeded its byte limit.")
+                return _CachedResponse(
+                    status=response.status_code,
+                    data=bytes(payload),
+                    headers=dict(response.headers),
+                )
+        except (requests.RequestException, OSError) as error:
+            raise TransportError(error) from error  # type: ignore[no-untyped-call]
 
 
 def _cache_max_age(value: str) -> int:
@@ -100,6 +146,21 @@ def _cache_max_age(value: str) -> int:
             except ValueError:
                 return 0
     return 0
+
+
+def _is_finite_number(value: object) -> TypeGuard[int | float]:
+    return (
+        not isinstance(value, bool)
+        and isinstance(value, (int, float))
+        and (isinstance(value, int) or math.isfinite(value))
+    )
+
+
+def stable_google_owner_id(issuer: str, subject: str) -> str:
+    if issuer not in GOOGLE_ISSUERS or not subject:
+        raise ValueError("A verified Google issuer and subject are required.")
+    digest = hashlib.sha256(f"{CANONICAL_GOOGLE_ISSUER}\0{subject}".encode()).hexdigest()
+    return f"usr_{digest[:32]}"
 
 
 _verification_lock = threading.Lock()
@@ -135,7 +196,7 @@ def _claims(token: str, audience: str) -> dict[str, Any]:
     if not isinstance(verified, dict):
         raise InvalidIdentityToken
     expiry = verified.get("exp")
-    if isinstance(expiry, bool) or not isinstance(expiry, (int, float)):
+    if not _is_finite_number(expiry):
         raise InvalidIdentityToken
     with _token_cache_lock:
         _verified_tokens[fingerprint] = (int(expiry), verified)
@@ -160,35 +221,79 @@ def principal_from_google_token(token: str, settings: Settings) -> VerifiedPrinc
     if issuer not in GOOGLE_ISSUERS or issuer != settings.google_oidc_issuer:
         raise InvalidIdentityToken
     subject = claims.get("sub")
+    token_audience = claims.get("aud")
+    authorized_party = claims.get("azp")
     email = claims.get("email")
     verified_email = claims.get("email_verified")
     issued_at = claims.get("iat")
     expires_at = claims.get("exp")
+    nonce = claims.get("nonce")
     now = int(time.time())
     if (
         not isinstance(subject, str)
         or not subject
         or len(subject) > 255
         or not subject.isascii()
+        or token_audience
+        not in (settings.google_oauth_client_id, [settings.google_oauth_client_id])
+        or (authorized_party is not None and authorized_party != settings.google_oauth_client_id)
         or not isinstance(email, str)
         or email.strip().lower() != settings.google_oauth_allowed_email_normalized
         or verified_email is not True
-        or isinstance(issued_at, bool)
-        or not isinstance(issued_at, (int, float))
-        or isinstance(expires_at, bool)
-        or not isinstance(expires_at, (int, float))
+        or not _is_finite_number(issued_at)
+        or not _is_finite_number(expires_at)
         or issued_at > now + 60
+        or expires_at <= issued_at
         or expires_at <= now + TOKEN_CACHE_MARGIN_SECONDS
     ):
         raise InvalidIdentityToken
 
-    canonical_issuer = "https://accounts.google.com"
-    owner_hash = hashlib.sha256(f"{canonical_issuer}\0{subject}".encode()).hexdigest()
     return VerifiedPrincipal(
-        issuer=canonical_issuer,
+        issuer=CANONICAL_GOOGLE_ISSUER,
         subject=subject,
-        owner_id=f"usr_{owner_hash[:32]}",
+        owner_id=stable_google_owner_id(issuer, subject),
         email=email.strip().lower(),
         issued_at=int(issued_at),
         expires_at=int(expires_at),
+        nonce=nonce if isinstance(nonce, str) else None,
     )
+
+
+def cloud_run_service_id_token(audience: str, expected_service_account: str) -> str:
+    """Fetch and independently verify the configured Cloud Run transport identity."""
+    if not audience.startswith("https://") or not expected_service_account.strip():
+        raise IdentityProviderUnavailable
+    try:
+        token = id_token.fetch_id_token(_key_request, audience)  # type: ignore[no-untyped-call]
+        if not isinstance(token, str) or not token or len(token) > MAX_TOKEN_LENGTH:
+            raise InvalidIdentityToken
+        claims = _claims(token, audience)
+    except IdentityProviderUnavailable:
+        raise
+    except InvalidIdentityToken:
+        raise
+    except Exception as error:
+        raise IdentityProviderUnavailable from error
+    issuer = claims.get("iss")
+    token_audience = claims.get("aud")
+    authorized_party = claims.get("azp")
+    email = claims.get("email")
+    email_verified = claims.get("email_verified")
+    issued_at = claims.get("iat")
+    expires_at = claims.get("exp")
+    now = int(time.time())
+    if (
+        issuer not in GOOGLE_ISSUERS
+        or token_audience not in (audience, [audience])
+        or not isinstance(email, str)
+        or email.strip().lower() != expected_service_account.strip().lower()
+        or email_verified is not True
+        or not _is_finite_number(issued_at)
+        or issued_at > now + 60
+        or not _is_finite_number(expires_at)
+        or expires_at <= issued_at
+        or expires_at <= now + TOKEN_CACHE_MARGIN_SECONDS
+        or (authorized_party is not None and authorized_party != audience)
+    ):
+        raise InvalidIdentityToken
+    return token

@@ -183,6 +183,46 @@ def test_owner_migration_requires_verified_target_and_provider_collision_is_repo
     assert not plan.can_apply
 
 
+def test_owner_migration_reports_saved_place_and_proposal_key_collisions(
+    database_engine: Engine,
+) -> None:
+    with Session(database_engine) as session, session.begin():
+        target = target_identity(session)
+        trip, place = source_graph(session)
+        source_proposal = session.scalar(
+            select(ItineraryProposal).where(ItineraryProposal.owner_id == "local")
+        )
+        assert source_proposal is not None
+        session.add(SavedPlace(owner_id=target, trip_id=trip.id, place_id=place.id))
+        session.add(
+            ItineraryProposal(
+                owner_id=target,
+                trip_id=trip.id,
+                idempotency_key=source_proposal.idempotency_key,
+                downstream_key=uuid4(),
+                request_fingerprint="t" * 64,
+                state="failed",
+                schema_version=source_proposal.schema_version,
+                policy_version=source_proposal.policy_version,
+                upstream_revision=source_proposal.upstream_revision,
+                support_mode=source_proposal.support_mode,
+                trip_handle=source_proposal.trip_handle,
+                generation_deadline=source_proposal.generation_deadline,
+                base_trip_revision=source_proposal.base_trip_revision,
+                base_place_revisions=[],
+                base_snapshot={"owner_id": target, "trip_id": str(trip.id)},
+                citations=[],
+            )
+        )
+
+    plan = inspect(database_engine, target)
+
+    assert plan.conflicts["target_saved_place_collision"] == 1
+    assert plan.conflicts["target_proposal_idempotency_collision"] == 1
+    assert plan.conflicts["owner_trip_mismatch"] > 0
+    assert not plan.can_apply
+
+
 def test_explicit_owner_migration_updates_graph_and_snapshot_preserving_revisions(
     database_engine: Engine,
     tmp_path: Path,
@@ -223,6 +263,41 @@ def test_explicit_owner_migration_updates_graph_and_snapshot_preserving_revision
         assert proposal.base_snapshot["owner_id"] == target
         assert session.get(OwnerMigrationAudit, run_id) is not None
         assert session.scalar(select(ItineraryItem.id)) is not None
+
+
+def test_owner_migration_rejects_same_count_graph_changes_after_dry_run(
+    database_engine: Engine,
+    tmp_path: Path,
+) -> None:
+    with Session(database_engine) as session, session.begin():
+        target = target_identity(session)
+        trip, _ = source_graph(session)
+        trip_id = trip.id
+
+    plan = inspect(database_engine, target)
+    with Session(database_engine) as session, session.begin():
+        trip = session.get(Trip, trip_id)
+        assert trip is not None
+        trip.title = "Edited after dry run without a revision bump"
+
+    backup = tmp_path / "synthetic-backup.sql"
+    backup.write_bytes(b"synthetic disposable test database backup")
+    backup_hash = hashlib.sha256(backup.read_bytes()).hexdigest()
+    with Session(database_engine) as session:
+        with pytest.raises(OwnerMigrationRejected, match="changed after dry run"):
+            apply_owner_migration(
+                session,
+                source_owner_id="local",
+                target_owner_id=target,
+                run_id=uuid4(),
+                expected_plan_digest=plan.plan_digest,
+                backup_file=backup,
+                expected_backup_sha256=backup_hash,
+                confirmation=f"local -> {target}",
+            )
+    with Session(database_engine) as session:
+        assert session.scalar(select(Trip.owner_id)) == "local"
+        assert session.scalar(select(OwnerMigrationAudit.id)) is None
 
 
 def test_owner_migration_mismatched_backup_plan_confirmation_and_rollback(

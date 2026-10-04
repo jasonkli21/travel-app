@@ -11,6 +11,7 @@ from personal_travel.api.schemas import (
     TripResearchRequest,
     TripResearchResponse,
 )
+from personal_travel.auth.contracts import PersonalAIAuthContext
 from personal_travel.clients.personal_ai import PersonalAIClient, PersonalAIError
 from personal_travel.config import Settings
 from personal_travel.models.trip import Trip, TripDay
@@ -34,11 +35,13 @@ class ResearchService:
         owner_id: str,
         settings: Settings,
         client: PersonalAIClient | None = None,
+        *,
+        auth_context: PersonalAIAuthContext | None = None,
     ) -> None:
         self._session = session
         self._owner_id = owner_id
         self._settings = settings
-        self._client = client or PersonalAIClient()
+        self._client = client or PersonalAIClient(auth_context=auth_context)
         self._trips = TripService(session, owner_id)
 
     async def research(self, trip_id: UUID, data: TripResearchRequest) -> TripResearchResponse:

@@ -22,6 +22,7 @@ from personal_travel.api.schemas.proposals import (
     ProposalDetailResponse,
     ProposalGenerateRequest,
 )
+from personal_travel.auth.contracts import PersonalAIAuthContext
 from personal_travel.clients.personal_ai import (
     PersonalAIClient,
     PersonalAIProposalError,
@@ -99,12 +100,14 @@ class ProposalService:
         client: PersonalAIClient | None = None,
         *,
         clock: Callable[[], datetime] | None = None,
+        auth_context: PersonalAIAuthContext | None = None,
     ) -> None:
         self._session = session
         self._owner_id = owner_id
         self._settings = settings
         self._client = client or PersonalAIClient(
-            timeout_seconds=settings.personal_ai_proposal_timeout_seconds
+            timeout_seconds=settings.personal_ai_proposal_timeout_seconds,
+            auth_context=auth_context,
         )
         self._trips = SqlAlchemyTripRepository(session)
         self._clock = clock or (lambda: datetime.now(UTC))

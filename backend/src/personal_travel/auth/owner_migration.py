@@ -13,6 +13,7 @@ from uuid import UUID
 from sqlalchemy import func, select, text, update
 from sqlalchemy.orm import Session
 
+from personal_travel.auth.google_oidc import stable_google_owner_id
 from personal_travel.db.base import Base
 from personal_travel.models import (
     AuthIdentity,
@@ -66,11 +67,10 @@ class OwnerMigrationPlan:
 
 
 def stable_owner_id(issuer: str, subject: str) -> str:
-    canonical_issuer = "https://accounts.google.com"
-    if issuer not in {canonical_issuer, "accounts.google.com"} or not subject:
-        raise OwnerMigrationRejected("The target identity mapping is invalid.")
-    digest = hashlib.sha256(f"{canonical_issuer}\0{subject}".encode()).hexdigest()
-    return f"usr_{digest[:32]}"
+    try:
+        return stable_google_owner_id(issuer, subject)
+    except ValueError:
+        raise OwnerMigrationRejected("The target identity mapping is invalid.") from None
 
 
 def _lock_graph(session: Session) -> None:
@@ -119,6 +119,7 @@ def _plan_payload(
     counts: dict[str, int],
     target_counts: dict[str, int],
     conflicts: dict[str, int],
+    graph_fingerprint: str,
 ) -> bytes:
     payload = {
         "source_owner_id": source_owner_id,
@@ -126,8 +127,80 @@ def _plan_payload(
         "counts": counts,
         "target_counts": target_counts,
         "conflicts": conflicts,
+        "graph_fingerprint": graph_fingerprint,
     }
     return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+
+
+def _graph_fingerprint(session: Session, source_owner_id: str, target_owner_id: str) -> str:
+    """Bind an explicit migration plan to the exact source and destination graph.
+
+    The fingerprint is never rendered as row data: only its SHA-256 digest is
+    returned in the plan. Including complete row values detects edits between
+    dry run and apply even when the graph's row counts and revisions stay the
+    same (for example, a reservation's text fields or proposal snapshot).
+    """
+    digest = hashlib.sha256()
+    owner_ids = (source_owner_id, target_owner_id)
+    for table_name in OWNER_SCOPED_TABLES:
+        table = Base.metadata.tables[table_name]
+        rows = session.execute(
+            select(table)
+            .where(table.c.owner_id.in_(owner_ids))
+            .order_by(*table.primary_key.columns)
+        ).mappings()
+        for row in rows:
+            encoded = json.dumps(
+                [table_name, dict(row)],
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            ).encode()
+            digest.update(len(encoded).to_bytes(8, "big"))
+            digest.update(encoded)
+
+    trips = Base.metadata.tables["trips"]
+    trip_days = Base.metadata.tables["trip_days"]
+    itinerary_items = Base.metadata.tables["itinerary_items"]
+    related_queries = (
+        (
+            "trip_days",
+            select(trip_days)
+            .join(trips, trips.c.id == trip_days.c.trip_id)
+            .where(trips.c.owner_id.in_(owner_ids))
+            .order_by(*trip_days.primary_key.columns),
+        ),
+        (
+            "itinerary_items",
+            select(itinerary_items)
+            .join(trip_days, trip_days.c.id == itinerary_items.c.trip_day_id)
+            .join(trips, trips.c.id == trip_days.c.trip_id)
+            .where(trips.c.owner_id.in_(owner_ids))
+            .order_by(*itinerary_items.primary_key.columns),
+        ),
+    )
+    for table_name, statement in related_queries:
+        for row in session.execute(statement).mappings():
+            encoded = json.dumps(
+                [table_name, dict(row)],
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            ).encode()
+            digest.update(len(encoded).to_bytes(8, "big"))
+            digest.update(encoded)
+
+    identity = _verified_target(session, target_owner_id)
+    identity_state = [
+        identity.owner_id,
+        identity.issuer,
+        identity.subject,
+        identity.status,
+    ]
+    encoded_identity = json.dumps(identity_state, separators=(",", ":")).encode()
+    digest.update(len(encoded_identity).to_bytes(8, "big"))
+    digest.update(encoded_identity)
+    return digest.hexdigest()
 
 
 def inspect_owner_migration(
@@ -187,35 +260,66 @@ def inspect_owner_migration(
             source_owner_id,
             target_owner_id=target_owner_id,
         ),
+        "target_saved_place_collision": _related_count(
+            session,
+            "SELECT count(*) FROM saved_places source JOIN saved_places target "
+            "ON source.trip_id=target.trip_id AND source.place_id=target.place_id "
+            "WHERE source.owner_id=:owner_id AND target.owner_id=:target_owner_id",
+            source_owner_id,
+            target_owner_id=target_owner_id,
+        ),
+        "target_proposal_idempotency_collision": _related_count(
+            session,
+            "SELECT count(*) FROM itinerary_proposals source "
+            "JOIN itinerary_proposals target ON source.trip_id=target.trip_id "
+            "AND source.idempotency_key=target.idempotency_key "
+            "WHERE source.owner_id=:owner_id AND target.owner_id=:target_owner_id",
+            source_owner_id,
+            target_owner_id=target_owner_id,
+        ),
         "owner_trip_mismatch": _related_count(
             session,
             "SELECT (SELECT count(*) FROM reservations r JOIN trips t ON t.id=r.trip_id "
-            "WHERE r.owner_id=:owner_id AND t.owner_id<>:owner_id) + "
+            "WHERE r.owner_id IN (:owner_id,:target_owner_id) AND t.owner_id<>r.owner_id) + "
             "(SELECT count(*) FROM saved_places s JOIN trips t ON t.id=s.trip_id "
-            "JOIN places p ON p.id=s.place_id WHERE s.owner_id=:owner_id "
-            "AND (t.owner_id<>:owner_id OR p.owner_id<>:owner_id)) + "
+            "JOIN places p ON p.id=s.place_id "
+            "WHERE s.owner_id IN (:owner_id,:target_owner_id) "
+            "AND (t.owner_id<>s.owner_id OR p.owner_id<>s.owner_id)) + "
             "(SELECT count(*) FROM itinerary_proposals p JOIN trips t ON t.id=p.trip_id "
-            "WHERE p.owner_id=:owner_id AND t.owner_id<>:owner_id)",
+            "WHERE p.owner_id IN (:owner_id,:target_owner_id) AND t.owner_id<>p.owner_id)",
             source_owner_id,
+            target_owner_id=target_owner_id,
         ),
         "cross_owner_trip_place_reference": _related_count(
             session,
             "SELECT (SELECT count(*) FROM itinerary_items i JOIN trip_days d ON d.id=i.trip_day_id "
             "JOIN trips t ON t.id=d.trip_id JOIN places p ON p.id=i.place_id "
-            "WHERE t.owner_id=:owner_id AND p.owner_id<>:owner_id) + "
+            "WHERE t.owner_id IN (:owner_id,:target_owner_id) AND p.owner_id<>t.owner_id) + "
             "(SELECT count(*) FROM reservations r JOIN trips t ON t.id=r.trip_id "
-            "JOIN places p ON p.id=r.place_id WHERE r.owner_id=:owner_id "
-            "AND p.owner_id<>:owner_id) + "
+            "JOIN places p ON p.id=r.place_id "
+            "WHERE r.owner_id IN (:owner_id,:target_owner_id) "
+            "AND p.owner_id<>r.owner_id) + "
             "(SELECT count(*) FROM itinerary_items i JOIN trip_days d ON d.id=i.trip_day_id "
             "JOIN trips t ON t.id=d.trip_id JOIN reservations r ON r.id=i.reservation_id "
-            "WHERE t.owner_id=:owner_id AND (r.owner_id<>:owner_id OR r.trip_id<>t.id)) + "
+            "WHERE t.owner_id IN (:owner_id,:target_owner_id) "
+            "AND (r.owner_id<>t.owner_id OR r.trip_id<>t.id)) + "
             "(SELECT count(*) FROM itinerary_items i JOIN trip_days d ON d.id=i.trip_day_id "
             "JOIN trips t ON t.id=d.trip_id JOIN places p ON p.id=i.place_id "
-            "WHERE p.owner_id=:owner_id AND t.owner_id<>:owner_id)",
+            "WHERE p.owner_id IN (:owner_id,:target_owner_id) "
+            "AND t.owner_id<>p.owner_id)",
             source_owner_id,
+            target_owner_id=target_owner_id,
         ),
     }
-    payload = _plan_payload(source_owner_id, target_owner_id, counts, target_counts, conflicts)
+    graph_fingerprint = _graph_fingerprint(session, source_owner_id, target_owner_id)
+    payload = _plan_payload(
+        source_owner_id,
+        target_owner_id,
+        counts,
+        target_counts,
+        conflicts,
+        graph_fingerprint,
+    )
     return OwnerMigrationPlan(
         source_owner_id=source_owner_id,
         target_owner_id=target_owner_id,

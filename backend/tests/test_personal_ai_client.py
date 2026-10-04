@@ -7,6 +7,7 @@ import httpx
 import pytest
 
 import personal_travel.clients.personal_ai as personal_ai
+from personal_travel.auth.contracts import PersonalAIAuthContext
 from personal_travel.clients.personal_ai import (
     PersonalAIClient,
     PersonalAIError,
@@ -41,6 +42,37 @@ def test_personal_ai_health_returns_typed_response(monkeypatch: pytest.MonkeyPat
     result = asyncio.run(client.health())
 
     assert result == PersonalAIHealth(status="ok", service="personal-ai-api")
+
+
+def test_personal_ai_outbound_identity_keeps_user_and_transport_tokens_separate(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    user_token = "synthetic-user-id-token-secret"
+    service_token = "synthetic-service-id-token-secret"
+    fetched: list[tuple[str, str]] = []
+
+    def fetch_service_token(audience: str, service_account: str) -> str:
+        fetched.append((audience, service_account))
+        return service_token
+
+    client = PersonalAIClient(
+        auth_context=PersonalAIAuthContext(
+            user_id_token=user_token,
+            service_audience="https://personal-ai.test",
+            service_account="travel-ai@project.iam.gserviceaccount.com",
+        ),
+        service_token_fetcher=fetch_service_token,
+    )
+    headers = asyncio.run(client._outbound_headers())
+
+    assert fetched == [("https://personal-ai.test", "travel-ai@project.iam.gserviceaccount.com")]
+    assert headers == {
+        "Authorization": f"Bearer {service_token}",
+        "X-User-ID-Token": user_token,
+    }
+    assert user_token != headers["Authorization"].removeprefix("Bearer ")
+    assert all(user_token not in record.getMessage() for record in caplog.records)
+    assert all(service_token not in record.getMessage() for record in caplog.records)
 
 
 def test_personal_ai_health_reports_http_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:

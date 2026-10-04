@@ -68,7 +68,7 @@ def test_invalid_dst_repair_aborts_and_can_be_recovered(database_engine: Engine)
         seed_moved_item(connection, date="2026-03-08", time="2026-03-07T07:30:00Z")
         command.upgrade(config, "head")
     with database_engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0008"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0009"
         assert connection.scalar(text("SELECT count(*) FROM itinerary_items")) == 0
 
 

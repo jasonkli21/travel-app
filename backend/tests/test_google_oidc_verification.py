@@ -15,6 +15,7 @@ from cryptography.x509.oid import NameOID
 from google.auth.crypt import RSASigner
 from google.auth.exceptions import TransportError
 from google.auth.jwt import encode
+from pydantic import ValidationError
 
 from personal_travel.auth.contracts import VerifiedPrincipal
 from personal_travel.auth.google_oidc import (
@@ -22,6 +23,7 @@ from personal_travel.auth.google_oidc import (
     IdentityProviderUnavailable,
     InvalidIdentityToken,
     _BoundedRequest,
+    cloud_run_service_id_token,
     principal_from_google_token,
 )
 from personal_travel.config import Settings
@@ -34,10 +36,15 @@ def oidc_settings(**updates: object) -> Settings:
         "google_oauth_client_secret": "synthetic-secret",
         "google_oauth_redirect_uri": "https://travel.test/auth/google/callback",
         "google_oauth_allowed_email": "owner@gmail.com",
-        "personal_ai_auth_mode": "google_user_id_token",
-        "personal_ai_user_id_token_audience": "travel-client.apps.googleusercontent.com",
+        "personal_ai_auth_mode": "none",
     }
     return Settings(**(defaults | updates))
+
+
+def test_session_lifetime_is_capped_at_eight_hours() -> None:
+    assert oidc_settings(auth_session_ttl_seconds=28800).auth_session_ttl_seconds == 28800
+    with pytest.raises(ValidationError):
+        oidc_settings(auth_session_ttl_seconds=28801)
 
 
 def signing_fixture() -> tuple[RSASigner, str]:
@@ -129,6 +136,11 @@ def test_google_oidc_verifies_signature_claims_and_upstream_owner_mapping(google
         {"iat": int(time.time()) + 120},
         {"email": "other@gmail.com"},
         {"email_verified": False},
+        {"aud": ["travel-client.apps.googleusercontent.com", "attacker-client"]},
+        {"azp": "attacker-client"},
+        {"exp": float("nan")},
+        {"exp": float("inf")},
+        {"iat": float("nan")},
     ],
 )
 def test_google_oidc_rejects_forged_or_unapproved_claims(google_keys, claims) -> None:
@@ -147,6 +159,46 @@ def test_google_oidc_rejects_signature_forgery(google_keys) -> None:
         principal_from_google_token(forged, oidc_settings())
 
 
+def test_cloud_run_transport_token_is_verified_for_service_account_and_audience(
+    google_keys,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    signer, _ = google_keys
+    audience = "https://personal-ai.test"
+    service_account = "travel-ai@project.iam.gserviceaccount.com"
+    token = google_token(
+        signer,
+        aud=audience,
+        email=service_account,
+    )
+    monkeypatch.setattr(
+        "personal_travel.auth.google_oidc.id_token.fetch_id_token",
+        lambda _request, target: token if target == audience else "unexpected",
+    )
+
+    assert cloud_run_service_id_token(audience, service_account) == token
+    with pytest.raises(InvalidIdentityToken):
+        cloud_run_service_id_token(audience, "other@project.iam.gserviceaccount.com")
+
+
+def test_cloud_run_transport_token_rejects_wrong_audience(google_keys, monkeypatch) -> None:
+    signer, _ = google_keys
+    token = google_token(
+        signer,
+        aud="https://wrong-audience.test",
+        email="travel-ai@project.iam.gserviceaccount.com",
+    )
+    monkeypatch.setattr(
+        "personal_travel.auth.google_oidc.id_token.fetch_id_token",
+        lambda _request, _audience: token,
+    )
+
+    with pytest.raises(InvalidIdentityToken):
+        cloud_run_service_id_token(
+            "https://personal-ai.test", "travel-ai@project.iam.gserviceaccount.com"
+        )
+
+
 def test_google_oidc_fails_closed_when_signing_keys_are_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -161,33 +213,37 @@ def test_google_oidc_fails_closed_when_signing_keys_are_unavailable(
         principal_from_google_token(google_token(signer), oidc_settings())
 
 
-def test_google_key_fetch_is_bounded_and_cache_is_single_entry(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_google_key_fetch_is_bounded_and_cache_is_single_entry() -> None:
     calls: list[float | None] = []
 
-    def fetch(
-        _request: object,
-        url: str,
-        *,
-        method: str = "GET",
-        body: bytes | None = None,
-        headers: object = None,
-        timeout: float | None = None,
-        **_kwargs: object,
-    ) -> SimpleNamespace:
-        del body, headers
-        assert url == GOOGLE_CERT_URL
-        assert method == "GET"
-        calls.append(timeout)
-        return SimpleNamespace(
-            status=200,
-            data=b"{}",
-            headers={"cache-control": "public, max-age=99999"},
-        )
+    class SyntheticResponse:
+        status_code = 200
+        headers = {"cache-control": "public, max-age=99999"}
 
-    monkeypatch.setattr("google.auth.transport.requests.Request.__call__", fetch)
+        def __enter__(self) -> SyntheticResponse:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def iter_content(self, *, chunk_size: int):
+            assert chunk_size == 8192
+            yield b"{}"
+
+    class SyntheticSession:
+        def close(self) -> None:
+            return None
+
+        def request(self, method: str, url: str, **kwargs: object) -> SyntheticResponse:
+            assert url == GOOGLE_CERT_URL
+            assert method == "GET"
+            assert kwargs["stream"] is True
+            assert kwargs["allow_redirects"] is False
+            calls.append(kwargs["timeout"])
+            return SyntheticResponse()
+
     request = _BoundedRequest()
+    request.session = SyntheticSession()  # type: ignore[assignment]
 
     request(GOOGLE_CERT_URL, timeout=30)
     request(GOOGLE_CERT_URL, timeout=30)
@@ -195,12 +251,44 @@ def test_google_key_fetch_is_bounded_and_cache_is_single_entry(
     assert calls == [3]
 
 
+def test_google_key_response_is_capped_before_buffering() -> None:
+    class OversizedResponse:
+        status_code = 200
+        headers = {"cache-control": "public, max-age=300"}
+
+        def __enter__(self) -> OversizedResponse:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def iter_content(self, *, chunk_size: int):
+            assert chunk_size == 8192
+            yield b"x" * 8192
+            yield b"x" * 8192
+            yield b"x" * (64 * 1024)
+
+    class SyntheticSession:
+        def close(self) -> None:
+            return None
+
+        def request(self, *_args: object, **_kwargs: object) -> OversizedResponse:
+            return OversizedResponse()
+
+    request = _BoundedRequest()
+    request.session = SyntheticSession()  # type: ignore[assignment]
+    with pytest.raises(TransportError):
+        request(GOOGLE_CERT_URL)
+
+
 @pytest.mark.parametrize(
     "settings",
     [
         {
-            "personal_ai_auth_mode": "google_user_id_token",
+            "personal_ai_auth_mode": "google_cloud_run_iam",
             "personal_ai_user_id_token_audience": "other",
+            "personal_ai_service_iam_audience": "https://travel-ai.test",
+            "personal_ai_service_account": "travel-ai@project.iam.gserviceaccount.com",
         },
         {"google_oauth_allowed_email": ""},
     ],

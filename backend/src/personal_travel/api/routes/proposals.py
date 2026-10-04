@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, status
+from fastapi import APIRouter, Depends, Header, Request, status
 
 from personal_travel.api.dependencies import OwnerDependency, SessionDependency
 from personal_travel.api.schemas import COMMON_ERROR_RESPONSES
@@ -10,6 +10,7 @@ from personal_travel.api.schemas.proposals import (
     ProposalDetailResponse,
     ProposalGenerateRequest,
 )
+from personal_travel.auth.contracts import PersonalAIAuthContext
 from personal_travel.config import Settings, get_settings
 from personal_travel.services.proposals import ProposalService
 
@@ -28,14 +29,18 @@ router = APIRouter(
 )
 async def generate_proposal(
     trip_id: UUID,
+    request: Request,
     payload: ProposalGenerateRequest,
     session: SessionDependency,
     owner_id: OwnerDependency,
     settings: Annotated[Settings, Depends(get_settings)],
     expected_revision: Annotated[int, Header(alias="X-Expected-Revision", ge=0)],
 ) -> ProposalDetailResponse:
-    return await ProposalService(session, owner_id, settings).generate(
-        trip_id, payload, expected_revision=expected_revision
+    auth_context: PersonalAIAuthContext | None = request.scope.get("personal_ai_auth_context")
+    return await ProposalService(session, owner_id, settings, auth_context=auth_context).generate(
+        trip_id,
+        payload,
+        expected_revision=expected_revision,
     )
 
 
@@ -46,12 +51,16 @@ async def generate_proposal(
 )
 async def get_proposal_by_key(
     trip_id: UUID,
+    request: Request,
     idempotency_key: UUID,
     session: SessionDependency,
     owner_id: OwnerDependency,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> ProposalDetailResponse:
-    return await ProposalService(session, owner_id, settings).get_by_key(trip_id, idempotency_key)
+    auth_context: PersonalAIAuthContext | None = request.scope.get("personal_ai_auth_context")
+    return await ProposalService(session, owner_id, settings, auth_context=auth_context).get_by_key(
+        trip_id, idempotency_key
+    )
 
 
 @router.get(
@@ -61,24 +70,30 @@ async def get_proposal_by_key(
 )
 async def get_proposal(
     trip_id: UUID,
+    request: Request,
     proposal_id: UUID,
     session: SessionDependency,
     owner_id: OwnerDependency,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> ProposalDetailResponse:
-    return await ProposalService(session, owner_id, settings).get(trip_id, proposal_id)
+    auth_context: PersonalAIAuthContext | None = request.scope.get("personal_ai_auth_context")
+    return await ProposalService(session, owner_id, settings, auth_context=auth_context).get(
+        trip_id, proposal_id
+    )
 
 
 @router.post("/{proposal_id}/apply", response_model=ProposalApplyResponse)
 async def apply_proposal(
     trip_id: UUID,
     proposal_id: UUID,
+    request: Request,
     session: SessionDependency,
     owner_id: OwnerDependency,
     settings: Annotated[Settings, Depends(get_settings)],
     expected_revision: Annotated[int, Header(alias="X-Expected-Revision", ge=0)],
 ) -> ProposalApplyResponse:
-    return await ProposalService(session, owner_id, settings).apply(
+    auth_context: PersonalAIAuthContext | None = request.scope.get("personal_ai_auth_context")
+    return await ProposalService(session, owner_id, settings, auth_context=auth_context).apply(
         trip_id, proposal_id, expected_revision=expected_revision
     )
 
@@ -91,8 +106,12 @@ async def apply_proposal(
 async def reject_proposal(
     trip_id: UUID,
     proposal_id: UUID,
+    request: Request,
     session: SessionDependency,
     owner_id: OwnerDependency,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> ProposalDetailResponse:
-    return await ProposalService(session, owner_id, settings).reject(trip_id, proposal_id)
+    auth_context: PersonalAIAuthContext | None = request.scope.get("personal_ai_auth_context")
+    return await ProposalService(session, owner_id, settings, auth_context=auth_context).reject(
+        trip_id, proposal_id
+    )

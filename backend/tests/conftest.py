@@ -15,9 +15,10 @@ from alembic.config import Config
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from personal_travel.api.dependencies import session_dependency
+from personal_travel.config import get_settings
 from personal_travel.main import app
 
 
@@ -61,13 +62,23 @@ def clean_database(database_engine: Engine) -> None:
 
 @pytest.fixture
 def api_client(database_engine: Engine, clean_database: None) -> Iterator[TestClient]:
+    original_overrides = app.dependency_overrides.copy()
+    original_auth_factory = getattr(app.state, "auth_session_factory", None)
+    original_settings_provider = getattr(app.state, "auth_settings_provider", None)
+
     def override_session() -> Iterator[Session]:
         with Session(database_engine, autoflush=False, expire_on_commit=False) as session:
             yield session
 
     app.dependency_overrides[session_dependency] = override_session
+    auth_factory = sessionmaker(bind=database_engine, autoflush=False, expire_on_commit=False)
+    app.state.auth_session_factory = auth_factory
+    app.state.auth_settings_provider = get_settings
     try:
         with TestClient(app, base_url="http://localhost") as client:
             yield client
     finally:
-        app.dependency_overrides.pop(session_dependency, None)
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(original_overrides)
+        app.state.auth_session_factory = original_auth_factory
+        app.state.auth_settings_provider = original_settings_provider

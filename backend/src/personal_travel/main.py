@@ -11,6 +11,7 @@ from personal_travel.api.errors import error_response
 from personal_travel.api.middleware import LocalBoundaryMiddleware
 from personal_travel.api.router import api_router
 from personal_travel.config import get_settings
+from personal_travel.db.session import SessionFactory
 from personal_travel.services.errors import DomainError
 
 settings = get_settings()
@@ -28,6 +29,8 @@ app = FastAPI(
     version="0.1.0",
     description="Authoritative travel-domain API for the personal travel application.",
 )
+app.state.auth_settings_provider = get_settings
+app.state.auth_session_factory = SessionFactory
 
 app.add_middleware(
     CORSMiddleware,
