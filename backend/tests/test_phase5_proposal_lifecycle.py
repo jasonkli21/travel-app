@@ -201,6 +201,39 @@ def test_explicit_null_clears_only_the_present_time_field(
     assert proposal["preview"]["after"][0]["items"][0]["end_time"] == "10:00"
 
 
+def test_expired_ready_proposal_cannot_apply(
+    proposal_client: TestClient,
+    database_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trip, _item_id, _place_id = create_trip_with_item(proposal_client)
+    monkeypatch.setattr(PersonalAIClient, "create_itinerary_proposal", fake_time_change())
+    created = request_proposal(proposal_client, trip, uuid4())
+    assert created.status_code == 201, created.text
+    detail = created.json()
+    proposal_id = UUID(detail["proposal_id"])
+
+    with Session(database_engine) as session:
+        row = session.scalar(select(ItineraryProposal).where(ItineraryProposal.id == proposal_id))
+        assert row is not None
+        row.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        session.commit()
+
+    get_url = f"/v1/trips/{trip['id']}/proposals/{proposal_id}"
+    expired = proposal_client.get(get_url)
+    assert expired.status_code == 200
+    assert expired.json()["state"] == "expired"
+    assert expired.json()["lifecycle_state"] == "ready"
+
+    apply = proposal_client.post(
+        f"{get_url}/apply", headers={"X-Expected-Revision": str(trip["revision"])}
+    )
+    assert apply.status_code == 409
+    assert apply.json()["error"]["code"] == "proposal_expired"
+    unchanged = proposal_client.get(f"/v1/trips/{trip['id']}").json()
+    assert unchanged["revision"] == trip["revision"]
+
+
 def test_shared_place_footprint_stales_only_dependent_proposals(
     proposal_client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
