@@ -339,3 +339,22 @@ this identity decision is `6045f00`; no upstream code change is part of this
 stage. Continue only after independently checking the auth and migration
 boundaries. The accepted booking/document extraction/retention contract is
 still missing, so private source handling remains deferred.
+
+## Identity review-fix interruption and stop boundary
+
+At travel `06df707`, the coordinator recorded substantive findings in
+`docs/reviews/phase-6-identity-review.md`. The fresh Sol Medium fix agent hit
+the usage limit before committing its remediation. Preserve all dirty files:
+auth middleware/routes, verifier, owner migration, AI client/config and their
+tests; central frontend CSRF changes and test; new auth-deadline tests and
+synthetic browser fixture files. It reported central CSRF, typed nested-owner
+transfer/in-flight invalidation, service-token claims, allowlist/HTTPS/cookie
+configuration, async offloading and elapsed bounds implemented, but full
+verification and review remain outstanding. Its last confirmed checks were
+the focused frontend CSRF test and mypy; do not infer all fixes passed.
+
+The user now requests finishing the current phase and stopping there; do not
+continue to Phase 7 or later. A clarification is pending whether the intended
+stop is the active identity stage or all of Phase 6. Finish identity remediation
+first in either case. Use only fresh Sol Medium agents for substantive work.
+The 15:05 PDT one-time restart already fired; no additional restart is scheduled.
