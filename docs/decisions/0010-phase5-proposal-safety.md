@@ -2,6 +2,7 @@
 
 **Status:** accepted for local groundwork; upstream generation contract not accepted
 **Date:** 2026-10-03
+**Policy alignment:** 2026-10-04
 **Context:** [Phase 0–4 audit](../reviews/phase-0-4-audit.md) and [Phase 5 plan](../phase-5-implementation-plan.md)
 
 ## Context
@@ -104,8 +105,16 @@ trip days, insertion positions, destination-day wall-clock preservation,
 timezone validation, DST gap/fold rejection, confirmed/booked protection,
 and reservation-overlap warnings. Preview includes every day's full final
 ordered item list and local schedule, plus deterministic warnings. There is no
-silent rebase. A later accepted capability must return sufficient cited
-evidence; insufficient or uncited results are not proposals.
+silent rebase. A later accepted upstream capability must return an explicit
+support mode. `research_evidence` proposals require verified citations for
+every operation; insufficient, expired, or uncited outcomes cannot become
+proposals. A `context_only` proposal is permitted only when no research sessions
+were supplied and may rely only on the traveler instruction and typed current
+itinerary projection. It cannot claim current external facts such as opening
+hours or availability. A supplied evidence lookup that fails validation must
+remain insufficient or expired and cannot fall back to context-only policy.
+Both modes still pass through this application's deterministic preview and
+revalidation.
 
 The future proposal lifetime is at most 24 hours from creation and is shortened
 to the earliest referenced evidence expiry. It cannot be extended by replay.
