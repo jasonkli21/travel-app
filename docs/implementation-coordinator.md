@@ -139,6 +139,27 @@ begin P5.3 until the coordinator independently reviews this checkpoint and
 accepts the contract. The local fake-backed evidence does not establish live
 provider or deployment readiness.
 
+## Upstream prerequisite accepted; travel Phase 5 resumes
+
+The coordinator accepted the local upstream contract at
+`8535cad3a146b1a19cab0958c439f170d19b8095` in `personal-ai-system`.
+Pin `itinerary-proposal-v1`, context `travel-itinerary-context-v1`, and policy
+`itinerary-proposal-policy-v2`. This supersedes the pending-review gate above.
+The independent review and fixes preserve omitted time endpoints across HTTP
+and persistence, share one absolute external deadline, distinguish
+`context_only` from `research_evidence`, and check expiry after terminal storage.
+Coordinator verification passed 537 upstream tests (12 existing manual/provider
+skips), Ruff and the proposal evaluator; the final proposal regression suite
+passed 37 tests. No live provider, emulator, cloud or deployment readiness is
+claimed. The pre-existing upstream frontend build-info change remains untouched.
+
+Next: delegate all remaining travel P5.3–P5.5 to one fresh Luna Extra High agent,
+including durable lifecycle, atomic apply/replay, accepted gated HTTP integration,
+review UI and release evidence. Independently review before starting Phase 6.
+Travel generation remains off by default. Preserve the completed groundwork.
+The one-time restart is active for October 4, 2026 at 03:50 PDT / 10:50 UTC;
+the obsolete October 3 restart was removed.
+
 ## Verification requirements
 
 Use migrated disposable PostgreSQL schemas with `TEST_DATABASE_URL` and no SQL
