@@ -35,3 +35,22 @@ test("lost or malformed success responses stay uncertain and 204 remains success
   fetchMock.mock.mockImplementation(async () => new Response(null, { status: 204 }));
   assert.equal(await request("/trips/id", { method: "DELETE" }), undefined);
 });
+
+test("an expired API session redirects to the sign-in page", async (t) => {
+  const previousWindow = globalThis.window;
+  const redirects = [];
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: { location: { pathname: "/trips", replace: (path) => redirects.push(path) } },
+  });
+  t.after(() => {
+    if (previousWindow === undefined) delete globalThis.window;
+    else Object.defineProperty(globalThis, "window", { configurable: true, value: previousWindow });
+  });
+  t.mock.method(globalThis, "fetch", async () => Response.json({
+    error: { message: "Sign in to continue.", code: "authentication_required", details: null },
+  }, { status: 401 }));
+
+  await assert.rejects(request("/trips"), (error) => error.status === 401);
+  assert.deepEqual(redirects, ["/sign-in?expired=1"]);
+});

@@ -26,6 +26,10 @@ export async function request(path, init = {}) {
   if (response.status === 204) return undefined;
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
+    if (response.status === 401 && typeof window !== "undefined"
+        && window.location.pathname !== "/sign-in") {
+      window.location.replace("/sign-in?expired=1");
+    }
     throw new ApiError(
       payload?.error?.message ?? `The travel API returned HTTP ${response.status}.`,
       payload?.error?.code ?? "request_failed",

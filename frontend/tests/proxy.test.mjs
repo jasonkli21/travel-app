@@ -65,12 +65,78 @@ test("proxy forwards only the explicitly supported revision precondition", async
     body: JSON.stringify({ title: "New title" }),
   }), ["trips", "trip-id"], { fetchImpl });
 
-  assert.deepEqual([...forwarded.keys()].sort(), ["content-type", "x-expected-revision"]);
+  assert.deepEqual([...forwarded.keys()].sort(), ["content-type", "origin", "x-expected-revision"]);
   assert.equal(forwarded.get("x-expected-revision"), "12");
 
   forwarded = null;
   await proxyRequest(new Request(url, { method: "DELETE" }), ["trips", "trip-id"], { fetchImpl });
   assert.equal(forwarded.has("x-expected-revision"), false);
+});
+
+test("proxy forwards only session cookies and derives the AI user token from its HttpOnly cookie", async () => {
+  let forwarded;
+  const fetchImpl = async (_upstream, options) => {
+    forwarded = options.headers;
+    return Response.json({ ok: true });
+  };
+  const request = new Request("http://localhost:3000/api/v1/trips/trip-id/research", {
+    method: "POST",
+    headers: {
+      host: "localhost:3000",
+      origin: "http://localhost:3000",
+      cookie: [
+        "__Host-travel_session=opaque-session",
+        "__Host-travel_csrf=csrf-proof",
+        "__Host-travel_ai_token=signed-google-user-token",
+        "session=untrusted",
+      ].join("; "),
+      "x-csrf-token": "csrf-proof",
+      "x-user-id-token": "attacker-supplied-header",
+      authorization: "Bearer attacker-service-token",
+      "x-owner-id": "attacker-owner",
+    },
+    body: "{}",
+  });
+  await proxyRequest(request, ["trips", "trip-id", "research"], { fetchImpl });
+
+  assert.equal(
+    forwarded.get("cookie"),
+    "__Host-travel_session=opaque-session; __Host-travel_csrf=csrf-proof",
+  );
+  assert.equal(forwarded.get("x-user-id-token"), "signed-google-user-token");
+  assert.equal(forwarded.get("authorization"), null);
+  assert.equal(forwarded.get("x-owner-id"), null);
+  assert.equal(forwarded.get("origin"), "http://localhost:3000");
+  assert.equal(forwarded.get("x-csrf-token"), "csrf-proof");
+});
+
+test("proxy forwards only session cookies returned by the backend", async () => {
+  const fetchImpl = async () => {
+    const headers = new Headers({ "content-type": "application/json" });
+    headers.append("set-cookie", "__Host-travel_session=opaque; Secure; HttpOnly; Path=/; SameSite=Lax");
+    headers.append("set-cookie", "__Host-travel_csrf=csrf; Secure; Path=/; SameSite=Strict");
+    headers.append("set-cookie", "untrusted=private; Path=/");
+    return new Response("{}", { headers });
+  };
+  const response = await proxyRequest(new Request(url), ["auth", "session"], { fetchImpl });
+  const cookies = response.headers.getSetCookie();
+  assert.equal(cookies.length, 2);
+  assert.ok(cookies.some((cookie) => cookie.startsWith("__Host-travel_session=")));
+  assert.ok(cookies.some((cookie) => cookie.startsWith("__Host-travel_csrf=")));
+  assert.ok(cookies.every((cookie) => !cookie.startsWith("untrusted=")));
+});
+
+test("proxy adds the AI user token only for exact capability path segments", async () => {
+  let forwarded;
+  const fetchImpl = async (_upstream, options) => {
+    forwarded = options.headers;
+    return Response.json({ ok: true });
+  };
+  const request = new Request(url, {
+    headers: { cookie: "__Host-travel_ai_token=signed-user-token" },
+  });
+  await proxyRequest(request, ["trips", "trip-id", "research-old"], { fetchImpl });
+  assert.equal(forwarded.get("x-user-id-token"), null);
 });
 
 test("proxy bounds chunked request bodies and reports backend failures", async () => {

@@ -1,9 +1,57 @@
 import { readProxyBody } from "./proxy-response.mjs";
 
 const MAX_REQUEST_BYTES = 64 * 1024;
+const SESSION_COOKIE = "__Host-travel_session";
+const CSRF_COOKIE = "__Host-travel_csrf";
+const OAUTH_FLOW_COOKIE = "__Host-travel_oauth_flow";
+const AI_USER_TOKEN_COOKIE = "__Host-travel_ai_token";
+const RESPONSE_COOKIE_NAMES = new Set([
+  SESSION_COOKIE, CSRF_COOKIE, OAUTH_FLOW_COOKIE, AI_USER_TOKEN_COOKIE,
+]);
 
 function errorResponse(status, code, message) {
   return Response.json({ error: { code, message, details: null } }, { status });
+}
+
+function cookieMap(request) {
+  const cookies = new Map();
+  for (const part of (request.headers.get("cookie") ?? "").split(";")) {
+    const separator = part.indexOf("=");
+    if (separator < 1) continue;
+    const name = part.slice(0, separator).trim();
+    const value = part.slice(separator + 1).trim();
+    if ([SESSION_COOKIE, CSRF_COOKIE, OAUTH_FLOW_COOKIE, AI_USER_TOKEN_COOKIE].includes(name)) {
+      if (cookies.has(name)) cookies.set(name, null);
+      else cookies.set(name, value);
+    }
+  }
+  return cookies;
+}
+
+function allowedCookieHeader(path, cookies) {
+  const isAuth = path[0] === "auth";
+  const names = isAuth
+    ? (path[1] === "google" && path[2] === "callback"
+      ? [OAUTH_FLOW_COOKIE]
+      : path[1] === "logout" ? [SESSION_COOKIE, CSRF_COOKIE]
+        : path[1] === "session" ? [SESSION_COOKIE] : [])
+    : [SESSION_COOKIE, CSRF_COOKIE];
+  return names
+    .filter((name) => typeof cookies.get(name) === "string" && cookies.get(name))
+    .map((name) => `${name}=${cookies.get(name)}`)
+    .join("; ");
+}
+
+function safeSetCookies(response) {
+  let values = response.headers.getSetCookie?.() ?? [];
+  if (!values.length) {
+    const combined = response.headers.get("set-cookie") ?? "";
+    values = combined.split(/, (?=__Host-travel_)/);
+  }
+  return values.filter((value) => {
+    const name = value.split("=", 1)[0];
+    return RESPONSE_COOKIE_NAMES.has(name);
+  });
 }
 
 async function readRequestBody(request) {
@@ -69,6 +117,19 @@ export async function proxyRequest(request, path, {
   if (contentType) headers.set("content-type", contentType);
   const expectedRevision = request.headers.get("x-expected-revision");
   if (expectedRevision !== null) headers.set("x-expected-revision", expectedRevision);
+  const cookies = cookieMap(request);
+  const cookieHeader = allowedCookieHeader(path, cookies);
+  if (cookieHeader) headers.set("cookie", cookieHeader);
+  const aiCall = path.some((part) => part === "research" || part === "proposals");
+  const aiUserToken = cookies.get(AI_USER_TOKEN_COOKIE);
+  if (aiCall && typeof aiUserToken === "string" && aiUserToken) {
+    headers.set("x-user-id-token", aiUserToken);
+  }
+  if (!["GET", "HEAD", "OPTIONS"].includes(request.method.toUpperCase())) {
+    headers.set("origin", publicUrl.origin);
+    const csrf = request.headers.get("x-csrf-token");
+    if (csrf) headers.set("x-csrf-token", csrf);
+  }
   try {
     const response = await fetchImpl(
       `${backendBaseUrl.trim().replace(/\/+$/, "")}/v1/${path.join("/")}${url.search}`,
@@ -87,6 +148,7 @@ export async function proxyRequest(request, path, {
       const value = response.headers.get(name);
       if (value) responseHeaders.set(name, value);
     }
+    for (const cookie of safeSetCookies(response)) responseHeaders.append("set-cookie", cookie);
     return new Response(await readProxyBody(response), {
       status: response.status,
       headers: responseHeaders,

@@ -76,8 +76,8 @@ test("typed DELETE and shared-place writes carry revisions through the proxy to 
 
   for (const call of calls.slice(0, 2)) {
     const expectedHeaders = call.method === "DELETE"
-      ? ["x-expected-revision"]
-      : ["content-type", "x-expected-revision"];
+      ? ["origin", "x-expected-revision"]
+      : ["content-type", "origin", "x-expected-revision"];
     assert.deepEqual([...call.headers.keys()].sort(), expectedHeaders);
   }
 
@@ -87,6 +87,6 @@ test("typed DELETE and shared-place writes carry revisions through the proxy to 
   await travelApi.createPlace({ name: "Cafe" });
   assert.equal(calls[2].method, "POST");
   assert.equal(calls[2].headers.has("x-expected-revision"), false);
-  assert.deepEqual([...calls[2].headers.keys()], ["content-type"]);
+  assert.deepEqual([...calls[2].headers.keys()].sort(), ["content-type", "origin"]);
   assert.equal(fetchMock.mock.callCount(), 3);
 });

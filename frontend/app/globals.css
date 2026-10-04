@@ -35,6 +35,16 @@ h3 { margin: 3px 0 0; }
 .nav a, .navDisabled { color: var(--muted); padding: 10px 12px; text-decoration: none; border-radius: 8px; }
 .nav a.active { color: var(--accent); background: var(--accent-soft); font-weight: 700; }
 .status { color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 8px; }
+.authToolbar { min-height: 54px; padding: 8px 22px; display: flex; justify-content: space-between; align-items: center; gap: 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+.authBrand { color: var(--accent); font-size: 13px; font-weight: 800; text-decoration: none; }
+.authStatus { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 12px; }
+.authStatus a { color: var(--accent); font-weight: 700; }
+.signInShell { display: grid; min-height: calc(100vh - 54px); place-items: center; padding: 24px; }
+.signInPanel { width: min(100%, 480px); display: grid; gap: 14px; border: 1px solid var(--line); border-radius: 15px; background: var(--panel); box-shadow: var(--shadow); padding: 30px; }
+.signInPanel h1 { font-size: 27px; margin-bottom: 0; }
+.signInPanel .muted { margin: 0; }
+.signInButton { width: fit-content; text-decoration: none; }
+.signInBack { margin: 0; }
 .dot { width: 8px; height: 8px; background: var(--accent); border-radius: 50%; }
 .topbar, .dayHeading, .sectionHeading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
 .topActions, .formActions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
