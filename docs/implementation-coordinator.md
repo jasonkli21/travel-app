@@ -286,3 +286,28 @@ separate; no live service or deployment was performed.
 Next: assess Phase 6 identity, secure source lifecycle and accepted extraction
 prerequisites; delegate one logical stage at a time to fresh Luna Extra High
 agents. Preserve the upstream pre-existing frontend build-info modification.
+
+## Phase 6 next stage — identity boundary
+
+Phase 5 closes at travel `ff420a9`. Next implement the Phase 6 identity stage
+(P6.0 identity decisions and P6.1), before private source handling. Use Google
+OIDC consistently with the upstream verified issuer/subject identity, a vetted
+verifier, single-owner allowlist, secure server-owned sessions, CSRF/logout,
+all-route request identity and explicit backed-up owner migration. Review
+official provider documentation before finalizing the security contract.
+
+The upstream currently has Google OIDC verification but no accepted booking
+document extraction capability. Design that independent HTTP/auth/retention
+gate now; do not fabricate extraction or enable private imports. A later fresh
+stage must implement and independently accept that bounded prerequisite before
+P6.3. Secure storage/parser work follows reviewed identity. External Google
+configuration, real sign-in and service IAM checks remain explicit gates; no
+cloud provisioning or private input is authorized by local test success.
+
+Identity-stage commits should cover ADR/config/verifier, SQL owner/session and
+explicit migration tooling, authenticated routes/proxy/web sign-in, and security
+tests/docs. Existing local CRUD remains an explicit local mode with private
+imports disabled; token failures never fall back to it. Test synthetic signed
+credentials and all existing route families, forged identity, session expiry/
+logout, CSRF, foreign ownership and migration collision/rollback. Then the
+coordinator independently reviews this stage before the next implementation.
