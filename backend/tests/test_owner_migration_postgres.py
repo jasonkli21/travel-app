@@ -1,0 +1,291 @@
+from __future__ import annotations
+
+import hashlib
+from datetime import UTC, datetime
+from pathlib import Path
+from uuid import uuid4
+
+import pytest
+from sqlalchemy import select
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session
+
+from personal_travel.auth.owner_migration import (
+    OwnerMigrationRejected,
+    apply_owner_migration,
+    inspect_owner_migration,
+    stable_owner_id,
+)
+from personal_travel.models import (
+    AuthIdentity,
+    ItineraryItem,
+    ItineraryProposal,
+    OwnerMigrationAudit,
+    Place,
+    Reservation,
+    SavedPlace,
+    Trip,
+    TripDay,
+)
+
+pytestmark = pytest.mark.usefixtures("clean_database")
+
+
+def target_identity(session: Session, subject: str = "synthetic-owner-subject") -> str:
+    owner_id = stable_owner_id("https://accounts.google.com", subject)
+    session.add(
+        AuthIdentity(
+            owner_id=owner_id,
+            issuer="https://accounts.google.com",
+            subject=subject,
+            email="owner@gmail.com",
+            status="active",
+        )
+    )
+    session.flush()
+    return owner_id
+
+
+def source_graph(session: Session, *, provider_place_id: str | None = None) -> tuple[Trip, Place]:
+    trip = Trip(
+        owner_id="local",
+        title="Synthetic local trip",
+        start_date=datetime(2026, 1, 2, tzinfo=UTC).date(),
+        end_date=datetime(2026, 1, 2, tzinfo=UTC).date(),
+        timezone="UTC",
+        revision=4,
+    )
+    place = Place(
+        owner_id="local",
+        name="Synthetic venue",
+        provider="geoapify" if provider_place_id else None,
+        provider_place_id=provider_place_id,
+        revision=2,
+    )
+    session.add_all([trip, place])
+    session.flush()
+    day = TripDay(trip_id=trip.id, day_index=1, date=trip.start_date)
+    session.add(day)
+    session.flush()
+    reservation = Reservation(
+        owner_id="local",
+        trip_id=trip.id,
+        reservation_type="lodging",
+        status="tentative",
+        provider_name="Synthetic hotel",
+        place_id=place.id,
+    )
+    session.add(reservation)
+    session.flush()
+    item = ItineraryItem(
+        trip_day_id=day.id,
+        place_id=place.id,
+        reservation_id=reservation.id,
+        item_type="lodging",
+        title="Check in",
+        sort_order=0,
+        status="planned",
+    )
+    session.add(item)
+    session.add(SavedPlace(owner_id="local", trip_id=trip.id, place_id=place.id))
+    session.add(
+        ItineraryProposal(
+            owner_id="local",
+            trip_id=trip.id,
+            idempotency_key=uuid4(),
+            downstream_key=uuid4(),
+            request_fingerprint="f" * 64,
+            state="failed",
+            schema_version="itinerary-proposal-v1",
+            policy_version="itinerary-proposal-policy-v2",
+            upstream_revision="6" * 40,
+            support_mode="context_only",
+            trip_handle="h_triphandle000000001",
+            generation_deadline=datetime(2026, 1, 1, tzinfo=UTC),
+            base_trip_revision=trip.revision,
+            base_place_revisions=[],
+            base_snapshot={"owner_id": "local", "trip_id": str(trip.id)},
+            citations=[],
+        )
+    )
+    session.flush()
+    return trip, place
+
+
+def inspect(engine: Engine, target_owner_id: str):
+    with Session(engine, expire_on_commit=False) as session, session.begin():
+        return inspect_owner_migration(
+            session,
+            source_owner_id="local",
+            target_owner_id=target_owner_id,
+        )
+
+
+def test_dry_run_counts_full_owner_graph_without_mutating(database_engine: Engine) -> None:
+    with Session(database_engine) as session, session.begin():
+        target = target_identity(session)
+        source_graph(session, provider_place_id="synthetic-place")
+
+    plan = inspect(database_engine, target)
+
+    assert plan.can_apply
+    assert plan.counts["trips"] == 1
+    assert plan.counts["trip_days"] == 1
+    assert plan.counts["itinerary_items"] == 1
+    assert plan.counts["itinerary_items_linked_to_reservations"] == 1
+    assert plan.counts["places"] == 1
+    assert plan.counts["reservations"] == 1
+    assert plan.counts["saved_places"] == 1
+    assert plan.counts["itinerary_proposals"] == 1
+    assert plan.counts["proposal_snapshot_owner_id"] == 1
+    with Session(database_engine) as session:
+        assert session.scalar(select(Trip.owner_id)) == "local"
+        proposal = session.scalar(select(ItineraryProposal))
+        assert proposal is not None
+        assert proposal.base_snapshot["owner_id"] == "local"
+
+
+def test_owner_migration_requires_verified_target_and_provider_collision_is_reported(
+    database_engine: Engine,
+) -> None:
+    with Session(database_engine) as session, session.begin():
+        source_graph(session, provider_place_id="duplicate-provider-key")
+        session.add(
+            Place(
+                owner_id="usr_" + "a" * 32,
+                name="Existing target place",
+                provider="geoapify",
+                provider_place_id="duplicate-provider-key",
+            )
+        )
+
+    with Session(database_engine) as session, session.begin():
+        with pytest.raises(OwnerMigrationRejected, match="active identity record"):
+            inspect_owner_migration(
+                session,
+                source_owner_id="local",
+                target_owner_id="usr_" + "a" * 32,
+            )
+
+    with Session(database_engine) as session, session.begin():
+        target = target_identity(session)
+        session.add(
+            Place(
+                owner_id=target,
+                name="Existing target place",
+                provider="geoapify",
+                provider_place_id="duplicate-provider-key",
+            )
+        )
+
+    plan = inspect(database_engine, target)
+    assert plan.conflicts["target_provider_place_collision"] == 1
+    assert not plan.can_apply
+
+
+def test_explicit_owner_migration_updates_graph_and_snapshot_preserving_revisions(
+    database_engine: Engine,
+    tmp_path: Path,
+) -> None:
+    with Session(database_engine) as session, session.begin():
+        target = target_identity(session)
+        trip, place = source_graph(session, provider_place_id="synthetic-place")
+        trip_id, place_id = trip.id, place.id
+
+    plan = inspect(database_engine, target)
+    backup = tmp_path / "synthetic-backup.sql"
+    backup.write_bytes(b"synthetic disposable test database backup")
+    backup_hash = hashlib.sha256(backup.read_bytes()).hexdigest()
+    run_id = uuid4()
+    with Session(database_engine, expire_on_commit=False) as session:
+        result = apply_owner_migration(
+            session,
+            source_owner_id="local",
+            target_owner_id=target,
+            run_id=run_id,
+            expected_plan_digest=plan.plan_digest,
+            backup_file=backup,
+            expected_backup_sha256=backup_hash,
+            confirmation=f"local -> {target}",
+        )
+
+    assert result.plan_digest == plan.plan_digest
+    with Session(database_engine) as session:
+        assert session.get(Trip, trip_id).owner_id == target
+        assert session.get(Trip, trip_id).revision == 4
+        assert session.get(Place, place_id).owner_id == target
+        assert session.get(Place, place_id).revision == 2
+        assert session.scalar(select(Reservation.owner_id)) == target
+        assert session.scalar(select(SavedPlace.owner_id)) == target
+        proposal = session.scalar(select(ItineraryProposal))
+        assert proposal is not None
+        assert proposal.owner_id == target
+        assert proposal.base_snapshot["owner_id"] == target
+        assert session.get(OwnerMigrationAudit, run_id) is not None
+        assert session.scalar(select(ItineraryItem.id)) is not None
+
+
+def test_owner_migration_mismatched_backup_plan_confirmation_and_rollback(
+    database_engine: Engine,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with Session(database_engine) as session, session.begin():
+        target = target_identity(session)
+        source_graph(session)
+    plan = inspect(database_engine, target)
+    backup = tmp_path / "backup.sql"
+    backup.write_bytes(b"synthetic backup")
+    backup_hash = hashlib.sha256(backup.read_bytes()).hexdigest()
+
+    with Session(database_engine) as session:
+        with pytest.raises(OwnerMigrationRejected, match="does not match"):
+            apply_owner_migration(
+                session,
+                source_owner_id="local",
+                target_owner_id=target,
+                run_id=uuid4(),
+                expected_plan_digest=plan.plan_digest,
+                backup_file=backup,
+                expected_backup_sha256="0" * 64,
+                confirmation=f"local -> {target}",
+            )
+    with Session(database_engine) as session:
+        with pytest.raises(OwnerMigrationRejected, match="confirmation"):
+            apply_owner_migration(
+                session,
+                source_owner_id="local",
+                target_owner_id=target,
+                run_id=uuid4(),
+                expected_plan_digest=plan.plan_digest,
+                backup_file=backup,
+                expected_backup_sha256=backup_hash,
+                confirmation="local -> arbitrary-owner",
+            )
+
+    from personal_travel.auth import owner_migration
+
+    original_fingerprint = owner_migration._revision_fingerprint
+    fingerprint_calls = 0
+
+    def fail_after_write(session: Session) -> str:
+        nonlocal fingerprint_calls
+        fingerprint_calls += 1
+        return original_fingerprint(session) if fingerprint_calls == 1 else "changed"
+
+    monkeypatch.setattr(owner_migration, "_revision_fingerprint", fail_after_write)
+    with Session(database_engine) as session:
+        with pytest.raises(OwnerMigrationRejected, match="revisions"):
+            apply_owner_migration(
+                session,
+                source_owner_id="local",
+                target_owner_id=target,
+                run_id=uuid4(),
+                expected_plan_digest=plan.plan_digest,
+                backup_file=backup,
+                expected_backup_sha256=backup_hash,
+                confirmation=f"local -> {target}",
+            )
+    with Session(database_engine) as session:
+        assert session.scalar(select(Trip.owner_id)) == "local"
+        assert session.scalar(select(OwnerMigrationAudit.id)) is None
