@@ -11,6 +11,7 @@ from personal_travel.repositories.places import SqlAlchemyPlaceRepository
 from personal_travel.repositories.reservations import SqlAlchemyReservationRepository
 from personal_travel.repositories.trips import SqlAlchemyTripRepository
 from personal_travel.services.errors import DomainError, not_found
+from personal_travel.services.revisions import require_expected_revision
 from personal_travel.services.time_utils import local_datetime_for_reservation
 
 
@@ -26,9 +27,16 @@ class ReservationService:
         trip = self._get_trip(trip_id)
         return sorted(trip.reservations, key=self._sort_key)
 
-    def create(self, trip_id: UUID, data: ReservationCreate) -> Reservation:
+    def create(
+        self,
+        trip_id: UUID,
+        data: ReservationCreate,
+        *,
+        expected_revision: int | None = None,
+    ) -> Reservation:
         with self._session.begin():
             trip = self._get_trip(trip_id, for_update=True)
+            require_expected_revision(trip.revision, expected_revision, aggregate="trip")
             place = self._get_place(data.place_id)
             starts_at, ends_at = local_datetime_for_reservation(
                 data.start_date,
@@ -53,57 +61,92 @@ class ReservationService:
                 reservation.place = place
             trip.reservations.append(reservation)
             self._reservations.add(reservation)
+            trip.revision += 1
             self._session.flush()
             return reservation
 
-    def update(self, trip_id: UUID, reservation_id: UUID, data: ReservationUpdate) -> Reservation:
+    def update(
+        self,
+        trip_id: UUID,
+        reservation_id: UUID,
+        data: ReservationUpdate,
+        *,
+        expected_revision: int | None = None,
+    ) -> Reservation:
         with self._session.begin():
             trip = self._get_trip(trip_id, for_update=True)
+            require_expected_revision(trip.revision, expected_revision, aggregate="trip")
             reservation = self._find_reservation(trip, reservation_id)
+            changed = False
 
             if "reservation_type" in data.model_fields_set:
                 if data.reservation_type is None:
                     raise DomainError(
                         "invalid_reservation_type", "reservation_type cannot be null."
                     )
+                changed = changed or reservation.reservation_type != data.reservation_type
                 reservation.reservation_type = data.reservation_type
             if "status" in data.model_fields_set:
                 if data.status is None:
                     raise DomainError("invalid_reservation_status", "status cannot be null.")
+                changed = changed or reservation.status != data.status
                 reservation.status = data.status
             if "provider_name" in data.model_fields_set:
                 if data.provider_name is None:
                     raise DomainError("invalid_provider_name", "provider_name cannot be null.")
+                changed = changed or reservation.provider_name != data.provider_name
                 reservation.provider_name = data.provider_name
             if "confirmation_code" in data.model_fields_set:
+                changed = changed or reservation.confirmation_code != data.confirmation_code
                 reservation.confirmation_code = data.confirmation_code
             if "source_reference" in data.model_fields_set:
+                changed = changed or reservation.source_reference != data.source_reference
                 reservation.source_reference = data.source_reference
             if "notes" in data.model_fields_set:
+                changed = changed or reservation.notes != data.notes
                 reservation.notes = data.notes
             if "place_id" in data.model_fields_set:
-                reservation.place = self._get_place(data.place_id)
+                place = self._get_place(data.place_id)
+                changed = changed or reservation.place_id != (
+                    place.id if place is not None else None
+                )
+                reservation.place = place
             if {
                 "start_date",
                 "start_time",
                 "end_date",
                 "end_time",
             }.issubset(data.model_fields_set):
-                reservation.starts_at, reservation.ends_at = local_datetime_for_reservation(
+                starts_at, ends_at = local_datetime_for_reservation(
                     data.start_date,
                     data.start_time,
                     data.end_date,
                     data.end_time,
                     trip.timezone,
                 )
+                changed = (
+                    changed or reservation.starts_at != starts_at or reservation.ends_at != ends_at
+                )
+                reservation.starts_at, reservation.ends_at = starts_at, ends_at
+            if changed:
+                trip.revision += 1
             self._session.flush()
             return reservation
 
-    def delete(self, trip_id: UUID, reservation_id: UUID) -> None:
+    def delete(
+        self,
+        trip_id: UUID,
+        reservation_id: UUID,
+        *,
+        expected_revision: int | None = None,
+    ) -> None:
         with self._session.begin():
             trip = self._get_trip(trip_id, for_update=True)
+            require_expected_revision(trip.revision, expected_revision, aggregate="trip")
             reservation = self._find_reservation(trip, reservation_id)
             self._reservations.delete(reservation)
+            self._session.flush()
+            trip.revision += 1
             self._session.flush()
 
     def _get_trip(self, trip_id: UUID, *, for_update: bool = False) -> Trip:

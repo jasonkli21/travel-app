@@ -2,7 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Response, status
 
-from personal_travel.api.dependencies import OwnerDependency, SessionDependency
+from personal_travel.api.dependencies import ExpectedRevision, OwnerDependency, SessionDependency
 from personal_travel.api.schemas import (
     COMMON_ERROR_RESPONSES,
     ReservationCreate,
@@ -64,8 +64,11 @@ def create_reservation(
     payload: ReservationCreate,
     session: SessionDependency,
     owner_id: OwnerDependency,
+    expected_revision: ExpectedRevision = None,
 ) -> ReservationResponse:
-    reservation = ReservationService(session, owner_id).create(trip_id, payload)
+    reservation = ReservationService(session, owner_id).create(
+        trip_id, payload, expected_revision=expected_revision
+    )
     return _reservation_response(trip_id, reservation.id, session, owner_id)
 
 
@@ -76,8 +79,11 @@ def update_reservation(
     payload: ReservationUpdate,
     session: SessionDependency,
     owner_id: OwnerDependency,
+    expected_revision: ExpectedRevision = None,
 ) -> ReservationResponse:
-    ReservationService(session, owner_id).update(trip_id, reservation_id, payload)
+    ReservationService(session, owner_id).update(
+        trip_id, reservation_id, payload, expected_revision=expected_revision
+    )
     return _reservation_response(trip_id, reservation_id, session, owner_id)
 
 
@@ -87,6 +93,9 @@ def delete_reservation(
     reservation_id: UUID,
     session: SessionDependency,
     owner_id: OwnerDependency,
+    expected_revision: ExpectedRevision = None,
 ) -> Response:
-    ReservationService(session, owner_id).delete(trip_id, reservation_id)
+    ReservationService(session, owner_id).delete(
+        trip_id, reservation_id, expected_revision=expected_revision
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

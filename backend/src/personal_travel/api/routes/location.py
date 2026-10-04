@@ -3,7 +3,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query
 
-from personal_travel.api.dependencies import OwnerDependency, SessionDependency
+from personal_travel.api.dependencies import ExpectedRevision, OwnerDependency, SessionDependency
 from personal_travel.api.schemas import (
     COMMON_ERROR_RESPONSES,
     ErrorResponse,
@@ -52,8 +52,11 @@ def import_place(
     payload: PlaceImportRequest,
     session: SessionDependency,
     owner_id: OwnerDependency,
+    expected_revision: ExpectedRevision = None,
 ) -> SavedPlaceResponse:
-    saved_place = LocationService(session, owner_id).import_place(trip_id, payload)
+    saved_place = LocationService(session, owner_id).import_place(
+        trip_id, payload, expected_revision=expected_revision
+    )
     return serialize_saved_place(saved_place)
 
 

@@ -2,7 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, status
 
-from personal_travel.api.dependencies import OwnerDependency, SessionDependency
+from personal_travel.api.dependencies import ExpectedRevision, OwnerDependency, SessionDependency
 from personal_travel.api.schemas import (
     COMMON_ERROR_RESPONSES,
     ItemCreate,
@@ -28,9 +28,10 @@ def create_item(
     payload: ItemCreate,
     session: SessionDependency,
     owner_id: OwnerDependency,
+    expected_revision: ExpectedRevision = None,
 ) -> TripDetailResponse:
     service = ItineraryService(session, owner_id)
-    service.create_item(trip_id, day_id, payload)
+    service.create_item(trip_id, day_id, payload, expected_revision=expected_revision)
     return serialize_detail(TripService(session, owner_id).get(trip_id))
 
 
@@ -41,9 +42,10 @@ def update_item(
     payload: ItemUpdate,
     session: SessionDependency,
     owner_id: OwnerDependency,
+    expected_revision: ExpectedRevision = None,
 ) -> TripDetailResponse:
     service = ItineraryService(session, owner_id)
-    service.update_item(trip_id, item_id, payload)
+    service.update_item(trip_id, item_id, payload, expected_revision=expected_revision)
     return serialize_detail(TripService(session, owner_id).get(trip_id))
 
 
@@ -53,8 +55,11 @@ def delete_item(
     item_id: UUID,
     session: SessionDependency,
     owner_id: OwnerDependency,
+    expected_revision: ExpectedRevision = None,
 ) -> None:
-    ItineraryService(session, owner_id).delete_item(trip_id, item_id)
+    ItineraryService(session, owner_id).delete_item(
+        trip_id, item_id, expected_revision=expected_revision
+    )
 
 
 @router.post("/items/{item_id}/move", response_model=TripDetailResponse)
@@ -64,7 +69,8 @@ def move_item(
     payload: MoveItemRequest,
     session: SessionDependency,
     owner_id: OwnerDependency,
+    expected_revision: ExpectedRevision = None,
 ) -> TripDetailResponse:
     service = ItineraryService(session, owner_id)
-    service.move_item(trip_id, item_id, payload)
+    service.move_item(trip_id, item_id, payload, expected_revision=expected_revision)
     return serialize_detail(TripService(session, owner_id).get(trip_id))

@@ -86,6 +86,7 @@ class PlaceSummaryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    revision: int = Field(ge=0)
     name: str
     address: str | None
     category: str | None

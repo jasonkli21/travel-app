@@ -25,6 +25,7 @@ import TripMap, { type TripMapMarker, type TripMapRoute } from "./trip-map";
 import TripResearchPanel from "./trip-research-panel";
 import { errorMessage } from "../lib/errors";
 import { uncertainMutationError } from "../lib/mutation-outcome.mjs";
+import { revisionConflictRecovery } from "../lib/revision-conflict.mjs";
 import { safeHttpUrl } from "../lib/urls.mjs";
 import ItemForm from "./trip-workspace/item-form";
 import DayTitleForm from "./trip-workspace/day-title-form";
@@ -180,6 +181,12 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
   };
 
   const mutationError = (nextError: unknown) => {
+    const revisionRecovery = revisionConflictRecovery(nextError);
+    if (revisionRecovery?.requiresReload) {
+      setStale(true);
+      setError(revisionRecovery.message);
+      return;
+    }
     if (uncertainMutationError(nextError)) {
       setStale(true);
       setError("The change could not be confirmed. Reload and check the workspace before submitting again.");
@@ -231,7 +238,7 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
   };
 
   const importSearchResult = async (result: PlaceSearchResult) => {
-    if (mutationInFlight.current || stale) return;
+    if (mutationInFlight.current || stale || !trip) return;
     mutationInFlight.current = true;
     setLocationError(null);
     setPending(`provider-import-${result.provider_place_id}`);
@@ -249,7 +256,7 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
         provider_source_license: result.provider_source_license,
         provider_source_url: result.provider_source_url,
         note: null,
-      });
+      }, trip.revision);
       setPlaceSearchResults((current) =>
         current.filter((candidate) => candidate.provider_place_id !== result.provider_place_id),
       );
@@ -293,9 +300,10 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
   };
 
   const deleteTrip = () => {
+    if (!trip) return;
     if (!window.confirm("Permanently delete this trip, reservations, candidates, and itinerary items?")) return;
     void run("trip-delete", async () => {
-      await travelApi.deleteTrip(tripId);
+      await travelApi.deleteTrip(tripId, trip.revision);
       router.push("/");
     }, { refreshAfter: false });
   };
@@ -399,15 +407,18 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
   const saveTrip = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     void run("trip", async () => {
-      await travelApi.updateTrip(tripId, tripForm);
+      await travelApi.updateTrip(tripId, tripForm, trip.revision);
       setShowTripEditor(false);
     });
   };
 
   const saveReservation = async (input: CreateReservationInput | UpdateReservationInput, reservationId?: string) => {
     const saved = await run(`reservation-${reservationId ?? "new"}`, async () => {
-      if (reservationId) await travelApi.updateReservation(tripId, reservationId, input);
-      else await travelApi.createReservation(tripId, input as CreateReservationInput);
+      if (reservationId) {
+        await travelApi.updateReservation(tripId, reservationId, input, trip.revision);
+      } else {
+        await travelApi.createReservation(tripId, input as CreateReservationInput, trip.revision);
+      }
     });
     if (saved) {
       setAddingReservation(false);
@@ -418,7 +429,11 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
 
   const savePlace = async (input: CreatePlaceInput | UpdatePlaceInput, placeId?: string) => {
     const saved = await run(`place-${placeId ?? "new"}`, async () => {
-      if (placeId) await travelApi.updatePlace(placeId, input as UpdatePlaceInput);
+      if (placeId) {
+        const place = places.find((candidate) => candidate.id === placeId);
+        if (!place) throw new Error("The place is no longer available in this workspace.");
+        await travelApi.updatePlace(placeId, input as UpdatePlaceInput, place.revision);
+      }
       else await travelApi.createPlace(input as CreatePlaceInput);
     });
     if (saved) {
@@ -432,7 +447,7 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
     const saved = await run(
       "research-candidate",
       async () => {
-        await travelApi.createManualSavedPlace(trip.id, input);
+        await travelApi.createManualSavedPlace(trip.id, input, trip.revision);
       },
     );
     return saved;
@@ -636,7 +651,7 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
                 <div className="dayHeading">
                   <div>
                     <p className="date">Day {day.day_index} · {formatDate(day.date)}</p>
-                    <DayTitleForm key={`${day.id}-${day.title ?? ""}`} dayId={day.id} title={day.title} pending={pending === `day-${day.id}`} disabled={(pending !== null || stale)} onSave={(title) => run(`day-${day.id}`, async () => { await travelApi.updateDay(trip.id, day.id, title); })} />
+                    <DayTitleForm key={`${day.id}-${day.title ?? ""}`} dayId={day.id} title={day.title} pending={pending === `day-${day.id}`} disabled={(pending !== null || stale)} onSave={(title) => run(`day-${day.id}`, async () => { await travelApi.updateDay(trip.id, day.id, title, trip.revision); })} />
                   </div>
                   <button className="secondary compact" type="button" onClick={() => setAddingDay((current) => current === day.id ? null : day.id)} disabled={(pending !== null || stale)}>{addingDay === day.id ? "Close form" : "+ Add item"}</button>
                 </div>
@@ -654,17 +669,17 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
                         </div>
                         <div className="itemActions">
                           <button className="iconButton" type="button" onClick={() => setEditingItem((current) => current === item.id ? null : item.id)} disabled={(pending !== null || stale)} aria-expanded={editingItem === item.id}>{editingItem === item.id ? "Close" : "Edit"}</button>
-                          <button className="iconButton" type="button" onClick={() => void run(`move-${item.id}`, () => travelApi.moveItem(trip.id, item.id, day.id, Math.max(index - 1, 0)).then(() => undefined))} disabled={(pending !== null || stale) || index === 0} aria-label="Move item up">↑</button>
-                          <button className="iconButton" type="button" onClick={() => void run(`move-${item.id}`, () => travelApi.moveItem(trip.id, item.id, day.id, index + 1).then(() => undefined))} disabled={(pending !== null || stale) || index === day.items.length - 1} aria-label="Move item down">↓</button>
-                          <select className="moveSelect" defaultValue="" onChange={(event) => { const destination = trip.days.find((candidate) => candidate.id === event.target.value); if (destination) void run(`move-${item.id}`, () => travelApi.moveItem(trip.id, item.id, destination.id, destination.items.length).then(() => undefined)); event.currentTarget.value = ""; }} disabled={(pending !== null || stale)} aria-label="Move item to another day"><option value="">Move to…</option>{trip.days.filter((candidate) => candidate.id !== day.id).map((candidate) => <option key={candidate.id} value={candidate.id}>Day {candidate.day_index}</option>)}</select>
-                          <button className="iconButton dangerText" type="button" onClick={() => { if (window.confirm(`Delete ${item.title}?`)) void run(`delete-${item.id}`, async () => { await travelApi.deleteItem(trip.id, item.id); }); }} disabled={(pending !== null || stale)} aria-label={`Delete ${item.title}`}>Delete</button>
+                          <button className="iconButton" type="button" onClick={() => void run(`move-${item.id}`, () => travelApi.moveItem(trip.id, item.id, day.id, Math.max(index - 1, 0), trip.revision).then(() => undefined))} disabled={(pending !== null || stale) || index === 0} aria-label="Move item up">↑</button>
+                          <button className="iconButton" type="button" onClick={() => void run(`move-${item.id}`, () => travelApi.moveItem(trip.id, item.id, day.id, index + 1, trip.revision).then(() => undefined))} disabled={(pending !== null || stale) || index === day.items.length - 1} aria-label="Move item down">↓</button>
+                          <select className="moveSelect" defaultValue="" onChange={(event) => { const destination = trip.days.find((candidate) => candidate.id === event.target.value); if (destination) void run(`move-${item.id}`, () => travelApi.moveItem(trip.id, item.id, destination.id, destination.items.length, trip.revision).then(() => undefined)); event.currentTarget.value = ""; }} disabled={(pending !== null || stale)} aria-label="Move item to another day"><option value="">Move to…</option>{trip.days.filter((candidate) => candidate.id !== day.id).map((candidate) => <option key={candidate.id} value={candidate.id}>Day {candidate.day_index}</option>)}</select>
+                          <button className="iconButton dangerText" type="button" onClick={() => { if (window.confirm(`Delete ${item.title}?`)) void run(`delete-${item.id}`, async () => { await travelApi.deleteItem(trip.id, item.id, trip.revision); }); }} disabled={(pending !== null || stale)} aria-label={`Delete ${item.title}`}>Delete</button>
                         </div>
                       </div>
-                      {editingItem === item.id ? <ItemForm trip={trip} dayId={day.id} places={places} reservations={reservations} initial={item} pending={pending === `item-${item.id}`} disabled={(pending !== null || stale)} onSubmit={async (input) => { const saved = await run(`item-${item.id}`, async () => { await travelApi.updateItem(trip.id, item.id, input); }); if (saved) setEditingItem(null); return saved; }} onCreatePlace={createPlace} onCancel={() => setEditingItem(null)} /> : null}
+                      {editingItem === item.id ? <ItemForm trip={trip} dayId={day.id} places={places} reservations={reservations} initial={item} pending={pending === `item-${item.id}`} disabled={(pending !== null || stale)} onSubmit={async (input) => { const saved = await run(`item-${item.id}`, async () => { await travelApi.updateItem(trip.id, item.id, input, trip.revision); }); if (saved) setEditingItem(null); return saved; }} onCreatePlace={createPlace} onCancel={() => setEditingItem(null)} /> : null}
                     </div>
                   ))}
                 </div>
-                {addingDay === day.id ? <ItemForm trip={trip} dayId={day.id} places={places} reservations={reservations} pending={pending === `add-${day.id}`} disabled={(pending !== null || stale)} onSubmit={async (input) => { const saved = await run(`add-${day.id}`, async () => { await travelApi.createItem(trip.id, day.id, input as CreateItemInput); }); if (saved) setAddingDay(null); return saved; }} onCreatePlace={createPlace} /> : null}
+                {addingDay === day.id ? <ItemForm trip={trip} dayId={day.id} places={places} reservations={reservations} pending={pending === `add-${day.id}`} disabled={(pending !== null || stale)} onSubmit={async (input) => { const saved = await run(`add-${day.id}`, async () => { await travelApi.createItem(trip.id, day.id, input as CreateItemInput, trip.revision); }); if (saved) setAddingDay(null); return saved; }} onCreatePlace={createPlace} /> : null}
               </article>
             ))}
           </div>
@@ -694,7 +709,7 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
                 {reservation.conflicts.length > 0 ? <div className="conflictBox" role="alert"><strong>{reservation.conflicts.length} scheduling {reservation.conflicts.length === 1 ? "conflict" : "conflicts"}</strong><ul>{reservation.conflicts.map((conflict) => <li key={conflict.item_id}>Day {conflict.day_index} · {conflict.title}{conflict.start_time ? ` (${conflict.start_time}${conflict.end_time ? `–${conflict.end_time}` : ""})` : ""}</li>)}</ul><p>{reservation.conflicts[0].reason} Review the plan before applying any change.</p></div> : null}
                 <div className="formActions">
                   <button className="secondary compact" type="button" onClick={() => { setEditingReservation((current) => current === reservation.id ? null : reservation.id); setAddingReservation(false); }} disabled={(pending !== null || stale)}>{editingReservation === reservation.id ? "Close editor" : "Edit reservation"}</button>
-                  <button className="iconButton dangerText" type="button" onClick={() => { if (window.confirm(`Permanently delete the ${reservation.provider_name} reservation?`)) void run(`delete-reservation-${reservation.id}`, async () => { await travelApi.deleteReservation(trip.id, reservation.id); }); }} disabled={(pending !== null || stale)}>Delete</button>
+                  <button className="iconButton dangerText" type="button" onClick={() => { if (window.confirm(`Permanently delete the ${reservation.provider_name} reservation?`)) void run(`delete-reservation-${reservation.id}`, async () => { await travelApi.deleteReservation(trip.id, reservation.id, trip.revision); }); }} disabled={(pending !== null || stale)}>Delete</button>
                 </div>
                 {editingReservation === reservation.id ? <ReservationForm key={`${reservation.id}-${reservation.updated_at}`} places={places} initial={reservation} pending={pending === `reservation-${reservation.id}`} disabled={(pending !== null || stale)} onSubmit={(input) => saveReservation(input, reservation.id)} onCancel={() => setEditingReservation(null)} /> : null}
               </article>
@@ -717,14 +732,14 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
           <div className="placeList">
             {places.length === 0 ? <p className="emptyText">No places yet.</p> : places.map((place) => {
               const saved = savedPlaceIds.has(place.id);
-              return <div className="placeRow" key={place.id}><strong>{place.name}</strong>{place.category || place.address ? <span>{[place.category, place.address].filter(Boolean).join(" · ")}</span> : null}<PlaceAttribution place={place} />{place.phone || place.website_url ? <span>{[place.phone, place.website_url].filter(Boolean).join(" · ")}</span> : null}<div className="placeActions"><button className="iconButton" type="button" onClick={() => { setEditingPlace((current) => current === place.id ? null : place.id); setShowPlaceForm(false); }} disabled={(pending !== null || stale)}>{editingPlace === place.id ? "Close" : "Edit"}</button><button className="iconButton" type="button" onClick={() => void run(`save-place-${place.id}`, async () => { if (!saved) await travelApi.createSavedPlace(trip.id, { place_id: place.id, note: null }); })} disabled={(pending !== null || stale) || saved}>{saved ? "Saved" : "Save"}</button></div></div>;
+              return <div className="placeRow" key={place.id}><strong>{place.name}</strong>{place.category || place.address ? <span>{[place.category, place.address].filter(Boolean).join(" · ")}</span> : null}<PlaceAttribution place={place} />{place.phone || place.website_url ? <span>{[place.phone, place.website_url].filter(Boolean).join(" · ")}</span> : null}<div className="placeActions"><button className="iconButton" type="button" onClick={() => { setEditingPlace((current) => current === place.id ? null : place.id); setShowPlaceForm(false); }} disabled={(pending !== null || stale)}>{editingPlace === place.id ? "Close" : "Edit"}</button><button className="iconButton" type="button" onClick={() => void run(`save-place-${place.id}`, async () => { if (!saved) await travelApi.createSavedPlace(trip.id, { place_id: place.id, note: null }, trip.revision); })} disabled={(pending !== null || stale) || saved}>{saved ? "Saved" : "Save"}</button></div></div>;
             })}
           </div>
         </div>
         <div className="placeGroup">
           <p className="sectionLabel">This trip’s candidates</p>
           <div className="placeList">
-            {savedPlaces.length === 0 ? <p className="emptyText">No saved candidates yet.</p> : savedPlaces.map((savedPlace) => <div className="placeRow" key={savedPlace.id}><strong>{savedPlace.place.name}</strong>{savedPlace.place.category ? <span>{savedPlace.place.category}</span> : null}<PlaceAttribution place={savedPlace.place} /><SavedPlaceNoteForm key={`${savedPlace.id}-${savedPlace.updated_at}`} savedPlace={savedPlace} pending={pending === `saved-place-${savedPlace.id}`} disabled={(pending !== null || stale)} onSave={(note) => run(`saved-place-${savedPlace.id}`, async () => { await travelApi.updateSavedPlace(trip.id, savedPlace.id, { note }); })} /><button className="iconButton dangerText" type="button" onClick={() => void run(`remove-saved-place-${savedPlace.id}`, async () => { await travelApi.deleteSavedPlace(trip.id, savedPlace.id); })} disabled={(pending !== null || stale)}>Remove candidate</button></div>)}
+            {savedPlaces.length === 0 ? <p className="emptyText">No saved candidates yet.</p> : savedPlaces.map((savedPlace) => <div className="placeRow" key={savedPlace.id}><strong>{savedPlace.place.name}</strong>{savedPlace.place.category ? <span>{savedPlace.place.category}</span> : null}<PlaceAttribution place={savedPlace.place} /><SavedPlaceNoteForm key={`${savedPlace.id}-${savedPlace.updated_at}`} savedPlace={savedPlace} pending={pending === `saved-place-${savedPlace.id}`} disabled={(pending !== null || stale)} onSave={(note) => run(`saved-place-${savedPlace.id}`, async () => { await travelApi.updateSavedPlace(trip.id, savedPlace.id, { note }, trip.revision); })} /><button className="iconButton dangerText" type="button" onClick={() => void run(`remove-saved-place-${savedPlace.id}`, async () => { await travelApi.deleteSavedPlace(trip.id, savedPlace.id, trip.revision); })} disabled={(pending !== null || stale)}>Remove candidate</button></div>)}
           </div>
         </div>
         <div className="aiBoundary"><span>Optional research</span><code>travel-api → personal-ai-system</code><p>Research and provider evidence remain separate from these authoritative manual records.</p></div>

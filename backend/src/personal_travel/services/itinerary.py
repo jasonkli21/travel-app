@@ -12,6 +12,7 @@ from personal_travel.repositories.places import SqlAlchemyPlaceRepository
 from personal_travel.repositories.reservations import SqlAlchemyReservationRepository
 from personal_travel.repositories.trips import SqlAlchemyTripRepository
 from personal_travel.services.errors import DomainError, not_found
+from personal_travel.services.revisions import require_expected_revision
 from personal_travel.services.time_utils import local_datetime_for_item, local_time_string
 
 
@@ -24,9 +25,17 @@ class ItineraryService:
         self._reservations = SqlAlchemyReservationRepository(session)
         self._items = SqlAlchemyItineraryItemRepository(session)
 
-    def create_item(self, trip_id: UUID, day_id: UUID, data: ItemCreate) -> ItineraryItem:
+    def create_item(
+        self,
+        trip_id: UUID,
+        day_id: UUID,
+        data: ItemCreate,
+        *,
+        expected_revision: int | None = None,
+    ) -> ItineraryItem:
         with self._session.begin():
             trip = self._get_trip(trip_id)
+            require_expected_revision(trip.revision, expected_revision, aggregate="trip")
             day = self._find_day(trip, day_id)
             place = self._get_place(data.place_id)
             reservation = self._get_reservation(trip.id, data.reservation_id)
@@ -48,31 +57,51 @@ class ItineraryService:
                 item.reservation = reservation
             day.items.append(item)
             self._items.add(item)
+            trip.revision += 1
             self._session.flush()
             return item
 
-    def update_item(self, trip_id: UUID, item_id: UUID, data: ItemUpdate) -> ItineraryItem:
+    def update_item(
+        self,
+        trip_id: UUID,
+        item_id: UUID,
+        data: ItemUpdate,
+        *,
+        expected_revision: int | None = None,
+    ) -> ItineraryItem:
         with self._session.begin():
             trip = self._get_trip(trip_id)
+            require_expected_revision(trip.revision, expected_revision, aggregate="trip")
             day, item = self._find_item(trip, item_id)
+            changed = False
             if "item_type" in data.model_fields_set:
                 if data.item_type is None:
                     raise DomainError("invalid_item_type", "item_type cannot be null.")
+                changed = changed or item.item_type != data.item_type
                 item.item_type = data.item_type
             if "title" in data.model_fields_set:
                 if data.title is None:
                     raise DomainError("invalid_title", "title cannot be null.")
+                changed = changed or item.title != data.title
                 item.title = data.title
             if "notes" in data.model_fields_set:
+                changed = changed or item.notes != data.notes
                 item.notes = data.notes
             if "status" in data.model_fields_set:
                 if data.status is None:
                     raise DomainError("invalid_status", "status cannot be null.")
+                changed = changed or item.status != data.status
                 item.status = data.status
             if "place_id" in data.model_fields_set:
-                item.place = self._get_place(data.place_id)
+                place = self._get_place(data.place_id)
+                changed = changed or item.place_id != (place.id if place is not None else None)
+                item.place = place
             if "reservation_id" in data.model_fields_set:
-                item.reservation = self._get_reservation(trip.id, data.reservation_id)
+                reservation = self._get_reservation(trip.id, data.reservation_id)
+                changed = changed or item.reservation_id != (
+                    reservation.id if reservation is not None else None
+                )
+                item.reservation = reservation
 
             if "start_time" in data.model_fields_set or "end_time" in data.model_fields_set:
                 current_start = local_time_string(item.starts_at, trip.timezone)
@@ -81,27 +110,51 @@ class ItineraryService:
                     data.start_time if "start_time" in data.model_fields_set else current_start
                 )
                 end_value = data.end_time if "end_time" in data.model_fields_set else current_end
-                item.starts_at, item.ends_at = local_datetime_for_item(
+                starts_at, ends_at = local_datetime_for_item(
                     day.date, start_value, end_value, trip.timezone
                 )
+                changed = changed or item.starts_at != starts_at or item.ends_at != ends_at
+                item.starts_at, item.ends_at = starts_at, ends_at
+            if changed:
+                trip.revision += 1
             self._session.flush()
             return item
 
-    def delete_item(self, trip_id: UUID, item_id: UUID) -> None:
+    def delete_item(
+        self,
+        trip_id: UUID,
+        item_id: UUID,
+        *,
+        expected_revision: int | None = None,
+    ) -> None:
         with self._session.begin():
             trip = self._get_trip(trip_id)
+            require_expected_revision(trip.revision, expected_revision, aggregate="trip")
             day, item = self._find_item(trip, item_id)
             day.items.remove(item)
             self._items.delete(item)
             self._session.flush()
             self._reindex(day)
+            trip.revision += 1
             self._session.flush()
 
-    def move_item(self, trip_id: UUID, item_id: UUID, data: MoveItemRequest) -> ItineraryItem:
+    def move_item(
+        self,
+        trip_id: UUID,
+        item_id: UUID,
+        data: MoveItemRequest,
+        *,
+        expected_revision: int | None = None,
+    ) -> ItineraryItem:
         with self._session.begin():
             trip = self._get_trip(trip_id)
+            require_expected_revision(trip.revision, expected_revision, aggregate="trip")
             source_day, item = self._find_item(trip, item_id)
             destination_day = self._find_day(trip, data.destination_day_id)
+            original_position = source_day.items.index(item)
+
+            if source_day is destination_day and data.position == original_position:
+                return item
 
             # Moving a timed item preserves its wall-clock schedule on the new
             # date. Resolve before changing the graph so DST failures roll back
@@ -135,6 +188,8 @@ class ItineraryService:
                 destination_day.items.insert(data.position, item)
                 self._reindex(source_day, destination_day)
 
+            self._session.flush()
+            trip.revision += 1
             self._session.flush()
             return item
 

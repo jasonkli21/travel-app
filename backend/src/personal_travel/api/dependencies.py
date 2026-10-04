@@ -1,7 +1,7 @@
 from collections.abc import Iterator
 from typing import Annotated
 
-from fastapi import Depends
+from fastapi import Depends, Header
 from sqlalchemy.orm import Session
 
 from personal_travel.config import Settings, get_settings
@@ -18,3 +18,7 @@ def owner_dependency(settings: Annotated[Settings, Depends(get_settings)]) -> st
 
 SessionDependency = Annotated[Session, Depends(session_dependency)]
 OwnerDependency = Annotated[str, Depends(owner_dependency)]
+ExpectedRevision = Annotated[
+    int | None,
+    Header(alias="X-Expected-Revision", ge=0),
+]

@@ -2,7 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Response, status
 
-from personal_travel.api.dependencies import OwnerDependency, SessionDependency
+from personal_travel.api.dependencies import ExpectedRevision, OwnerDependency, SessionDependency
 from personal_travel.api.schemas import (
     COMMON_ERROR_RESPONSES,
     DayUpdate,
@@ -52,8 +52,11 @@ def update_trip(
     payload: TripUpdate,
     session: SessionDependency,
     owner_id: OwnerDependency,
+    expected_revision: ExpectedRevision = None,
 ) -> TripDetailResponse:
-    return serialize_detail(TripService(session, owner_id).update(trip_id, payload))
+    return serialize_detail(
+        TripService(session, owner_id).update(trip_id, payload, expected_revision=expected_revision)
+    )
 
 
 @router.delete("/{trip_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -61,8 +64,9 @@ def delete_trip(
     trip_id: UUID,
     session: SessionDependency,
     owner_id: OwnerDependency,
+    expected_revision: ExpectedRevision = None,
 ) -> Response:
-    TripService(session, owner_id).delete(trip_id)
+    TripService(session, owner_id).delete(trip_id, expected_revision=expected_revision)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -73,7 +77,8 @@ def update_day(
     payload: DayUpdate,
     session: SessionDependency,
     owner_id: OwnerDependency,
+    expected_revision: ExpectedRevision = None,
 ) -> TripDetailResponse:
     service = TripService(session, owner_id)
-    service.update_day(trip_id, day_id, payload)
+    service.update_day(trip_id, day_id, payload, expected_revision=expected_revision)
     return serialize_detail(service.get(trip_id))

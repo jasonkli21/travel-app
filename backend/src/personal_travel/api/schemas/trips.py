@@ -67,6 +67,7 @@ class TripDayResponse(BaseModel):
 
 class TripSummaryResponse(BaseModel):
     id: UUID
+    revision: int = Field(ge=0)
     title: str
     start_date: date
     end_date: date

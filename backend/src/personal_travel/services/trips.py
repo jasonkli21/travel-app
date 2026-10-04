@@ -9,6 +9,7 @@ from personal_travel.api.schemas import DayUpdate, TripCreate, TripUpdate
 from personal_travel.models.trip import Trip, TripDay
 from personal_travel.repositories.trips import SqlAlchemyTripRepository
 from personal_travel.services.errors import DomainError, not_found
+from personal_travel.services.revisions import require_expected_revision
 from personal_travel.services.time_utils import (
     as_aware_utc,
     get_zoneinfo,
@@ -69,9 +70,16 @@ class TripService:
             raise not_found("trip")
         return trip
 
-    def update(self, trip_id: UUID, data: TripUpdate) -> Trip:
+    def update(
+        self,
+        trip_id: UUID,
+        data: TripUpdate,
+        *,
+        expected_revision: int | None = None,
+    ) -> Trip:
         with self._session.begin():
             trip = self._get_in_transaction(trip_id)
+            require_expected_revision(trip.revision, expected_revision, aggregate="trip")
             target_start = (
                 data.start_date if "start_date" in data.model_fields_set else trip.start_date
             )
@@ -86,6 +94,13 @@ class TripService:
             validate_trip_range(target_start, target_end)
             get_zoneinfo(target_timezone)
 
+            changed = (
+                target_start != trip.start_date
+                or target_end != trip.end_date
+                or target_timezone != trip.timezone
+                or ("title" in data.model_fields_set and data.title != trip.title)
+            )
+
             if target_start != trip.start_date or target_end != trip.end_date:
                 self._reconcile_days(trip, target_start, target_end)
             if target_timezone != trip.timezone:
@@ -99,21 +114,34 @@ class TripService:
             trip.start_date = target_start
             trip.end_date = target_end
             trip.timezone = target_timezone
+            if changed:
+                trip.revision += 1
             self._session.flush()
             return trip
 
-    def update_day(self, trip_id: UUID, day_id: UUID, data: DayUpdate) -> TripDay:
+    def update_day(
+        self,
+        trip_id: UUID,
+        day_id: UUID,
+        data: DayUpdate,
+        *,
+        expected_revision: int | None = None,
+    ) -> TripDay:
         with self._session.begin():
             trip = self._get_in_transaction(trip_id)
+            require_expected_revision(trip.revision, expected_revision, aggregate="trip")
             day = self._find_day(trip, day_id)
             if "title" in data.model_fields_set:
-                day.title = data.title
+                if day.title != data.title:
+                    day.title = data.title
+                    trip.revision += 1
             self._session.flush()
             return day
 
-    def delete(self, trip_id: UUID) -> None:
+    def delete(self, trip_id: UUID, *, expected_revision: int | None = None) -> None:
         with self._session.begin():
             trip = self._get_in_transaction(trip_id)
+            require_expected_revision(trip.revision, expected_revision, aggregate="trip")
             self._trips.delete(trip)
 
     def _get_in_transaction(self, trip_id: UUID) -> Trip:

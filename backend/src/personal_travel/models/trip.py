@@ -4,7 +4,15 @@ import uuid
 from datetime import date
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, Date, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    Date,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -24,6 +32,7 @@ class Trip(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
     timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="UTC")
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 
     days: Mapped[list[TripDay]] = relationship(
         back_populates="trip", cascade="all, delete-orphan", order_by="TripDay.day_index"
@@ -37,6 +46,7 @@ class Trip(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     __table_args__ = (
         CheckConstraint("start_date <= end_date", name="valid_date_range"),
+        CheckConstraint("revision >= 0", name="revision_nonnegative"),
         Index("ix_trips_owner_start_date", "owner_id", "start_date"),
     )
 

@@ -11,6 +11,7 @@ export type ResearchState = "pending" | "running" | "completed" | "insufficient"
 
 export interface PlaceSummary {
   id: string;
+  revision: number;
   name: string;
   address: string | null;
   category: string | null;
@@ -108,6 +109,7 @@ export interface TripDay {
 
 export interface TripSummary {
   id: string;
+  revision: number;
   title: string;
   start_date: string;
   end_date: string;
@@ -272,28 +274,39 @@ export interface ApiErrorPayload {
   };
 }
 
+const expectedRevision = (revision: number) => ({
+  "X-Expected-Revision": String(revision),
+});
+
 export const travelApi = {
   listTrips: () => request<TripSummary[]>("/trips"),
   createTrip: (input: CreateTripInput) =>
     request<TripDetail>("/trips", { method: "POST", body: JSON.stringify(input) }),
   getTrip: (tripId: string) => request<TripDetail>(`/trips/${tripId}`),
-  updateTrip: (tripId: string, input: UpdateTripInput) =>
-    request<TripDetail>(`/trips/${tripId}`, { method: "PATCH", body: JSON.stringify(input) }),
-  deleteTrip: (tripId: string) => request<void>(`/trips/${tripId}`, { method: "DELETE" }),
-  updateDay: (tripId: string, dayId: string, title: string | null) =>
+  updateTrip: (tripId: string, input: UpdateTripInput, revision: number) =>
+    request<TripDetail>(`/trips/${tripId}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+      headers: expectedRevision(revision),
+    }),
+  deleteTrip: (tripId: string, revision: number) =>
+    request<void>(`/trips/${tripId}`, { method: "DELETE", headers: expectedRevision(revision) }),
+  updateDay: (tripId: string, dayId: string, title: string | null, revision: number) =>
     request<TripDetail>(`/trips/${tripId}/days/${dayId}`, {
       method: "PATCH",
       body: JSON.stringify({ title }),
+      headers: expectedRevision(revision),
     }),
   listPlaces: () => request<PlaceSummary[]>("/places"),
   searchPlaces: (tripId: string, query: string, limit = 10) =>
     request<PlaceSearchResult[]>(
       `/trips/${tripId}/places/search?q=${encodeURIComponent(query)}&limit=${limit}`,
     ),
-  importPlace: (tripId: string, input: ImportPlaceInput) =>
+  importPlace: (tripId: string, input: ImportPlaceInput, revision: number) =>
     request<SavedPlace>(`/trips/${tripId}/saved-places/import`, {
       method: "POST",
       body: JSON.stringify(input),
+      headers: expectedRevision(revision),
     }),
   estimateLogistics: (
     tripId: string,
@@ -317,54 +330,95 @@ export const travelApi = {
   }),
   createPlace: (input: CreatePlaceInput) =>
     request<PlaceSummary>("/places", { method: "POST", body: JSON.stringify(input) }),
-  updatePlace: (placeId: string, input: UpdatePlaceInput) =>
-    request<PlaceSummary>(`/places/${placeId}`, { method: "PATCH", body: JSON.stringify(input) }),
+  updatePlace: (placeId: string, input: UpdatePlaceInput, revision: number) =>
+    request<PlaceSummary>(`/places/${placeId}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+      headers: expectedRevision(revision),
+    }),
   listReservations: (tripId: string) => request<Reservation[]>(`/trips/${tripId}/reservations`),
-  createReservation: (tripId: string, input: CreateReservationInput) =>
+  createReservation: (tripId: string, input: CreateReservationInput, revision: number) =>
     request<Reservation>(`/trips/${tripId}/reservations`, {
       method: "POST",
       body: JSON.stringify(input),
+      headers: expectedRevision(revision),
     }),
-  updateReservation: (tripId: string, reservationId: string, input: UpdateReservationInput) =>
+  updateReservation: (
+    tripId: string,
+    reservationId: string,
+    input: UpdateReservationInput,
+    revision: number,
+  ) =>
     request<Reservation>(`/trips/${tripId}/reservations/${reservationId}`, {
       method: "PATCH",
       body: JSON.stringify(input),
+      headers: expectedRevision(revision),
     }),
-  deleteReservation: (tripId: string, reservationId: string) =>
-    request<void>(`/trips/${tripId}/reservations/${reservationId}`, { method: "DELETE" }),
+  deleteReservation: (tripId: string, reservationId: string, revision: number) =>
+    request<void>(`/trips/${tripId}/reservations/${reservationId}`, {
+      method: "DELETE",
+      headers: expectedRevision(revision),
+    }),
   listSavedPlaces: (tripId: string) => request<SavedPlace[]>(`/trips/${tripId}/saved-places`),
-  createSavedPlace: (tripId: string, input: CreateSavedPlaceInput) =>
+  createSavedPlace: (tripId: string, input: CreateSavedPlaceInput, revision: number) =>
     request<SavedPlace>(`/trips/${tripId}/saved-places`, {
       method: "POST",
       body: JSON.stringify(input),
+      headers: expectedRevision(revision),
     }),
-  createManualSavedPlace: (tripId: string, input: CreateManualSavedPlaceInput) =>
+  createManualSavedPlace: (
+    tripId: string,
+    input: CreateManualSavedPlaceInput,
+    revision: number,
+  ) =>
     request<SavedPlace>(`/trips/${tripId}/saved-places/manual`, {
       method: "POST",
       body: JSON.stringify(input),
+      headers: expectedRevision(revision),
     }),
-  updateSavedPlace: (tripId: string, savedPlaceId: string, input: UpdateSavedPlaceInput) =>
+  updateSavedPlace: (
+    tripId: string,
+    savedPlaceId: string,
+    input: UpdateSavedPlaceInput,
+    revision: number,
+  ) =>
     request<SavedPlace>(`/trips/${tripId}/saved-places/${savedPlaceId}`, {
       method: "PATCH",
       body: JSON.stringify(input),
+      headers: expectedRevision(revision),
     }),
-  deleteSavedPlace: (tripId: string, savedPlaceId: string) =>
-    request<void>(`/trips/${tripId}/saved-places/${savedPlaceId}`, { method: "DELETE" }),
-  createItem: (tripId: string, dayId: string, input: CreateItemInput) =>
+  deleteSavedPlace: (tripId: string, savedPlaceId: string, revision: number) =>
+    request<void>(`/trips/${tripId}/saved-places/${savedPlaceId}`, {
+      method: "DELETE",
+      headers: expectedRevision(revision),
+    }),
+  createItem: (tripId: string, dayId: string, input: CreateItemInput, revision: number) =>
     request<TripDetail>(`/trips/${tripId}/days/${dayId}/items`, {
       method: "POST",
       body: JSON.stringify(input),
+      headers: expectedRevision(revision),
     }),
-  updateItem: (tripId: string, itemId: string, input: UpdateItemInput) =>
+  updateItem: (tripId: string, itemId: string, input: UpdateItemInput, revision: number) =>
     request<TripDetail>(`/trips/${tripId}/items/${itemId}`, {
       method: "PATCH",
       body: JSON.stringify(input),
+      headers: expectedRevision(revision),
     }),
-  deleteItem: (tripId: string, itemId: string) =>
-    request<void>(`/trips/${tripId}/items/${itemId}`, { method: "DELETE" }),
-  moveItem: (tripId: string, itemId: string, destinationDayId: string, position: number) =>
+  deleteItem: (tripId: string, itemId: string, revision: number) =>
+    request<void>(`/trips/${tripId}/items/${itemId}`, {
+      method: "DELETE",
+      headers: expectedRevision(revision),
+    }),
+  moveItem: (
+    tripId: string,
+    itemId: string,
+    destinationDayId: string,
+    position: number,
+    revision: number,
+  ) =>
     request<TripDetail>(`/trips/${tripId}/items/${itemId}/move`, {
       method: "POST",
       body: JSON.stringify({ destination_day_id: destinationDayId, position }),
+      headers: expectedRevision(revision),
     }),
 };

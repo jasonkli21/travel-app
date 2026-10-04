@@ -27,6 +27,7 @@ from personal_travel.repositories.places import SqlAlchemyPlaceRepository
 from personal_travel.repositories.saved_places import SqlAlchemySavedPlaceRepository
 from personal_travel.repositories.trips import SqlAlchemyTripRepository
 from personal_travel.services.errors import DomainError, not_found
+from personal_travel.services.revisions import require_expected_revision
 
 
 @dataclass(frozen=True)
@@ -90,10 +91,17 @@ class LocationService:
         finally:
             self._session.rollback()
 
-    def import_place(self, trip_id: UUID, data: PlaceImportRequest) -> SavedPlace:
+    def import_place(
+        self,
+        trip_id: UUID,
+        data: PlaceImportRequest,
+        *,
+        expected_revision: int | None = None,
+    ) -> SavedPlace:
         try:
             with self._session.begin():
                 trip = self._get_trip(trip_id, for_update=True)
+                require_expected_revision(trip.revision, expected_revision, aggregate="trip")
                 place = self._places.get_by_provider_identity(
                     owner_id=self._owner_id,
                     provider="geoapify",
@@ -125,6 +133,7 @@ class LocationService:
             self._session.rollback()
             with self._session.begin():
                 trip = self._get_trip(trip_id, for_update=True)
+                require_expected_revision(trip.revision, expected_revision, aggregate="trip")
                 place = self._places.get_by_provider_identity(
                     owner_id=self._owner_id,
                     provider="geoapify",
@@ -151,6 +160,7 @@ class LocationService:
         saved_place.place = place
         trip.saved_places.append(saved_place)
         self._saved_places.add(saved_place)
+        trip.revision += 1
         self._session.flush()
         return saved_place
 

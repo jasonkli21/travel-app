@@ -11,6 +11,7 @@ from personal_travel.repositories.places import SqlAlchemyPlaceRepository
 from personal_travel.repositories.saved_places import SqlAlchemySavedPlaceRepository
 from personal_travel.repositories.trips import SqlAlchemyTripRepository
 from personal_travel.services.errors import DomainError, not_found
+from personal_travel.services.revisions import require_expected_revision
 
 
 class SavedPlaceService:
@@ -25,9 +26,16 @@ class SavedPlaceService:
         trip = self._get_trip(trip_id)
         return sorted(trip.saved_places, key=lambda saved: (saved.place.name.casefold(), saved.id))
 
-    def create(self, trip_id: UUID, data: SavedPlaceCreate) -> SavedPlace:
+    def create(
+        self,
+        trip_id: UUID,
+        data: SavedPlaceCreate,
+        *,
+        expected_revision: int | None = None,
+    ) -> SavedPlace:
         with self._session.begin():
             trip = self._get_trip(trip_id, for_update=True)
+            require_expected_revision(trip.revision, expected_revision, aggregate="trip")
             place = self._places.get(owner_id=self._owner_id, place_id=data.place_id)
             if place is None:
                 raise not_found("place")
@@ -47,12 +55,20 @@ class SavedPlaceService:
             if saved_place not in trip.saved_places:
                 trip.saved_places.append(saved_place)
             self._saved_places.add(saved_place)
+            trip.revision += 1
             self._session.flush()
             return saved_place
 
-    def create_manual(self, trip_id: UUID, data: ManualSavedPlaceCreate) -> SavedPlace:
+    def create_manual(
+        self,
+        trip_id: UUID,
+        data: ManualSavedPlaceCreate,
+        *,
+        expected_revision: int | None = None,
+    ) -> SavedPlace:
         with self._session.begin():
             trip = self._get_trip(trip_id, for_update=True)
+            require_expected_revision(trip.revision, expected_revision, aggregate="trip")
             place = Place(
                 owner_id=self._owner_id,
                 name=data.name,
@@ -74,23 +90,42 @@ class SavedPlaceService:
             saved_place.place = place
             trip.saved_places.append(saved_place)
             self._saved_places.add(saved_place)
+            trip.revision += 1
             self._session.flush()
             return saved_place
 
-    def update(self, trip_id: UUID, saved_place_id: UUID, data: SavedPlaceUpdate) -> SavedPlace:
+    def update(
+        self,
+        trip_id: UUID,
+        saved_place_id: UUID,
+        data: SavedPlaceUpdate,
+        *,
+        expected_revision: int | None = None,
+    ) -> SavedPlace:
         with self._session.begin():
             trip = self._get_trip(trip_id, for_update=True)
+            require_expected_revision(trip.revision, expected_revision, aggregate="trip")
             saved_place = self._find_saved_place(trip, saved_place_id)
-            if "note" in data.model_fields_set:
+            if "note" in data.model_fields_set and saved_place.note != data.note:
                 saved_place.note = data.note
+                trip.revision += 1
             self._session.flush()
             return saved_place
 
-    def delete(self, trip_id: UUID, saved_place_id: UUID) -> None:
+    def delete(
+        self,
+        trip_id: UUID,
+        saved_place_id: UUID,
+        *,
+        expected_revision: int | None = None,
+    ) -> None:
         with self._session.begin():
             trip = self._get_trip(trip_id, for_update=True)
+            require_expected_revision(trip.revision, expected_revision, aggregate="trip")
             saved_place = self._find_saved_place(trip, saved_place_id)
             self._saved_places.delete(saved_place)
+            self._session.flush()
+            trip.revision += 1
             self._session.flush()
 
     def _get_trip(self, trip_id: UUID, *, for_update: bool = False) -> Trip:

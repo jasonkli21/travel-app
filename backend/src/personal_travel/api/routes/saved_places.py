@@ -2,7 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Response, status
 
-from personal_travel.api.dependencies import OwnerDependency, SessionDependency
+from personal_travel.api.dependencies import ExpectedRevision, OwnerDependency, SessionDependency
 from personal_travel.api.schemas import (
     COMMON_ERROR_RESPONSES,
     ManualSavedPlaceCreate,
@@ -40,8 +40,11 @@ def create_saved_place(
     payload: SavedPlaceCreate,
     session: SessionDependency,
     owner_id: OwnerDependency,
+    expected_revision: ExpectedRevision = None,
 ) -> SavedPlaceResponse:
-    saved_place = SavedPlaceService(session, owner_id).create(trip_id, payload)
+    saved_place = SavedPlaceService(session, owner_id).create(
+        trip_id, payload, expected_revision=expected_revision
+    )
     return serialize_saved_place(saved_place)
 
 
@@ -55,8 +58,11 @@ def create_manual_saved_place(
     payload: ManualSavedPlaceCreate,
     session: SessionDependency,
     owner_id: OwnerDependency,
+    expected_revision: ExpectedRevision = None,
 ) -> SavedPlaceResponse:
-    saved_place = SavedPlaceService(session, owner_id).create_manual(trip_id, payload)
+    saved_place = SavedPlaceService(session, owner_id).create_manual(
+        trip_id, payload, expected_revision=expected_revision
+    )
     return serialize_saved_place(saved_place)
 
 
@@ -67,8 +73,11 @@ def update_saved_place(
     payload: SavedPlaceUpdate,
     session: SessionDependency,
     owner_id: OwnerDependency,
+    expected_revision: ExpectedRevision = None,
 ) -> SavedPlaceResponse:
-    saved_place = SavedPlaceService(session, owner_id).update(trip_id, saved_place_id, payload)
+    saved_place = SavedPlaceService(session, owner_id).update(
+        trip_id, saved_place_id, payload, expected_revision=expected_revision
+    )
     return serialize_saved_place(saved_place)
 
 
@@ -78,6 +87,9 @@ def delete_saved_place(
     saved_place_id: UUID,
     session: SessionDependency,
     owner_id: OwnerDependency,
+    expected_revision: ExpectedRevision = None,
 ) -> Response:
-    SavedPlaceService(session, owner_id).delete(trip_id, saved_place_id)
+    SavedPlaceService(session, owner_id).delete(
+        trip_id, saved_place_id, expected_revision=expected_revision
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

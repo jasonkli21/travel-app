@@ -25,6 +25,7 @@ def serialize_place(place: Place | None) -> PlaceSummaryResponse | None:
         return None
     return PlaceSummaryResponse(
         id=place.id,
+        revision=place.revision,
         name=place.name,
         address=place.address,
         category=place.category,
@@ -100,6 +101,7 @@ def serialize_summary(
 ) -> TripSummaryResponse:
     return TripSummaryResponse(
         id=trip.id,
+        revision=trip.revision,
         title=trip.title,
         start_date=trip.start_date,
         end_date=trip.end_date,
