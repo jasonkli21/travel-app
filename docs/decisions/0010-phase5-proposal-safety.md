@@ -1,28 +1,35 @@
 # ADR 0010 — Phase 5 proposal safety and revision policy
 
-**Status:** accepted for local groundwork; upstream generation contract not accepted
+**Status:** accepted for local itinerary proposal integration
 **Date:** 2026-10-03
 **Policy alignment:** 2026-10-04
 **Context:** [Phase 0–4 audit](../reviews/phase-0-4-audit.md) and [Phase 5 plan](../phase-5-implementation-plan.md)
 
 ## Context
 
-Phase 4's `research-v1` contract returns cited research. The latest inspected
-`personal-ai-system` revision, `0c397dcd92d8503581c0727a6da9a0fbadfe3e6f`,
-also defines decision, domain-comparison, and iterative-research contracts.
-None returns a typed itinerary patch. In particular, decision candidate/claim
-proposals and iterative follow-up query proposals are not travel operations.
-There is no accepted route, DTO, capability gate, or fake fixture for itinerary
-changes. Travel must not call or simulate an assumed upstream route.
+The upstream itinerary proposal capability was independently reviewed and
+accepted at `personal-ai-system` revision
+`8535cad3a146b1a19cab0958c439f170d19b8095`. The pinned versions are
+`itinerary-proposal-v1`, context `travel-itinerary-context-v1`, and policy
+`itinerary-proposal-policy-v2`. The consumer calls only the documented
+`POST /v1/travel/itinerary-proposals`, `GET
+/v1/travel/itinerary-proposals/{proposal_id}`, and `GET
+/v1/travel/itinerary-proposals/by-key/{idempotency_key}` routes. The upstream
+feature and provider gates remain independently controlled and default off.
 
-This decision records the local safety policy and permits revision accounting
-and an in-memory deterministic validator/preview. It does not accept an
-upstream contract and does not authorize generation, proposal persistence,
-apply, or rejection routes. Those remain separately gated work.
+The upstream result explicitly distinguishes `context_only` from
+`research_evidence`. Context-only proposals may use only the traveler
+instruction and typed itinerary projection and cannot make current external
+claims. Research-evidence operations each need verified citations. Failed,
+expired, or invalid supplied evidence is never relabeled as context-only.
+Travel accepts neither insufficient/uncited states nor responses with
+unsupported policy/schema versions, mismatched opaque handles, invalid
+operation-support correlations, or invalid citations. Travel validates every
+accepted operation and retains the immutable SQL footprint and preview.
 
 ## Permitted operations
 
-The only eventual proposal operation kinds are:
+The only proposal operation kinds are:
 
 1. Add an itinerary item from a place already saved as a candidate for this
    trip. The server derives its title from that place; the proposal cannot
