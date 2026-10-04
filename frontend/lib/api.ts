@@ -281,11 +281,17 @@ export interface ProposalCitation {
   expires_at: string;
 }
 
+export interface ProposalOperationSupport {
+  operation_index: number;
+  evidence_handles: string[];
+}
+
 export interface ProposalDetail {
   proposal_id: string;
   state: ProposalState;
   lifecycle_state: Exclude<ProposalState, "stale" | "expired">;
   support_mode: "context_only" | "research_evidence";
+  upstream_revision: string;
   trip_handle: string;
   created_at: string;
   expires_at: string | null;
@@ -294,6 +300,7 @@ export interface ProposalDetail {
   base_place_revisions: { place_id: string; revision: number }[];
   current_place_revisions: { place_id: string; revision: number | null }[];
   operations: ProposalOperation[];
+  operation_support: ProposalOperationSupport[];
   citations: ProposalCitation[];
   preview: ProposalPreview | null;
   applied_outcome: ProposalApplyOutcome | null;

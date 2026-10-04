@@ -116,6 +116,7 @@ export default function ProposalPanel({
   const [idempotencyKey, setIdempotencyKey] = useState<string | null>(null);
   const [requestMessage, setRequestMessage] = useState<string | null>(null);
   const [pending, setPending] = useState<"generate" | "status" | "apply" | "reject" | null>(null);
+  const [clockNow, setClockNow] = useState(() => Date.now());
   const requestInFlight = useRef(false);
   const proposalRef = useRef(proposal);
   const eligibleItems = useMemo(() => removableItems(trip), [trip]);
@@ -127,6 +128,13 @@ export default function ProposalPanel({
   useEffect(() => {
     proposalRef.current = proposal;
   }, [proposal]);
+
+  useEffect(() => {
+    if (proposal?.lifecycle_state !== "ready" || !proposal.expires_at) return;
+    const delay = Date.parse(proposal.expires_at) - Date.now() + 1;
+    const timer = window.setTimeout(() => setClockNow(Date.now()), Math.max(0, delay));
+    return () => window.clearTimeout(timer);
+  }, [proposal?.expires_at, proposal?.lifecycle_state, proposal?.proposal_id]);
 
   useEffect(() => {
     const currentProposal = proposalRef.current;
@@ -292,9 +300,9 @@ export default function ProposalPanel({
     }
   };
 
-  const localState = proposalPresentationState(proposal, trip.revision);
+  const localState = proposalPresentationState(proposal, trip.revision, clockNow);
   const canApply = proposalsEnabled
-    && proposalCanApply(proposal, trip.revision)
+    && proposalCanApply(proposal, trip.revision, clockNow)
     && !busy
     && !disabled
     && pending === null;
