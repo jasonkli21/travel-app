@@ -358,3 +358,38 @@ continue to Phase 7 or later. A clarification is pending whether the intended
 stop is the active identity stage or all of Phase 6. Finish identity remediation
 first in either case. Use only fresh Sol Medium agents for substantive work.
 The 15:05 PDT one-time restart already fired; no additional restart is scheduled.
+
+## Phase 6 identity closure and remaining-stage scope
+
+2026-10-04: the user clarified **finish all of Phase 6, then stop before Phase
+7**. This supersedes the pending stop-boundary question above and any older
+restart instruction to continue Phases 7–9. Use fresh Sol Medium agents for
+implementation and substantive fixes; coordinator reviews each stage while
+remaining idle during delegation. No additional restart is scheduled.
+
+Identity remediation at `9dc6f99`, `289fe97`, and `6f0da88` is independently
+reviewed locally. Central typed-client CSRF, nested-owner migration and remote
+in-flight invalidation, Google authoritative email/service claims, HTTPS
+credential boundaries, worker-owned SQL and elapsed limits are covered.
+Final backend evidence: 185 migrated PostgreSQL tests, zero skips; Ruff
+check/format and mypy pass. Frontend 30 tests/lint/typecheck/build and mounted
+synthetic sign-in/typed CRUD/logout passed at `9dc6f99`; subsequent changes are
+backend only. Real HTTP header/body trickles, blocked auth flush rollback, and
+Uvicorn auto/asyncio callback tests pass. Network DNS/connect limitations are
+explicit in the release record. No live Google or Cloud Run provisioning.
+
+Next P6.2 scope: ADR for opaque local storage and isolated bounded PDF parser;
+SQL import/source metadata with trip-deletion tombstones; authenticated gated
+bounded raw text/PDF upload, scoped metadata/source reads and deletion;
+request-key/source-hash dedupe, durable received record, compensating promotion
+and idempotent reconciliation/retention cleanup. Ordinary JSON stays 64KiB.
+Gate remains default off, unavailable in local auth mode; tests synthetic.
+Commit logical schema/storage, parser/upload lifecycle, and tests/docs slices.
+No extraction or confirmation in this stage. Then independently review.
+
+After P6.2: implement/review the missing upstream versioned private booking
+extraction contract (bounded input/output, isolated data-only inference,
+owner-key durable replay/detail/delete and explicit retention), accept/pin it,
+then implement P6.3–P6.4 typed extraction and atomic reviewed reservation
+confirmation, followed by P6.5 accessible frontend/security release checks.
+No Gmail, cloud deployment, real private input or Phase 7 work is authorized.
