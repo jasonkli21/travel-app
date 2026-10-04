@@ -16,7 +16,8 @@ import httpx
 from anyio.to_thread import run_sync
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from personal_travel.api.dependencies import SessionDependency
@@ -135,6 +136,7 @@ def _consume_login_attempt(
         )
     state_hash = secret_digest(state)
     with session.begin():
+        _set_callback_sql_deadline(session, deadline)
         attempt = session.scalar(
             select(OAuthLoginAttempt)
             .where(OAuthLoginAttempt.state_hash == state_hash)
@@ -159,13 +161,37 @@ def _consume_login_attempt(
             expires_at=attempt.expires_at,
         )
         session.delete(attempt)
+        session.flush()
         _require_callback_time(deadline)
+        _set_callback_sql_deadline(session, deadline)
     return values
 
 
 def _require_callback_time(deadline: float) -> None:
     if time.monotonic() >= deadline:
         raise TimeoutError("Authentication callback exceeded its deadline.")
+
+
+def _callback_remaining(deadline: float) -> float:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("Authentication callback exceeded its deadline.")
+    return remaining
+
+
+def _set_callback_sql_deadline(session: Session, deadline: float) -> None:
+    """Limit blocking auth SQL to the remaining callback budget on PostgreSQL."""
+    remaining_ms = max(1, int(_callback_remaining(deadline) * 1000))
+    if session.get_bind().dialect.name == "postgresql":
+        session.execute(
+            text("SELECT set_config('statement_timeout', :timeout, true)"),
+            {"timeout": str(remaining_ms)},
+        )
+        session.execute(
+            text("SELECT set_config('lock_timeout', :timeout, true)"),
+            {"timeout": str(remaining_ms)},
+        )
+    _require_callback_time(deadline)
 
 
 async def _exchange_code(code: str, code_verifier: str, settings: Settings) -> str:
@@ -229,17 +255,18 @@ async def google_callback(
             )
 
     try:
-        async with asyncio.timeout_at(deadline):
+        async with asyncio.timeout(_callback_remaining(deadline)):
             attempt = await run_sync(consume_attempt, abandon_on_cancel=True)
-    except TimeoutError:
+    except (TimeoutError, OperationalError):
         raise DomainError(
             "authentication_unavailable",
             "Authentication storage is temporarily unavailable.",
             status_code=503,
         ) from None
     try:
-        token = await _exchange_code(payload.code, attempt.code_verifier, settings)
-        async with asyncio.timeout_at(deadline):
+        async with asyncio.timeout(_callback_remaining(deadline)):
+            token = await _exchange_code(payload.code, attempt.code_verifier, settings)
+        async with asyncio.timeout(_callback_remaining(deadline)):
             principal = await run_sync(
                 principal_from_google_token, token, settings, abandon_on_cancel=True
             )
@@ -276,18 +303,20 @@ async def google_callback(
 
     def save_session() -> tuple[str, str, ActiveSession]:
         with session_factory() as session, session.begin():
-            _require_callback_time(deadline)
+            _set_callback_sql_deadline(session, deadline)
             previous_session: ActiveSession | None = request.scope.get("auth_session")
             if previous_session is not None:
                 revoke_session(session, previous_session.token_hash, now=now)
             result = create_session(session, principal, ttl_seconds=session_ttl_seconds, now=now)
+            session.flush()
             _require_callback_time(deadline)
+            _set_callback_sql_deadline(session, deadline)
             return result
 
     try:
-        async with asyncio.timeout_at(deadline):
+        async with asyncio.timeout(_callback_remaining(deadline)):
             raw_session, csrf_token, active = await run_sync(save_session, abandon_on_cancel=True)
-    except TimeoutError:
+    except (TimeoutError, OperationalError):
         raise DomainError(
             "authentication_unavailable",
             "Authentication storage is temporarily unavailable.",

@@ -63,6 +63,27 @@ test confirms an abandoned session insert rolls back. The full backend suite
 passed **182 tests, zero skipped**; Ruff and mypy passed. No live Google or
 Cloud Run endpoint was used in these checks.
 
+The subsequent callback deadline correction converts the remaining
+`time.monotonic()` duration at every async timeout boundary, including code
+exchange, so Uvicorn's `auto`/uvloop and `asyncio` clocks both honor the same
+7.5-second budget. Auth SQL transactions set PostgreSQL transaction-local
+statement and lock timeouts from that remaining budget; the OAuth-attempt
+delete and session insert are flushed and checked before commit. A real
+PostgreSQL table lock test confirms a blocked session insert fails and rolls
+back. Mounted synthetic HTTP callbacks succeeded and slow exchanges timed out
+under both Uvicorn loop settings. The full migrated-schema backend suite passed
+**185 tests, zero skipped**; Ruff and mypy passed. These checks did not contact
+Google or Cloud Run.
+
+The signing-key socket watchdog interrupts an established socket during
+blocked header/body reads. It does not interrupt DNS resolution before a
+socket exists, and Python/OS address resolution and multi-address connection
+cleanup can exceed the three-second key-fetch target. The synchronous verifier
+runs in an abandoned worker with a deadline check before returning its result;
+that transport limit is not a proof of a strict wall-clock bound on worker
+termination. PostgreSQL connect/pool acquisition has separate finite timeouts;
+transaction-local statement/lock limits begin after a connection is acquired.
+
 ## Remaining gates
 
 Independent coordinator security review is pending. No Google OAuth client, Cloud Run IAM binding or upstream user-identity deployment was provisioned; no live sign-in, hosted service invocation or private-input test occurred. Before enabling hosted AI or private imports, verify those live boundaries and accept a separate upstream booking/document extraction and retention contract. P6.2 storage/parser, P6.3 extraction, P6.4 confirmation and P6.5 import review UI are not implemented. Research/proposal and private-import gates stay off by default.

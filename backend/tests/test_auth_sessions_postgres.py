@@ -16,7 +16,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 from google.auth.crypt import RSASigner
 from google.auth.jwt import encode
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 from starlette.testclient import TestClient
@@ -450,6 +450,38 @@ def test_callback_timeout_rolls_back_abandoned_session_write(
     )
     assert callback.status_code == 503
     time.sleep(0.15)  # let the abandoned worker reach its deadline check
+    with Session(database_engine) as session:
+        assert session.scalar(select(AuthSession)) is None
+
+
+def test_callback_blocked_session_flush_rolls_back(
+    api_client: TestClient, database_engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = google_settings()
+    use_settings(api_client, settings)
+    start = api_client.get("/v1/auth/google/start")
+    values = parse_qs(urlsplit(start.json()["authorization_url"]).query)
+    token, certificate, _subject = signed_token(values["nonce"][0])
+    set_google_key_fixture(monkeypatch, certificate)
+
+    async def exchange(_code: str, _verifier: str, _settings: Settings) -> str:
+        return token
+
+    monkeypatch.setattr(auth_routes, "_exchange_code", exchange)
+    monkeypatch.setattr(auth_routes, "CALLBACK_DEADLINE_SECONDS", 0.2)
+    with database_engine.connect() as blocker, blocker.begin():
+        blocker.execute(text("LOCK TABLE auth_sessions IN ACCESS EXCLUSIVE MODE"))
+        callback = api_client.post(
+            "/v1/auth/google/callback",
+            cookies={
+                settings.auth_oauth_flow_cookie_name: cookie_value(
+                    start, settings.auth_oauth_flow_cookie_name
+                )
+            },
+            json={"code": "synthetic-code", "state": values["state"][0]},
+        )
+        assert callback.status_code == 503
+    time.sleep(0.1)  # an abandoned worker must finish before inspecting committed rows
     with Session(database_engine) as session:
         assert session.scalar(select(AuthSession)) is None
 

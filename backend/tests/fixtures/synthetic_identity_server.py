@@ -6,6 +6,7 @@ remain active; only Google's external code exchange and signing-key endpoint
 are replaced with synthetic responses in this fixture process.
 """
 
+import asyncio
 import json
 import os
 import time
@@ -18,6 +19,8 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 from google.auth.crypt import RSASigner
 from google.auth.jwt import encode
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 if os.environ.get("SYNTHETIC_IDENTITY_FIXTURE") != "1":
     raise SystemExit("Synthetic identity fixture must be explicitly enabled.")
@@ -28,7 +31,25 @@ os.environ["DATABASE_URL"] = database_url
 
 import personal_travel.api.routes.auth as auth_routes  # noqa: E402
 import personal_travel.auth.google_oidc as oidc  # noqa: E402
+from personal_travel.api.dependencies import session_dependency  # noqa: E402
 from personal_travel.main import app  # noqa: E402
+
+test_schema = os.environ.get("SYNTHETIC_TEST_SCHEMA")
+if test_schema is not None:
+    if not test_schema.startswith("travel_test_") or not test_schema.replace("_", "").isalnum():
+        raise SystemExit("Synthetic test schema is invalid.")
+    test_engine = create_engine(
+        database_url, connect_args={"options": f"-c search_path={test_schema}"}
+    )
+    app.state.auth_session_factory = sessionmaker(
+        bind=test_engine, autoflush=False, expire_on_commit=False
+    )
+
+    def test_session():
+        with app.state.auth_session_factory() as session:
+            yield session
+
+    app.dependency_overrides[session_dependency] = test_session
 
 private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 private_bytes = private_key.private_bytes(
@@ -62,8 +83,10 @@ def consume(*args, **kwargs):
 
 
 async def exchange(code: str, verifier: str, settings):
-    if code != "synthetic-code":
+    if code not in {"synthetic-code", "synthetic-slow-code"}:
         raise oidc.InvalidIdentityToken
+    if code == "synthetic-slow-code":
+        await asyncio.sleep(float(os.environ.get("SYNTHETIC_SLOW_EXCHANGE_SECONDS", "2")))
     nonce = nonce_by_verifier.pop(verifier)
     current = int(time.time())
     claims = {
@@ -96,6 +119,15 @@ def synthetic_keys(url: str, **_kwargs):
 auth_routes._consume_login_attempt = consume
 auth_routes._exchange_code = exchange
 oidc._key_request = synthetic_keys
+auth_routes.CALLBACK_DEADLINE_SECONDS = float(
+    os.environ.get("SYNTHETIC_CALLBACK_DEADLINE_SECONDS", "7.5")
+)
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8000, access_log=False)
+    uvicorn.run(
+        app,
+        host="127.0.0.1",
+        port=int(os.environ.get("SYNTHETIC_API_PORT", "8000")),
+        loop=os.environ.get("SYNTHETIC_UVICORN_LOOP", "auto"),
+        access_log=False,
+    )

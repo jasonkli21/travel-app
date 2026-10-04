@@ -6,8 +6,9 @@ Date: 2026-10-04
 
 The six identity review findings have a local remediation change set awaiting
 independent coordinator re-review. See the identity release checkpoint for the
-180-test PostgreSQL result, mounted synthetic sign-in/typed CRUD/logout check,
-frontend checks and exact remaining external gates. Complete the rest of
+185-test PostgreSQL result, mounted synthetic sign-in/typed CRUD/logout and
+Uvicorn `auto`/`asyncio` deadline checks, frontend checks and exact remaining
+external gates. Complete the rest of
 Phase 6 after the identity review gate, then stop before Phase 7 as requested.
 
 ## Objective
