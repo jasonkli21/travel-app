@@ -39,6 +39,11 @@ class ProposalCitationResponse(BaseModel):
     expires_at: datetime
 
 
+class OperationEvidenceSupportResponse(BaseModel):
+    operation_index: int = Field(ge=0, le=24)
+    evidence_handles: list[str] = Field(max_length=24)
+
+
 class ProposalDetailResponse(BaseModel):
     proposal_id: UUID
     state: Literal[
@@ -55,6 +60,7 @@ class ProposalDetailResponse(BaseModel):
         "generating", "outcome_unknown", "ready", "failed", "applied", "rejected"
     ]
     support_mode: Literal["context_only", "research_evidence"]
+    upstream_revision: str = Field(min_length=40, max_length=40, pattern=r"^[0-9a-f]{40}$")
     trip_handle: str
     created_at: datetime
     expires_at: datetime | None
@@ -63,6 +69,7 @@ class ProposalDetailResponse(BaseModel):
     base_place_revisions: list[dict[str, Any]]
     current_place_revisions: list[dict[str, Any]]
     operations: list[ProposalOperation]
+    operation_support: list[OperationEvidenceSupportResponse]
     citations: list[ProposalCitationResponse]
     preview: dict[str, Any] | None
     applied_outcome: dict[str, Any] | None

@@ -15,7 +15,7 @@ from pydantic import (
 
 from personal_travel.domain.proposals import LocalTimeValue, ProposalOperation
 
-UPSTREAM_REVISION = "8535cad3a146b1a19cab0958c439f170d19b8095"
+UPSTREAM_REVISION = "6045f004fbdc4887c2bb67da9ae19a571314fc27"
 SCHEMA_VERSION = "itinerary-proposal-v1"
 CONTEXT_VERSION = "travel-itinerary-context-v1"
 POLICY_VERSION = "itinerary-proposal-policy-v2"

@@ -68,7 +68,7 @@ def test_invalid_dst_repair_aborts_and_can_be_recovered(database_engine: Engine)
         seed_moved_item(connection, date="2026-03-08", time="2026-03-07T07:30:00Z")
         command.upgrade(config, "head")
     with database_engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0007"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0008"
         assert connection.scalar(text("SELECT count(*) FROM itinerary_items")) == 0
 
 
@@ -105,4 +105,51 @@ def test_revision_migration_initializes_populated_legacy_rows(database_engine: E
         )
         assert trip_revision == 0
         assert place_revision == 0
+        command.check(config)
+
+
+def test_proposal_provenance_migration_backfills_applied_0007_rows(database_engine: Engine) -> None:
+    trip_id, proposal_id = str(uuid4()), str(uuid4())
+    created_at = datetime(2026, 10, 4, 12, tzinfo=UTC)
+    with database_engine.begin() as connection:
+        config = config_for(connection)
+        command.downgrade(config, "0006")
+        connection.execute(
+            text(
+                "INSERT INTO trips (id,owner_id,title,start_date,end_date,timezone) "
+                "VALUES (:id,'local','Legacy proposal trip','2026-10-04','2026-10-04','UTC')"
+            ),
+            {"id": trip_id},
+        )
+        command.upgrade(config, "0007")
+        connection.execute(
+            text(
+                "INSERT INTO itinerary_proposals "
+                "(id,owner_id,trip_id,idempotency_key,downstream_key,request_fingerprint,"
+                "state,schema_version,policy_version,support_mode,trip_handle,generation_deadline,"
+                "base_trip_revision,base_place_revisions,base_snapshot,citations,"
+                "created_at,updated_at) "
+                "VALUES (:id,'local',:trip,:key,:downstream,:fingerprint,'failed',"
+                "'itinerary-proposal-v1','itinerary-proposal-policy-v2','context_only',"
+                "'h_triphandle000000001',:deadline,0,'[]','{}','[]',:created,:created)"
+            ),
+            {
+                "id": proposal_id,
+                "trip": trip_id,
+                "key": str(uuid4()),
+                "downstream": str(uuid4()),
+                "fingerprint": "0" * 64,
+                "deadline": created_at,
+                "created": created_at,
+            },
+        )
+        command.upgrade(config, "head")
+        row = connection.execute(
+            text(
+                "SELECT upstream_revision,operation_support FROM itinerary_proposals WHERE id=:id"
+            ),
+            {"id": proposal_id},
+        ).one()
+        assert row.upstream_revision == "8535cad3a146b1a19cab0958c439f170d19b8095"
+        assert row.operation_support == []
         command.check(config)

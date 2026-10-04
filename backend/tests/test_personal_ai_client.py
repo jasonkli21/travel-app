@@ -177,6 +177,84 @@ def test_personal_ai_proposal_never_retries_post_after_ambiguous_timeout() -> No
     assert methods == ["POST", "GET"]
 
 
+class ProposalOversizedStream(httpx.AsyncByteStream):
+    def __init__(self) -> None:
+        self.consumed = 0
+
+    async def __aiter__(self):
+        while True:
+            self.consumed += 4096
+            yield b"x" * 4096
+
+
+class ProposalTricklingStream(httpx.AsyncByteStream):
+    async def __aiter__(self):
+        while True:
+            await asyncio.sleep(0.005)
+            yield b" "
+
+
+@pytest.mark.parametrize("failure", ["malformed", "wrong_version", "extra_field", "oversized"])
+@pytest.mark.asyncio
+async def test_proposal_client_bounds_invalid_json_and_uses_one_post(failure: str) -> None:
+    key = uuid4()
+    methods: list[str] = []
+    oversized = ProposalOversizedStream()
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        methods.append(request.method)
+        if request.method == "GET":
+            return httpx.Response(404, request=request)
+        if failure == "malformed":
+            return httpx.Response(200, text="{broken", request=request)
+        if failure == "oversized":
+            return httpx.Response(200, stream=oversized, request=request)
+        payload = _proposal_result()
+        if failure == "wrong_version":
+            payload["schema_version"] = "itinerary-proposal-v2"
+        else:
+            payload["unexpected"] = "private upstream detail"
+        return httpx.Response(200, json=payload, request=request)
+
+    client = PersonalAIClient(
+        base_url="http://personal-ai.test",
+        timeout_seconds=0.25,
+        transport=httpx.MockTransport(handle),
+    )
+    with pytest.raises(PersonalAIProposalUnknown) as raised:
+        await client.create_itinerary_proposal(payload={"safe": True}, idempotency_key=key)
+
+    assert str(raised.value) == "proposal outcome is unknown"
+    assert methods.count("POST") == 1
+    assert methods == ["POST", "GET"]
+    if failure == "oversized":
+        assert oversized.consumed <= personal_ai.MAX_PROPOSAL_RESPONSE_BYTES + 4096
+
+
+@pytest.mark.asyncio
+async def test_proposal_client_deadline_bounds_trickling_response() -> None:
+    key = uuid4()
+    methods: list[str] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        methods.append(request.method)
+        return httpx.Response(200, stream=ProposalTricklingStream(), request=request)
+
+    client = PersonalAIClient(
+        base_url="http://personal-ai.test",
+        timeout_seconds=0.04,
+        transport=httpx.MockTransport(handle),
+    )
+    started = asyncio.get_running_loop().time()
+    with pytest.raises(PersonalAIProposalUnknown) as raised:
+        await client.create_itinerary_proposal(payload={"safe": True}, idempotency_key=key)
+    elapsed = asyncio.get_running_loop().time() - started
+
+    assert str(raised.value) == "proposal outcome is unknown"
+    assert elapsed < 0.15
+    assert methods == ["POST"]
+
+
 def _research_session(
     session_id: str, state: str, *, answer: str | None = None
 ) -> dict[str, object]:

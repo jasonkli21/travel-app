@@ -39,6 +39,7 @@ from personal_travel.domain.proposals import (
 from personal_travel.domain.upstream_proposals import (
     POLICY_VERSION,
     SCHEMA_VERSION,
+    UPSTREAM_REVISION,
     ProposalCandidateContext,
     ProposalDayContext,
     ProposalItemContext,
@@ -170,7 +171,8 @@ class ProposalService:
             )
         except (PersonalAIProposalUnknown, PersonalAIProposalError):
             await run_in_threadpool(self._mark_unknown, trip_id, seed.proposal_id)
-            return await self.get(trip_id, seed.proposal_id)
+            detail, _ = await run_in_threadpool(self._load_detail, trip_id, seed.proposal_id)
+            return detail
         await self._accept_remote(seed, remote)
         return await self.get(trip_id, seed.proposal_id)
 
@@ -276,6 +278,7 @@ class ProposalService:
                 state="generating",
                 schema_version=SCHEMA_VERSION,
                 policy_version=POLICY_VERSION,
+                upstream_revision=UPSTREAM_REVISION,
                 support_mode=("research_evidence" if data.research_session_ids else "context_only"),
                 trip_handle=snapshot.trip_handle,
                 generation_deadline=now
@@ -332,6 +335,7 @@ class ProposalService:
             row.state = prepared["state"]
             row.upstream_proposal_id = prepared["upstream_proposal_id"]
             row.operations = prepared["operations"]
+            row.operation_support = prepared["operation_support"]
             row.preview = prepared["preview"]
             row.citations = prepared["citations"]
             row.expires_at = prepared["expires_at"]
@@ -374,7 +378,6 @@ class ProposalService:
     def _load_detail(
         self, trip_id: UUID, proposal_id: UUID
     ) -> tuple[ProposalDetailResponse, _Seed | None]:
-        now = self._now()
         with self._session.begin():
             trip = self._get_trip(trip_id, for_update=False)
             row = self._session.scalar(
@@ -388,15 +391,16 @@ class ProposalService:
             )
             if row is None:
                 raise not_found("proposal")
-            if row.state == "generating" and row.generation_deadline <= now:
-                row.state = "outcome_unknown"
-                self._session.flush()
             current_places = _current_place_revisions(
                 self._session,
                 self._owner_id,
                 row.base_place_revisions,
                 exclusive=False,
             )
+            now = self._now()
+            if row.state == "generating" and row.generation_deadline <= now:
+                row.state = "outcome_unknown"
+                self._session.flush()
             stale = (
                 trip.revision != row.base_trip_revision
                 or current_places != row.base_place_revisions
@@ -417,6 +421,7 @@ class ProposalService:
                     "state": presentation,
                     "lifecycle_state": state,
                     "support_mode": row.support_mode,
+                    "upstream_revision": row.upstream_revision,
                     "trip_handle": row.trip_handle,
                     "created_at": row.created_at,
                     "expires_at": row.expires_at,
@@ -427,6 +432,7 @@ class ProposalService:
                     "base_place_revisions": row.base_place_revisions,
                     "current_place_revisions": current_places,
                     "operations": row.operations or [],
+                    "operation_support": row.operation_support or [],
                     "citations": row.citations or [],
                     "preview": row.preview,
                     "applied_outcome": row.applied_outcome,
@@ -485,7 +491,6 @@ class ProposalService:
     def _apply_tx(
         self, trip_id: UUID, proposal_id: UUID, expected_revision: int | None
     ) -> ProposalApplyResponse:
-        now = self._now()
         with self._session.begin():
             # The trip root is always the first application lock; place rows
             # follow in UUID order after the base footprint is known.
@@ -515,8 +520,6 @@ class ProposalService:
                     status_code=428,
                 )
             require_expected_revision(trip.revision, expected_revision, aggregate="trip")
-            if row.expires_at is None or row.expires_at <= now:
-                raise DomainError("proposal_expired", "This proposal has expired.", status_code=409)
             actual_place_revisions = _current_place_revisions(
                 self._session,
                 self._owner_id,
@@ -557,6 +560,9 @@ class ProposalService:
                     "The stored preview failed integrity validation.",
                     status_code=409,
                 )
+            now = self._now()
+            if row.expires_at is None or row.expires_at <= now:
+                raise DomainError("proposal_expired", "This proposal has expired.", status_code=409)
             changed = computed.before != computed.after
             _apply_operations(self._session, trip, snapshot, draft, self._owner_id)
             if changed:
@@ -691,6 +697,7 @@ def _prepare_result(seed: _Seed, remote: UpstreamProposalResult, now: datetime) 
             "state": "outcome_unknown",
             "upstream_proposal_id": remote.proposal_id,
             "operations": None,
+            "operation_support": [],
             "preview": None,
             "citations": [],
             "expires_at": remote.expires_at,
@@ -722,6 +729,7 @@ def _prepare_result(seed: _Seed, remote: UpstreamProposalResult, now: datetime) 
         "state": "ready",
         "upstream_proposal_id": remote.proposal_id,
         "operations": operations,
+        "operation_support": [item.model_dump(mode="json") for item in remote.operation_support],
         "preview": preview_value,
         "citations": citations,
         "expires_at": remote.expires_at,
@@ -739,6 +747,7 @@ def _failed_result(
         "state": "failed",
         "upstream_proposal_id": remote.proposal_id,
         "operations": None,
+        "operation_support": [item.model_dump(mode="json") for item in remote.operation_support],
         "preview": None,
         "citations": [],
         "expires_at": expires_at or remote.expires_at,

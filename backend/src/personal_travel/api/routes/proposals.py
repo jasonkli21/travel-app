@@ -20,7 +20,12 @@ router = APIRouter(
 )
 
 
-@router.post("", response_model=ProposalDetailResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=ProposalDetailResponse,
+    response_model_exclude_unset=True,
+    status_code=status.HTTP_201_CREATED,
+)
 async def generate_proposal(
     trip_id: UUID,
     payload: ProposalGenerateRequest,
@@ -34,7 +39,11 @@ async def generate_proposal(
     )
 
 
-@router.get("/by-key/{idempotency_key}", response_model=ProposalDetailResponse)
+@router.get(
+    "/by-key/{idempotency_key}",
+    response_model=ProposalDetailResponse,
+    response_model_exclude_unset=True,
+)
 async def get_proposal_by_key(
     trip_id: UUID,
     idempotency_key: UUID,
@@ -45,7 +54,11 @@ async def get_proposal_by_key(
     return await ProposalService(session, owner_id, settings).get_by_key(trip_id, idempotency_key)
 
 
-@router.get("/{proposal_id}", response_model=ProposalDetailResponse)
+@router.get(
+    "/{proposal_id}",
+    response_model=ProposalDetailResponse,
+    response_model_exclude_unset=True,
+)
 async def get_proposal(
     trip_id: UUID,
     proposal_id: UUID,
@@ -70,7 +83,11 @@ async def apply_proposal(
     )
 
 
-@router.post("/{proposal_id}/reject", response_model=ProposalDetailResponse)
+@router.post(
+    "/{proposal_id}/reject",
+    response_model=ProposalDetailResponse,
+    response_model_exclude_unset=True,
+)
 async def reject_proposal(
     trip_id: UUID,
     proposal_id: UUID,
