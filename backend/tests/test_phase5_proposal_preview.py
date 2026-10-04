@@ -2,7 +2,7 @@
 
 import json
 from datetime import date, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from pydantic import ValidationError
@@ -229,6 +229,35 @@ def test_preview_returns_immutable_complete_projection_and_deterministic_warning
     assert snapshot.model_dump(mode="python") == before_snapshot
     with pytest.raises(ValidationError):
         snapshot.title = "mutated"
+
+
+def test_reservation_warning_order_uses_stable_ids_not_random_handles() -> None:
+    snapshot = make_snapshot()
+    original_reservation = snapshot.reservations[0]
+    earlier_reservation = original_reservation.model_copy(
+        update={"reservation_id": UUID(int=1), "handle": handle("zzzzzzz9")}
+    )
+    unordered_snapshot = snapshot.model_copy(
+        update={"reservations": (original_reservation, earlier_reservation)}
+    )
+    add = ProposalAddItem(
+        kind="add_item",
+        day_handle=unordered_snapshot.days[0].handle,
+        candidate_handle=unordered_snapshot.candidates[0].handle,
+        item_type="food",
+        position=2,
+        start_time="10:30",
+        end_time="11:30",
+    )
+
+    preview = preview_proposal(unordered_snapshot, draft(unordered_snapshot, add))
+
+    added_item_warnings = [
+        warning.reservation_handle
+        for warning in preview.warnings
+        if warning.item_handle == "preview-add-1"
+    ]
+    assert added_item_warnings == [earlier_reservation.handle, original_reservation.handle]
 
 
 def test_draft_rejects_extra_coercion_and_unbounded_operation_count() -> None:

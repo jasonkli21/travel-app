@@ -639,9 +639,9 @@ def _reservation_warnings(
     snapshot: ProposalTripSnapshot,
     working: dict[str, list[_WorkingItem]],
 ) -> tuple[PreviewWarning, ...]:
-    warnings: list[tuple[int, int, str, PreviewWarning]] = []
+    warnings: list[tuple[int, int, UUID, PreviewWarning]] = []
     day_by_handle = {day.handle: day for day in snapshot.days}
-    for reservation in snapshot.reservations:
+    for reservation in sorted(snapshot.reservations, key=lambda value: value.reservation_id):
         if reservation.status == "cancelled":
             continue
         reservation_bounds = schedule_bounds(reservation.starts_at, reservation.ends_at)
@@ -659,7 +659,7 @@ def _reservation_warnings(
                     (
                         day.day_index,
                         sort_order,
-                        reservation.handle,
+                        reservation.reservation_id,
                         PreviewWarning(
                             code="reservation_overlap",
                             day_handle=day.handle,
