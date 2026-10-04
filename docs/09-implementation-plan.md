@@ -140,9 +140,9 @@ implementation is present for independent review; proposal gates remain off by
 default. It pins the accepted upstream contract, adds durable owner-scoped
 storage and atomic apply/replay, gated generation, and the explicit review UI.
 The first removal operation requires an explicit user-selected removable-item
-allowlist; status alone does not establish optionality. A local Uvicorn/uvloop
-deadline mismatch is recorded in the release note; fake HTTP verification
-passes with asyncio.
+allowlist; status alone does not establish optionality. The upstream Uvicorn
+clock-domain deadline issue is fixed and fake HTTP verification passes with
+both `auto` and `asyncio`; independent Phase 5 review remains pending.
 
 Build:
 

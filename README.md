@@ -22,18 +22,19 @@ atomic apply/replay and rejection, and an explicit review/apply UI. Proposal
 gates remain off by default. The accepted upstream revision and exact local
 checks are in [the Phase 5 release record](docs/releases/phase-5-local-proposals.md).
 Phase 5 awaits independent review.
-The upstream fake HTTP flow passed with asyncio. This host's default Uvicorn
-auto loop selects uvloop, where the upstream currently reports an immediate
-unknown generation outcome because it mixes loop and monotonic clock domains;
-keep the gates off in that runtime until the upstream issue is addressed. Geoapify
-features are optional; manual planning works without provider keys. External
-booking imports, authentication, and cloud deployment remain planned.
+The upstream monotonic-deadline conversion was fixed and the local fake HTTP
+proposal flow passes under both Uvicorn `auto` (uvloop on this host) and
+`asyncio`. Keep proposal gates off pending independent Phase 5 review and
+separate provider configuration. Geoapify features are optional; manual
+planning works without provider keys. External booking imports, authentication,
+and cloud deployment remain planned.
 
 The [Phase 0–4 audit](docs/reviews/phase-0-4-audit.md) records the architecture
 review, integrity/security/recovery fixes and verification. Migration `0005`
 repairs legacy moved-item schedules and enforces ordering/coordinate integrity;
-Phase 5 migration `0006` adds trip/place revisions and `0007` adds proposal
-storage. Read the
+Phase 5 migration `0006` adds trip/place revisions, `0007` adds proposal
+storage, and `0008` adds upstream revision and operation-support provenance.
+Read the
 [migration recovery instructions](docs/07-local-development.md) before
 upgrading an existing database. Local ownership is still not authentication.
 

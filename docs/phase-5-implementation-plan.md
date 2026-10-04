@@ -95,7 +95,8 @@ response bytes are bounded before parsing.
 ## Data and service design
 
 Migration `0007` adds the travel-owned `itinerary_proposals` table (migration
-`0006` added revisions):
+`0006` added revisions); migration `0008` adds exact upstream revision and
+operation-to-evidence provenance for existing and new rows:
 
 - UUID, owner_id, trip_id FK, schema and policy versions, support mode, opaque
   trip handle, and upstream proposal ID;

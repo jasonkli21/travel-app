@@ -23,17 +23,19 @@ email import, authentication, and cloud deployment remain deferred. Phase 5
 proposal generation is implemented locally but remains gated and under review.
 
 The [comprehensive Phase 0–4 audit](reviews/phase-0-4-audit.md) documents current
-fixes and verification. Migration `0007` is the current head; `0005` still
+fixes and verification. Migration `0008` is the current head; `0005` still
 requires online legacy-data inspection/repair and a pre-upgrade backup before
 upgrading an existing database. See local development and ADR 0009 before
 changing concurrency or local HTTP boundaries.
 
 ## Next implementation work
 
-The next action is independent review of the complete Phase 5 implementation
+The next action is independent re-review of the complete Phase 5 implementation
 and release evidence. Do not start Phase 6 until that review is recorded and
-any findings are resolved. The accepted upstream uvloop clock-domain issue is
-documented in the release record; default-off gates are intentional.
+any findings are resolved. The upstream uvloop clock-domain issue was fixed in
+`personal-ai-system` revision `6045f004fbdc4887c2bb67da9ae19a571314fc27` and
+verified over local HTTP with Uvicorn `auto` and `asyncio`; default-off gates
+remain intentional while independent review is pending.
 
 Detailed [Phase 5](phase-5-implementation-plan.md),
 [Phase 6](phase-6-implementation-plan.md),

@@ -8,26 +8,32 @@ Status: P5.0–P5.5 implementation present for independent review; proposal gate
 The travel app now has a local, owner-scoped itinerary proposal lifecycle on top
 of the existing revision and deterministic preview groundwork. The accepted
 upstream dependency is `personal-ai-system` commit
-`8535cad3a146b1a19cab0958c439f170d19b8095`, pinned to
+`6045f004fbdc4887c2bb67da9ae19a571314fc27`, pinned to
 `itinerary-proposal-v1`, `travel-itinerary-context-v1`, and
 `itinerary-proposal-policy-v2`. Travel uses the documented HTTP client and
 imports no upstream Python package or storage schema.
 
-Migration `0007` adds portable `itinerary_proposals` storage, an owner/trip/key
-unique constraint, downstream reconciliation key, immutable base snapshot and
-place-version footprint, lifecycle state, evidence expiry, and stored applied
-outcome. Raw request instructions are represented by a one-way request
-fingerprint and are not persisted. Private booking fields, notes, confirmations,
-provider payloads, source references, and travel record IDs are excluded from
-the AI context. Context-only requests do not attach research sessions.
+Migrations `0007` and `0008` add portable `itinerary_proposals` storage, an
+owner/trip/key unique constraint, downstream reconciliation key, immutable
+base snapshot and place-version footprint, lifecycle state, evidence expiry,
+stored applied outcome, exact upstream revision, and operation-to-evidence
+support references. Migration `0008` backfills existing proposal rows with the
+previously accepted upstream revision and empty support. Raw request
+instructions are represented by a one-way request fingerprint and are not
+persisted. Private booking fields, notes, confirmations, provider payloads,
+source references, and travel record IDs are excluded from the AI context.
+Context-only requests do not attach research sessions.
 
 Generation requires the trip revision and a stable idempotency key. A timeout
 is reconciled using that same key; Travel never automatically retries with a
-new key. Applying requires the expected trip revision and current place
-footprint. The trip root is locked before referenced shared places, which are
-locked in UUID order. Operations, audit state, one trip revision, and replayable
-outcome commit atomically. Repeated apply returns the exact saved outcome,
-including after expiry. Rejection is explicit. The responsive proposal panel
+new key or renews the generation request's external budget after timeout. A
+later explicit status read is separately bounded. Applying requires the
+expected trip revision and current place footprint. The trip root is locked
+before referenced shared places, which are locked in UUID order. Expiry is
+checked after dependency locks and immediately before mutation; terminal apply
+replay remains available after expiry. Operations, audit state, one trip
+revision, and replayable outcome commit atomically. Repeated apply returns the
+exact saved outcome. Rejection is explicit. The responsive proposal panel
 shows request disclosure, a removable-item allowlist, deterministic full
 itinerary preview and diff, warnings, evidence expiry, and revisions. Apply is
 separate from generation; stale, expired, invalid, or terminal proposals are
@@ -40,7 +46,10 @@ upstream provider gate is separate. Local owner mode is not authentication;
 booking imports, private cloud use, auth, and deployment remain out of scope.
 Do not start Phase 6 before independent review closes this implementation.
 
-## Verification
+## Initial verification baseline
+
+The following evidence predates the independent review. The updated remediation
+verification below supersedes its listed gaps and records the current results.
 
 | Area | Executed evidence | Result and boundary |
 | --- | --- | --- |
@@ -58,7 +67,11 @@ not separately exercised in this run. The backend enforces response-byte and
 deadline rules in code; these unrun cases must remain visible to reviewers
 rather than inferred from adjacent research tests.
 
-## Upstream uvloop discrepancy
+## Upstream uvloop discrepancy (historical; fixed)
+
+This is the pre-fix reproduction retained for context. Upstream commit
+`6045f004fbdc4887c2bb67da9ae19a571314fc27` fixes the clock-domain conversion;
+the dual-loop tests and real HTTP results below are the current evidence.
 
 The real fake-backed HTTP flow above passes with Uvicorn's asyncio loop. On
 this host, Uvicorn's default `auto` selects uvloop 0.23.0. In that process,
@@ -107,11 +120,34 @@ to `TimeoutError`. The service catches it and stores
 `failure_code="generation_outcome_unknown"`. The failure is thus before the
 fake generator can return a proposal, rather than an invalid model result.
 
-This is an upstream clock-domain defect; this implementation did not change
-the upstream repository. Keep all proposal gates off in uvloop/auto runtime
-until the upstream owner fixes and verifies the timeout conversion. The asyncio
-fake flow is local acceptance evidence, not live provider, cloud, or production
-readiness.
+Upstream fixed this clock-domain defect in the accepted commit. The travel
+repository records both the historical failure and current local verification
+so future reviewers can distinguish the former runtime limitation from the
+remaining live-provider, cloud, authentication, and production-readiness gates.
+
+## Review remediation verification
+
+The independent review findings and local disposition are recorded in
+[`../reviews/phase-5-lifecycle-review.md`](../reviews/phase-5-lifecycle-review.md).
+This implementation still awaits independent re-review; Phase 5 is not marked
+closed and Phase 6 has not started.
+
+| Area | Executed evidence | Result and boundary |
+| --- | --- | --- |
+| Travel PostgreSQL/API/migrations | `TEST_DATABASE_URL=postgresql+psycopg://jasonkli@127.0.0.1:55433/personal_travel_phase5_test make backend-test` with `PATH` including `backend/.venv/bin` | 135 passed, zero skips, one existing Starlette/httpx deprecation warning. Run against the dedicated PostgreSQL 16.15 disposable DB with loopback access; port 55432 was not used. Includes populated upgrade/backfill through `0008`, migration/ORM parity, proposal lifecycle and SQL apply tests. |
+| Proposal lifecycle/client | `backend/tests/test_phase5_proposal_lifecycle.py` and `backend/tests/test_personal_ai_client.py` | PostgreSQL checks cover lock-wait expiry for apply/detail, terminal replay after expiry, same/cross-day changes, partial times, removal, repeated target operations, full SQL result vs preview, late-operation rollback, opposite-order shared-place locking across two trips, privacy log capture, exact provenance/support persistence, unknown generation without a renewed lookup, and HTTP omission vs explicit-null details by ID/key. Client checks cover malformed, extra-field, wrong-version, oversized, and trickling responses with bounded consumption/elapsed time, one POST, safe failures, and no authoritative mutation. |
+| Travel Python static checks | `backend/.venv/bin/ruff check backend`, `backend/.venv/bin/ruff format --check backend`, `PATH="$PWD/backend/.venv/bin:$PATH" make backend-typecheck` | Passed; mypy checked 68 source files. |
+| Upstream backend | `PATH="$PWD/backend/.venv/bin:$PATH" make backend-test`, `make backend-lint`, and `make itinerary-proposal-eval` from the accepted `personal-ai-system` checkout | 540 passed, 12 pre-existing manual/provider skips, one Starlette warning; Ruff passed; all 6 synthetic proposal evaluation cases passed with external provider disabled. Upstream source commit: `6045f004fbdc4887c2bb67da9ae19a571314fc27`. The pre-existing modified `frontend/tsconfig.tsbuildinfo` was left untouched. |
+| Frontend checks | Pinned Node 24.19.0 and pnpm 10.17.1; `pnpm test`, `pnpm lint`, `NEXT_PUBLIC_TRAVEL_PROPOSALS_ENABLED=true pnpm typecheck`, and `NEXT_PUBLIC_TRAVEL_PROPOSALS_ENABLED=true pnpm build` | Passed in an isolated scratch copy of the checked-in frontend source to keep `.next` separate from the already-running local dev server. Node tests: 20 passed, zero skipped; lint had no warnings; typecheck and production build passed. Lockfile unchanged. |
+| Mounted browser behavior | Gated repeatable fixture in [`../../frontend/tests/fixtures/proposal-lifecycle-browser.md`](../../frontend/tests/fixtures/proposal-lifecycle-browser.md), mounting the real `ProposalPanel` on local Next.js | Verified all three scenarios: expiry updates the UI and disables Apply after four seconds; stale detail blocks apply; lost apply response recovers the stored applied outcome and failed workspace refresh blocks edits until reload. The fixture uses deterministic in-memory API methods, with no provider or user data. This is a focused check, not a full assistive-technology audit. |
+| Upstream local HTTP | Fake generator, memory storage, local Uvicorn, and checked-in `itinerary-proposal-example.json` request; tested `--loop auto` and `--loop asyncio` | Both loops returned health 200 and proposal POST 201/state `proposed`; both server processes were stopped. No live provider or cloud service was contacted. |
+
+The upstream service retains one monotonic budget for synchronous/storage work
+and passes its remaining duration to `asyncio.timeout()` at asynchronous
+boundaries. Direct service tests run under asyncio and uvloop, and local Uvicorn
+HTTP checks pass for both `--loop auto` (which selects uvloop on this host) and
+`--loop asyncio`. This removes the recorded local runtime blocker; it does not
+imply live-provider, cloud, authentication, or production readiness.
 
 ## Commit sequence
 
@@ -123,8 +159,14 @@ The implementation is checkpointed in these commits:
 - `30ec2f2` verifies an expired ready proposal cannot apply or advance the
   trip revision.
 - `f82c2bc` adds the gated proposal review/apply UI and UI-state regressions.
+- `6045f004` fixes the upstream proposal timeout clock-domain conversion.
+- `5d0cd23` fixes travel lifecycle deadlines, post-lock expiry, and provenance.
+- `211eb75` adds HTTP route assertions for omitted and explicit-null operation
+  fields in proposal detail.
+- `a3bce6c` adds the repeatable mounted browser fixture, live expiry gating,
+  and the upstream provenance API fields.
 - The final documentation/checkpoint commit follows this release record.
 
 Independent review must assess atomic apply/replay, all mutation revision
 paths, footprint completeness and lock ordering, privacy, and whether the
-default-off gates remain safe while the upstream uvloop issue is outstanding.
+default-off gates remain safe. Phase 5 remains pending independent re-review.

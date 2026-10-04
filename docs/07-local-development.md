@@ -217,9 +217,11 @@ research-session table. Migration `0005` repairs legacy schedule/order data
 and adds SQL integrity. Phase 5 groundwork adds migration `0006` with
 nonnegative trip/place revisions; it is additive and initializes existing
 rows to zero. Migration `0007` adds owner-scoped proposal persistence with
-trip-delete cascade. Travel clients consume versioned AI HTTP contracts and
-do not share its Python packages. Proposal generation/apply always require
-trip revisions; existing manual writes retain optional legacy preconditions.
+trip-delete cascade; `0008` adds exact upstream revision and operation-support
+provenance, backfilling existing proposal rows. Travel clients consume versioned
+AI HTTP contracts and do not share its Python packages. Proposal
+generation/apply always require trip revisions; existing manual writes retain
+optional legacy preconditions.
 
 ## Database migrations
 
@@ -242,7 +244,7 @@ uv run --locked alembic upgrade head
 
 Then run `uv run --locked alembic check` to verify ORM/migration parity.
 Migration `0005` requires an online connection; offline SQL can be generated
-through `0004`, but is not a complete upgrade to head. Migration `0007` is the
+through `0004`, but is not a complete upgrade to head. Migration `0008` is the
 current head.
 
 ## Backup and migration recovery

@@ -176,7 +176,7 @@ Blob bytes live outside Postgres.
 
 ## Implemented Phase 5 storage
 
-### `itinerary_proposals` — migration `0007`
+### `itinerary_proposals` — migrations `0007` and `0008`
 
 Travel owns the durable proposal lifecycle. The trip foreign key cascades on
 deletion; `(owner_id, trip_id, idempotency_key)` is unique. An
@@ -191,16 +191,20 @@ owner_id, trip_id FK -> trips ON DELETE CASCADE
 idempotency_key, deterministic downstream_key
 request_fingerprint SHA-256
 state: generating | outcome_unknown | ready | failed | applied | rejected
-schema_version, policy_version, support_mode, opaque trip_handle
+schema_version, policy_version, support_mode, upstream_revision, opaque trip_handle
 upstream_proposal_id?, generation_deadline
 base_trip_revision, base_place_revisions JSON, base_snapshot JSON
-operations JSON?, preview JSON?, citations JSON
+operations JSON?, operation_support JSON, preview JSON?, citations JSON
 expires_at?, failure_code?
 applied_outcome JSON?, applied_at?, rejected_at?
 created_at, updated_at
 ```
 
-Checks constrain lifecycle/support states and nonnegative base revisions. The
+Migration `0008` backfills pre-existing proposal rows with upstream revision
+`8535cad3a146b1a19cab0958c439f170d19b8095` and empty `operation_support`, then
+enforces both fields as non-null. New rows record the exact accepted upstream
+revision and operation-to-evidence references for later audit. Checks constrain
+lifecycle/support states and nonnegative base revisions. The
 base snapshot is an internal mapping for revalidation; it carries itinerary and
 candidate identities/labels, local schedules, place revisions, and only the
 reservation status/timing needed to protect anchors and calculate conflicts.

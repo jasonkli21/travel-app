@@ -218,3 +218,50 @@ upstream changes were made; keep gates off for that runtime pending the
 independent upstream fix. Proposal-specific malformed/oversized/trickling
 response tests, opposite-trip shared-place concurrency, and log-capture privacy
 assertions remain unrun and are listed explicitly in the release record.
+
+## Phase 5 review-fix checkpoint — independent re-review pending
+
+Updated 2026-10-04. The outstanding local remediation is complete and
+checkpointed. The immediately preceding checkpoint is superseded: upstream
+`personal-ai-system` revision
+`6045f004fbdc4887c2bb67da9ae19a571314fc27` fixes the monotonic/event-loop clock
+conversion, and fake HTTP generation returns `201/state=proposed` under both
+Uvicorn `auto` (uvloop on this host) and `asyncio`. This does not close Phase 5.
+Travel, upstream capability/storage, and provider gates remain off pending
+independent coordinator re-review. Do not begin Phase 6 or cloud work.
+
+The travel remediation commits are:
+
+- `5d0cd233f60f6adaf925a8f636daa50b1dfe7b57` hardens post-lock expiry,
+  generation deadlines, and durable provenance.
+- `211eb7564e86b77bebcbfb0c2476dc54ec2042bb` verifies omitted versus explicit
+  null operation fields through the API routes.
+- `a3bce6c` adds the mounted `ProposalPanel` fixture, live expiry gating, and
+  upstream provenance fields in the frontend contract.
+- The current documentation commit updates the release/review evidence and
+  this coordinator checkpoint.
+
+The release and lifecycle-review documents now record the exact checks. The
+latest evidence is 135 travel backend tests passed with zero skips on the
+dedicated disposable PostgreSQL 16.15 database at port 55433; Ruff check/format
+and mypy passed. Frontend verification passed 20 Node tests with zero skips,
+ESLint without warnings, strict TypeScript, and production build. The mounted
+fixture verified expiry disables Apply after four seconds, stale detail blocks
+apply, and lost-response recovery reads the committed result then blocks edits
+when workspace refresh fails. Upstream verification passed 540 tests with 12
+pre-existing manual/provider skips, Ruff, and all six synthetic proposal
+evaluation cases. The upstream fake HTTP POST passed under both loop modes;
+both server processes were stopped. The earlier modification to upstream
+`frontend/tsconfig.tsbuildinfo` was preserved.
+
+The fixture route is development-only and returns 404 unless
+`TRAVEL_PROPOSAL_BROWSER_FIXTURE=true`. It uses deterministic in-memory API
+methods. The separate `NEXT_PUBLIC_TRAVEL_PROPOSALS_ENABLED` UI gate is still
+required, and all gates remain off by default. No live provider, cloud service,
+authentication flow, production deployment, or port 55432 was used.
+
+Coordinator re-review is the next action. Assess atomic apply/replay, every
+mutation revision path, dependency-footprint completeness and lock ordering,
+privacy, and the default-off gates against the Phase 5 plan. Record findings in
+the lifecycle review and resolve any new findings before marking Phase 5
+closed. Phase 6 remains stopped.

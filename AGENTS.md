@@ -58,13 +58,12 @@ Current delivered capabilities include:
 - product/design/architecture/implementation/release documentation.
 
 The travel-side research and proposal gates default off; upstream capability,
-storage, and provider gates must be configured separately. The local fake HTTP
-proposal integration passes with Uvicorn's asyncio loop. On this host,
-Uvicorn's auto-selected uvloop exposes an upstream clock-domain bug that makes
-generation return `generation_outcome_unknown`; keep proposal gates off in
-that runtime until upstream fixes it. Phase 6+ remain planned. External
-booking imports, authentication, cloud deployment, and attachments remain
-planned.
+storage, and provider gates must be configured separately. The upstream
+clock-domain fix passes local fake HTTP verification with Uvicorn `auto`
+(uvloop on this host) and `asyncio`. Proposal gates remain off pending
+independent Phase 5 review. Migration `0008` adds exact upstream revision and
+operation-support provenance. Phase 6+ remain planned. External booking
+imports, authentication, cloud deployment, and attachments remain planned.
 
 ## Architectural invariants
 

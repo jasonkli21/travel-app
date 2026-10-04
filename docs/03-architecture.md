@@ -199,11 +199,11 @@ UI request
 
 The client uses a single bounded deadline and response byte limit. Ambiguous
 generation outcomes reconcile through the same stable downstream key; they
-never trigger an automatic POST with a new key. Apply replay returns the
-exact stored outcome. The upstream fake HTTP flow passed with Uvicorn's
-asyncio loop. On this host Uvicorn auto-selects uvloop, which exposes an
-upstream `loop.time()`/`time.monotonic()` mismatch; see the Phase 5 release
-record and keep both generation gates disabled in that runtime until fixed.
+never trigger an automatic POST with a new key or reset the external request
+budget. Apply replay returns the exact stored outcome. The upstream monotonic
+deadline is converted to a remaining duration at async timeout boundaries; the
+local fake HTTP flow passes with Uvicorn's `auto` (uvloop here) and `asyncio`
+loops. Proposal gates remain off while independent Phase 5 review is pending.
 
 ## Async work
 

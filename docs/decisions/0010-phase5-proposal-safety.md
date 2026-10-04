@@ -9,7 +9,8 @@
 
 The upstream itinerary proposal capability was independently reviewed and
 accepted at `personal-ai-system` revision
-`8535cad3a146b1a19cab0958c439f170d19b8095`. The pinned versions are
+`6045f004fbdc4887c2bb67da9ae19a571314fc27`, which includes the verified
+clock-domain deadline fix. The pinned versions are
 `itinerary-proposal-v1`, context `travel-itinerary-context-v1`, and policy
 `itinerary-proposal-policy-v2`. The consumer calls only the documented
 `POST /v1/travel/itinerary-proposals`, `GET
@@ -123,7 +124,11 @@ Both modes still pass through this application's deterministic preview and
 revalidation.
 
 The proposal lifetime is at most 24 hours from creation and is shortened to the
-earliest referenced evidence expiry. It cannot be extended by replay.
+earliest referenced evidence expiry. It cannot be extended by replay. Apply
+checks expiry after all trip, proposal, and shared-place locks are acquired and
+immediately before mutation; an already-applied replay returns its saved result
+even after expiry. Durable proposal metadata retains the exact upstream
+revision and operation-to-evidence references for audit.
 Idempotency is scoped to owner and trip: replay with the same normalized
 request returns the original proposal; reusing a key with a different request
 conflicts. Apply is explicit and atomic with the itinerary changes, terminal
