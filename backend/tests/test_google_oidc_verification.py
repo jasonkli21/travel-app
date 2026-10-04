@@ -159,6 +159,56 @@ def test_google_oidc_rejects_signature_forgery(google_keys) -> None:
         principal_from_google_token(forged, oidc_settings())
 
 
+def test_workspace_owner_requires_verified_hosted_domain_claim(google_keys) -> None:
+    signer, _ = google_keys
+    settings = oidc_settings(
+        google_oauth_allowed_email="owner@example.com",
+        google_oauth_allowed_hosted_domain="example.com",
+    )
+    with pytest.raises(InvalidIdentityToken):
+        principal_from_google_token(google_token(signer, email="owner@example.com"), settings)
+    with pytest.raises(InvalidIdentityToken):
+        principal_from_google_token(
+            google_token(signer, email="owner@example.com", hd="attacker.com"), settings
+        )
+    assert (
+        principal_from_google_token(
+            google_token(signer, email="owner@example.com", hd="example.com"), settings
+        ).email
+        == "owner@example.com"
+    )
+
+
+def test_cloud_transport_rejects_cleartext_or_unintended_destination() -> None:
+    base = {
+        "personal_ai_auth_mode": "google_cloud_run_iam",
+        "personal_ai_user_id_token_audience": "travel-client.apps.googleusercontent.com",
+        "personal_ai_service_iam_audience": "https://personal-ai.test",
+        "personal_ai_service_account": "travel-ai@project.iam.gserviceaccount.com",
+    }
+    with pytest.raises(ValidationError):
+        oidc_settings(**base, personal_ai_base_url="http://personal-ai.test")
+    with pytest.raises(ValidationError):
+        oidc_settings(**base, personal_ai_base_url="https://other.test")
+    assert (
+        oidc_settings(**base, personal_ai_base_url="https://personal-ai.test").personal_ai_auth_mode
+        == "google_cloud_run_iam"
+    )
+    assert (
+        oidc_settings(
+            **base,
+            personal_ai_base_url="https://other.test",
+            personal_ai_allow_custom_service_audience=True,
+        ).personal_ai_auth_mode
+        == "google_cloud_run_iam"
+    )
+
+
+def test_cookie_names_are_fixed_to_web_proxy_contract() -> None:
+    with pytest.raises(ValidationError):
+        oidc_settings(auth_csrf_cookie_name="__Host-other_csrf")
+
+
 def test_cloud_run_transport_token_is_verified_for_service_account_and_audience(
     google_keys,
     monkeypatch: pytest.MonkeyPatch,
@@ -170,6 +220,8 @@ def test_cloud_run_transport_token_is_verified_for_service_account_and_audience(
         signer,
         aud=audience,
         email=service_account,
+        sub="123456789012345678901",
+        azp="123456789012345678901",
     )
     monkeypatch.setattr(
         "personal_travel.auth.google_oidc.id_token.fetch_id_token",
@@ -179,6 +231,19 @@ def test_cloud_run_transport_token_is_verified_for_service_account_and_audience(
     assert cloud_run_service_id_token(audience, service_account) == token
     with pytest.raises(InvalidIdentityToken):
         cloud_run_service_id_token(audience, "other@project.iam.gserviceaccount.com")
+    mismatched_identity = google_token(
+        signer,
+        aud=audience,
+        email=service_account,
+        sub="123456789012345678901",
+        azp="999999999999999999999",
+    )
+    monkeypatch.setattr(
+        "personal_travel.auth.google_oidc.id_token.fetch_id_token",
+        lambda _request, _target: mismatched_identity,
+    )
+    with pytest.raises(InvalidIdentityToken):
+        cloud_run_service_id_token(audience, service_account)
 
 
 def test_cloud_run_transport_token_rejects_wrong_audience(google_keys, monkeypatch) -> None:
@@ -248,7 +313,7 @@ def test_google_key_fetch_is_bounded_and_cache_is_single_entry() -> None:
     request(GOOGLE_CERT_URL, timeout=30)
     request(GOOGLE_CERT_URL, timeout=30)
 
-    assert calls == [3]
+    assert len(calls) == 1 and 0 < calls[0] <= 3
 
 
 def test_google_key_response_is_capped_before_buffering() -> None:
@@ -279,6 +344,35 @@ def test_google_key_response_is_capped_before_buffering() -> None:
     request.session = SyntheticSession()  # type: ignore[assignment]
     with pytest.raises(TransportError):
         request(GOOGLE_CERT_URL)
+
+
+def test_google_key_trickle_exceeds_one_elapsed_budget() -> None:
+    class TricklingResponse:
+        status_code = 200
+        headers = {"cache-control": "public, max-age=300"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def iter_content(self, *, chunk_size: int):
+            for _ in range(5):
+                time.sleep(0.02)
+                yield b"x"
+
+    class SyntheticSession:
+        def close(self) -> None:
+            return None
+
+        def request(self, *_args: object, **_kwargs: object) -> TricklingResponse:
+            return TricklingResponse()
+
+    bounded = _BoundedRequest()
+    bounded.session = SyntheticSession()  # type: ignore[assignment]
+    with pytest.raises(TransportError):
+        bounded(GOOGLE_CERT_URL, timeout=0.03)
 
 
 @pytest.mark.parametrize(

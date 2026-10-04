@@ -121,6 +121,22 @@ class PersonalAIClient:
         )
         self._transport = transport
         self._auth_context = auth_context
+        if auth_context is not None:
+            destination = urlsplit(self._base_url)
+            configured = urlsplit(str(settings.personal_ai_base_url))
+            if (
+                destination.scheme != "https"
+                or not destination.hostname
+                or destination.username is not None
+                or destination.password is not None
+                or destination.query
+                or destination.fragment
+                or (destination.scheme, destination.netloc, destination.path.rstrip("/"))
+                != (configured.scheme, configured.netloc, configured.path.rstrip("/"))
+            ):
+                raise ValueError(
+                    "Authenticated AI requests require the configured HTTPS service URL."
+                )
         self._service_token_fetcher = service_token_fetcher or cloud_run_service_id_token
 
     async def _outbound_headers(self) -> dict[str, str]:

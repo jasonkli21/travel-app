@@ -10,11 +10,13 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+from pydantic import ValidationError
 from sqlalchemy import func, select, text, update
 from sqlalchemy.orm import Session
 
 from personal_travel.auth.google_oidc import stable_google_owner_id
 from personal_travel.db.base import Base
+from personal_travel.domain.proposals import ProposalTripSnapshot
 from personal_travel.models import (
     AuthIdentity,
     ItineraryProposal,
@@ -22,6 +24,8 @@ from personal_travel.models import (
     Place,
     Trip,
 )
+from personal_travel.services.errors import DomainError
+from personal_travel.services.proposal_preview import validate_proposal_snapshot
 
 OWNER_SCOPED_TABLES = (
     "trips",
@@ -39,6 +43,57 @@ MAX_BACKUP_BYTES = 16 * 1024 * 1024 * 1024
 
 class OwnerMigrationRejected(ValueError):
     """The requested owner migration failed its explicit safety checks."""
+
+
+def _transfer_snapshot(
+    proposal: ItineraryProposal, source_owner_id: str, target_owner_id: str
+) -> dict[str, Any]:
+    snapshot = proposal.base_snapshot
+    if not isinstance(snapshot, dict) or snapshot.get("owner_id") != source_owner_id:
+        raise OwnerMigrationRejected("A proposal snapshot has a different owner.")
+    rewritten = dict(snapshot)
+    rewritten["owner_id"] = target_owner_id
+    for collection in ("places", "candidates", "reservations"):
+        if collection not in rewritten and proposal.state not in {
+            "ready",
+            "generating",
+            "outcome_unknown",
+        }:
+            continue  # Legacy terminal records cannot be applied or reconciled.
+        rows = rewritten.get(collection)
+        if not isinstance(rows, list):
+            raise OwnerMigrationRejected("A proposal snapshot is malformed.")
+        new_rows = []
+        for row in rows:
+            if not isinstance(row, dict) or row.get("owner_id") != source_owner_id:
+                raise OwnerMigrationRejected("A proposal snapshot references a foreign owner.")
+            new_rows.append({**row, "owner_id": target_owner_id})
+        rewritten[collection] = new_rows
+    if "days" in rewritten:
+        days = rewritten["days"]
+        if not isinstance(days, list):
+            raise OwnerMigrationRejected("A proposal snapshot is malformed.")
+        new_days = []
+        for day in days:
+            if not isinstance(day, dict) or not isinstance(day.get("items"), list):
+                raise OwnerMigrationRejected("A proposal snapshot is malformed.")
+            items = []
+            for item in day["items"]:
+                if not isinstance(item, dict) or item.get("owner_id") != source_owner_id:
+                    raise OwnerMigrationRejected("A proposal item references a foreign owner.")
+                items.append({**item, "owner_id": target_owner_id})
+            new_days.append({**day, "items": items})
+        rewritten["days"] = new_days
+    elif proposal.state in {"ready", "generating", "outcome_unknown"}:
+        raise OwnerMigrationRejected("An active proposal snapshot is incomplete.")
+    if proposal.state in {"ready", "generating", "outcome_unknown"}:
+        try:
+            validate_proposal_snapshot(
+                ProposalTripSnapshot.model_validate_json(json.dumps(rewritten))
+            )
+        except (ValidationError, ValueError, DomainError) as error:
+            raise OwnerMigrationRejected("An active proposal snapshot is invalid.") from error
+    return rewritten
 
 
 @dataclass(frozen=True, slots=True)
@@ -241,11 +296,12 @@ def inspect_owner_migration(
     source_proposals = session.scalars(
         select(ItineraryProposal).where(ItineraryProposal.owner_id == source_owner_id)
     ).all()
-    mismatched_snapshots = sum(
-        not isinstance(proposal.base_snapshot, dict)
-        or proposal.base_snapshot.get("owner_id") != source_owner_id
-        for proposal in source_proposals
-    )
+    mismatched_snapshots = 0
+    for proposal in source_proposals:
+        try:
+            _transfer_snapshot(proposal, source_owner_id, target_owner_id)
+        except OwnerMigrationRejected:
+            mismatched_snapshots += 1
     counts["proposal_snapshot_owner_id"] = len(source_proposals) - mismatched_snapshots
 
     conflicts = {
@@ -394,6 +450,13 @@ def apply_owner_migration(
                 select(ItineraryProposal.id).where(ItineraryProposal.owner_id == source_owner_id)
             )
         )
+        transferred_proposals = []
+        for proposal in session.scalars(
+            select(ItineraryProposal).where(ItineraryProposal.id.in_(source_proposal_ids))
+        ):
+            transferred_proposals.append(
+                (proposal.id, _transfer_snapshot(proposal, source_owner_id, target_owner_id))
+            )
         for table_name in OWNER_SCOPED_TABLES:
             table = Base.metadata.tables[table_name]
             session.execute(
@@ -401,12 +464,13 @@ def apply_owner_migration(
                 .where(table.c.owner_id == source_owner_id)
                 .values(owner_id=target_owner_id)
             )
-        for proposal in session.scalars(
-            select(ItineraryProposal).where(ItineraryProposal.id.in_(source_proposal_ids))
-        ):
-            snapshot = dict(proposal.base_snapshot)
-            snapshot["owner_id"] = target_owner_id
-            proposal.base_snapshot = snapshot
+        for proposal_id, snapshot in transferred_proposals:
+            transferred = session.get(ItineraryProposal, proposal_id)
+            assert transferred is not None
+            transferred.base_snapshot = snapshot
+            if transferred.state in {"generating", "outcome_unknown"}:
+                transferred.state = "failed"
+                transferred.failure_code = "owner_migrated_remote_unrecoverable"
 
         session.execute(text("SET CONSTRAINTS ALL IMMEDIATE"))
         after_revisions = _revision_fingerprint(session)

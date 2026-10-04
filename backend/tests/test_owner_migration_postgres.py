@@ -1,21 +1,25 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from personal_travel.auth.owner_migration import (
     OwnerMigrationRejected,
+    _transfer_snapshot,
     apply_owner_migration,
     inspect_owner_migration,
     stable_owner_id,
 )
+from personal_travel.domain.proposals import ProposalTripSnapshot
 from personal_travel.models import (
     AuthIdentity,
     ItineraryItem,
@@ -26,6 +30,10 @@ from personal_travel.models import (
     SavedPlace,
     Trip,
     TripDay,
+)
+from personal_travel.services.proposal_preview import (
+    build_proposal_snapshot,
+    validate_proposal_snapshot,
 )
 
 pytestmark = pytest.mark.usefixtures("clean_database")
@@ -128,7 +136,7 @@ def test_dry_run_counts_full_owner_graph_without_mutating(database_engine: Engin
 
     plan = inspect(database_engine, target)
 
-    assert plan.can_apply
+    assert plan.can_apply, plan.conflicts
     assert plan.counts["trips"] == 1
     assert plan.counts["trip_days"] == 1
     assert plan.counts["itinerary_items"] == 1
@@ -263,6 +271,69 @@ def test_explicit_owner_migration_updates_graph_and_snapshot_preserving_revision
         assert proposal.base_snapshot["owner_id"] == target
         assert session.get(OwnerMigrationAudit, run_id) is not None
         assert session.scalar(select(ItineraryItem.id)) is not None
+
+
+def test_transfer_rewrites_complete_active_snapshot_and_invalidates_remote_generation(
+    database_engine: Engine, tmp_path: Path
+) -> None:
+    with Session(database_engine) as session, session.begin():
+        target = target_identity(session)
+        trip, _ = source_graph(session)
+        session.expire_all()
+        trip = session.get(Trip, trip.id)
+        assert trip is not None
+        snapshot = jsonable_encoder(build_proposal_snapshot(trip, "local").model_dump(mode="json"))
+        proposal = session.scalar(select(ItineraryProposal))
+        assert proposal is not None
+        proposal.base_snapshot = snapshot
+        proposal.state = "outcome_unknown"
+        _transfer_snapshot(proposal, "local", target)
+
+    plan = inspect(database_engine, target)
+    assert plan.can_apply, plan.conflicts
+    backup = tmp_path / "synthetic-backup.sql"
+    backup.write_bytes(b"synthetic disposable test database backup")
+    with Session(database_engine) as session:
+        apply_owner_migration(
+            session,
+            source_owner_id="local",
+            target_owner_id=target,
+            run_id=uuid4(),
+            expected_plan_digest=plan.plan_digest,
+            backup_file=backup,
+            expected_backup_sha256=hashlib.sha256(backup.read_bytes()).hexdigest(),
+            confirmation=f"local -> {target}",
+        )
+    with Session(database_engine) as session:
+        proposal = session.scalar(select(ItineraryProposal))
+        assert proposal is not None
+        transferred = ProposalTripSnapshot.model_validate_json(json.dumps(proposal.base_snapshot))
+        validate_proposal_snapshot(transferred)
+        assert transferred.owner_id == target
+        assert all(value.owner_id == target for value in transferred.places)
+        assert all(value.owner_id == target for value in transferred.candidates)
+        assert all(value.owner_id == target for value in transferred.reservations)
+        assert all(item.owner_id == target for day in transferred.days for item in day.items)
+        assert proposal.state == "failed"
+        assert proposal.failure_code == "owner_migrated_remote_unrecoverable"
+
+
+def test_transfer_rejects_foreign_nested_snapshot_owner(database_engine: Engine) -> None:
+    with Session(database_engine) as session, session.begin():
+        target = target_identity(session)
+        trip, _ = source_graph(session)
+        session.expire_all()
+        trip = session.get(Trip, trip.id)
+        assert trip is not None
+        snapshot = jsonable_encoder(build_proposal_snapshot(trip, "local").model_dump(mode="json"))
+        snapshot["places"][0]["owner_id"] = "foreign"
+        proposal = session.scalar(select(ItineraryProposal))
+        assert proposal is not None
+        proposal.base_snapshot = snapshot
+        proposal.state = "ready"
+    plan = inspect(database_engine, target)
+    assert plan.conflicts["proposal_snapshot_owner_mismatch"] == 1
+    assert not plan.can_apply
 
 
 def test_owner_migration_rejects_same_count_graph_changes_after_dry_run(

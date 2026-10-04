@@ -37,6 +37,7 @@ def google_settings(**updates: object) -> Settings:
         "google_oauth_client_secret": "synthetic-client-secret",
         "google_oauth_redirect_uri": "https://travel.test/auth/google/callback",
         "google_oauth_allowed_email": "owner@gmail.com",
+        "personal_ai_base_url": "https://travel-ai.test",
     }
     return Settings(**(values | updates))
 
@@ -266,6 +267,19 @@ def test_verified_session_scopes_owner_and_csrf_logout_revokes_session(
     expired_status = api_client.get("/v1/auth/session", cookies=cookies)
     assert expired_status.status_code == 200
     assert expired_status.json()["authenticated"] is False
+
+
+def test_existing_session_loses_access_when_owner_allowlist_changes(
+    api_client: TestClient, database_engine: Engine
+) -> None:
+    original = google_settings()
+    use_settings(api_client, original)
+    raw_session, _csrf = make_identity_and_session(database_engine)
+    cookies = {original.auth_session_cookie_name: raw_session}
+    assert api_client.get("/v1/trips", cookies=cookies).status_code == 200
+    use_settings(api_client, google_settings(google_oauth_allowed_email="another@gmail.com"))
+    assert api_client.get("/v1/trips", cookies=cookies).status_code == 401
+    assert api_client.get("/v1/auth/session", cookies=cookies).json()["authenticated"] is False
 
 
 def test_google_code_flow_binds_state_browser_cookie_nonce_and_single_use(

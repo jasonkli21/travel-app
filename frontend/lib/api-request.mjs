@@ -8,15 +8,30 @@ export class ApiError extends Error {
   }
 }
 
+// The CSRF cookie is readable by the browser; the session cookie is not.
+// Reject ambiguous cookie headers instead of choosing an attacker-controlled copy.
+export function csrfCookieValue(cookieHeader) {
+  const values = cookieHeader.split(";").map((part) => part.trim())
+    .filter((part) => part.startsWith("__Host-travel_csrf="));
+  if (values.length !== 1) return null;
+  const value = values[0].slice("__Host-travel_csrf=".length);
+  return /^[A-Za-z0-9_-]{43}$/.test(value) ? value : null;
+}
+
 export async function request(path, init = {}) {
   let response;
   try {
+    const method = (init.method ?? "GET").toUpperCase();
+    const headers = new Headers(init.headers);
+    if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+    if (!["GET", "HEAD", "OPTIONS"].includes(method) && typeof document !== "undefined") {
+      const csrf = csrfCookieValue(document.cookie);
+      if (csrf) headers.set("X-CSRF-Token", csrf);
+      else headers.delete("X-CSRF-Token");
+    }
     response = await fetch(`/api/v1${path}`, {
       ...init,
-      headers: {
-        ...(init.body ? { "Content-Type": "application/json" } : {}),
-        ...init.headers,
-      },
+      headers,
       cache: "no-store",
       signal: init.signal ?? AbortSignal.timeout(65_000),
     });

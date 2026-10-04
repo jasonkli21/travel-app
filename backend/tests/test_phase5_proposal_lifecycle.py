@@ -1,12 +1,14 @@
 """PostgreSQL lifecycle and atomic-apply checks for itinerary proposals."""
 
 import asyncio
+import hashlib
 import json
 import logging
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from os import environ
+from pathlib import Path
 from threading import Barrier, Event, Lock
 from uuid import UUID, uuid4
 
@@ -19,6 +21,11 @@ from sqlalchemy.orm import Session
 
 import personal_travel.services.proposals as proposal_service_module
 from personal_travel.api.dependencies import session_dependency
+from personal_travel.auth.owner_migration import (
+    apply_owner_migration,
+    inspect_owner_migration,
+    stable_owner_id,
+)
 from personal_travel.clients.personal_ai import PersonalAIClient, PersonalAIProposalUnknown
 from personal_travel.config import Settings, get_settings
 from personal_travel.domain.proposals import (
@@ -35,6 +42,7 @@ from personal_travel.domain.upstream_proposals import (
     UpstreamProposalResult,
 )
 from personal_travel.main import app
+from personal_travel.models.auth import AuthIdentity
 from personal_travel.models.proposal import ItineraryProposal
 from personal_travel.services.proposals import ProposalService
 
@@ -384,6 +392,55 @@ def test_generation_preview_apply_and_exact_outcome_replay(
         assert row.applied_outcome is not None
         assert row.applied_outcome["applied_revision"] == outcome["applied_revision"]
         assert row.applied_outcome["preview"] == outcome["preview"]
+
+
+def test_ready_proposal_applies_after_explicit_owner_transfer(
+    proposal_client: TestClient,
+    database_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    trip, _item_id, _place_id = create_trip_with_item(proposal_client)
+    monkeypatch.setattr(PersonalAIClient, "create_itinerary_proposal", fake_time_change())
+    created = request_proposal(proposal_client, trip, uuid4())
+    assert created.status_code == 201 and created.json()["state"] == "ready"
+    proposal_id = UUID(created.json()["proposal_id"])
+    trip_id = UUID(str(trip["id"]))
+    target = stable_owner_id("https://accounts.google.com", "synthetic-transfer-subject")
+    with Session(database_engine) as session, session.begin():
+        session.add(
+            AuthIdentity(
+                owner_id=target,
+                issuer="https://accounts.google.com",
+                subject="synthetic-transfer-subject",
+                email="owner@gmail.com",
+                status="active",
+            )
+        )
+    with Session(database_engine) as session, session.begin():
+        plan = inspect_owner_migration(session, source_owner_id="local", target_owner_id=target)
+    assert plan.can_apply, plan.conflicts
+    backup = tmp_path / "synthetic-backup.sql"
+    backup.write_bytes(b"synthetic disposable test database backup")
+    with Session(database_engine) as session:
+        apply_owner_migration(
+            session,
+            source_owner_id="local",
+            target_owner_id=target,
+            run_id=uuid4(),
+            expected_plan_digest=plan.plan_digest,
+            backup_file=backup,
+            expected_backup_sha256=hashlib.sha256(backup.read_bytes()).hexdigest(),
+            confirmation=f"local -> {target}",
+        )
+    with Session(database_engine, autoflush=False, expire_on_commit=False) as session:
+        result = asyncio.run(
+            ProposalService(session, target, Settings(personal_ai_proposals_enabled=True)).apply(
+                trip_id, proposal_id, expected_revision=int(trip["revision"])
+            )
+        )
+    assert result.state == "applied"
+    assert result.applied_revision == int(trip["revision"]) + 1
 
 
 def test_explicit_null_clears_only_the_present_time_field(

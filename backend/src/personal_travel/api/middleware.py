@@ -1,5 +1,6 @@
 """Host/origin gate, request identity and a bounded pre-routing body boundary."""
 
+import asyncio
 import logging
 from datetime import UTC, datetime
 from hmac import compare_digest
@@ -7,6 +8,7 @@ from time import monotonic
 from urllib.parse import urlsplit
 from uuid import uuid4
 
+from anyio.to_thread import run_sync
 from fastapi import Request
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.datastructures import Headers, MutableHeaders
@@ -133,8 +135,20 @@ class LocalBoundaryMiddleware:
                 )
                 if session_cookie is not None:
                     try:
-                        with session_factory() as db_session:
-                            active_session = load_active_session(db_session, session_cookie)
+
+                        def lookup_session() -> ActiveSession | None:
+                            with session_factory() as db_session:
+                                return load_active_session(db_session, session_cookie)
+
+                        async with asyncio.timeout(5):
+                            active_session = await run_sync(lookup_session, abandon_on_cancel=True)
+                    except TimeoutError:
+                        await reject(
+                            503,
+                            "authentication_unavailable",
+                            "Authentication storage is temporarily unavailable.",
+                        )
+                        return
                     except SQLAlchemyError:
                         await reject(
                             503,
@@ -142,6 +156,11 @@ class LocalBoundaryMiddleware:
                             "Authentication storage is temporarily unavailable.",
                         )
                         return
+                    if active_session is not None and (
+                        active_session.principal.email
+                        != settings.google_oauth_allowed_email_normalized
+                    ):
+                        active_session = None
                     if active_session is None and not public_auth:
                         await reject(401, "session_expired", "Sign in again to continue.")
                         return
@@ -214,7 +233,20 @@ class LocalBoundaryMiddleware:
                         )
                         return
                     try:
-                        ai_principal = principal_from_google_token(user_token, settings)
+                        async with asyncio.timeout(4):
+                            ai_principal = await run_sync(
+                                principal_from_google_token,
+                                user_token,
+                                settings,
+                                abandon_on_cancel=True,
+                            )
+                    except TimeoutError:
+                        await reject(
+                            503,
+                            "identity_provider_unavailable",
+                            "Google identity verification is temporarily unavailable.",
+                        )
+                        return
                     except IdentityProviderUnavailable:
                         await reject(
                             503,

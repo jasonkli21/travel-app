@@ -64,15 +64,22 @@ class _BoundedRequest(Request):
         **kwargs: Any,
     ) -> Any:
         if method.upper() == "GET" and url == GOOGLE_CERT_URL and body is None:
-            with self._cache_lock:
+            budget = min(timeout or 3, 3)
+            deadline = time.monotonic() + budget
+            if not self._cache_lock.acquire(timeout=budget):
+                raise TransportError("Google key cache is busy.")  # type: ignore[no-untyped-call]
+            try:
                 if self._response is not None and time.monotonic() < self._expires_at:
                     return self._response
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TransportError("Google key fetch exceeded its deadline.")  # type: ignore[no-untyped-call]
                 response = self._request_bounded(
                     url=url,
                     method=method,
                     body=body,
                     headers=headers,
-                    timeout=min(timeout or 3, 3),
+                    timeout=remaining,
                     max_bytes=MAX_CERT_RESPONSE_BYTES,
                 )
                 cache_seconds = _cache_max_age(response.headers.get("cache-control", ""))
@@ -83,6 +90,8 @@ class _BoundedRequest(Request):
                 )
                 self._expires_at = time.monotonic() + cache_seconds
                 return response
+            finally:
+                self._cache_lock.release()
         parsed = urlsplit(url)
         if (
             method.upper() == "GET"
@@ -113,6 +122,7 @@ class _BoundedRequest(Request):
         timeout: float,
         max_bytes: int,
     ) -> _CachedResponse:
+        deadline = time.monotonic() + timeout
         try:
             with self.session.request(
                 method,
@@ -125,6 +135,8 @@ class _BoundedRequest(Request):
             ) as response:
                 payload = bytearray()
                 for chunk in response.iter_content(chunk_size=8192):
+                    if time.monotonic() >= deadline:
+                        raise OSError("Google identity request exceeded its deadline.")
                     payload.extend(chunk)
                     if len(payload) > max_bytes:
                         raise OSError("Google identity response exceeded its byte limit.")
@@ -163,6 +175,20 @@ def stable_google_owner_id(issuer: str, subject: str) -> str:
     return f"usr_{digest[:32]}"
 
 
+def authoritative_allowed_email(claims: Mapping[str, Any], settings: Settings) -> bool:
+    email = claims.get("email")
+    if not isinstance(email, str) or claims.get("email_verified") is not True:
+        return False
+    normalized = email.strip().lower()
+    if normalized != settings.google_oauth_allowed_email_normalized:
+        return False
+    domain = normalized.rsplit("@", 1)[-1]
+    if domain in {"gmail.com", "googlemail.com"}:
+        return True
+    hosted_domain = settings.google_oauth_allowed_hosted_domain.strip().lower()
+    return bool(hosted_domain and domain == hosted_domain and claims.get("hd") == hosted_domain)
+
+
 _verification_lock = threading.Lock()
 _token_cache_lock = threading.Lock()
 _verified_tokens: OrderedDict[str, tuple[int, dict[str, Any]]] = OrderedDict()
@@ -170,6 +196,7 @@ _key_request = _BoundedRequest()
 
 
 def _claims(token: str, audience: str) -> dict[str, Any]:
+    deadline = time.monotonic() + 3
     fingerprint = hashlib.sha256(f"{audience}\0{token}".encode()).hexdigest()
     now = int(time.time())
     with _token_cache_lock:
@@ -182,10 +209,18 @@ def _claims(token: str, audience: str) -> dict[str, Any]:
     try:
         # google-auth verifies the signature, audience, issuer and expiry. One
         # shared request/cache is protected because Requests sessions are mutable.
-        with _verification_lock:
+        if not _verification_lock.acquire(timeout=max(0, deadline - time.monotonic())):
+            raise IdentityProviderUnavailable
+        try:
+            if time.monotonic() >= deadline:
+                raise IdentityProviderUnavailable
             verified = id_token.verify_oauth2_token(  # type: ignore[no-untyped-call]
                 token, _key_request, audience=audience
             )
+            if time.monotonic() >= deadline:
+                raise IdentityProviderUnavailable
+        finally:
+            _verification_lock.release()
     except TransportError as error:
         raise IdentityProviderUnavailable from error
     except (GoogleAuthError, ValueError, TypeError, KeyError) as error:
@@ -223,8 +258,6 @@ def principal_from_google_token(token: str, settings: Settings) -> VerifiedPrinc
     subject = claims.get("sub")
     token_audience = claims.get("aud")
     authorized_party = claims.get("azp")
-    email = claims.get("email")
-    verified_email = claims.get("email_verified")
     issued_at = claims.get("iat")
     expires_at = claims.get("exp")
     nonce = claims.get("nonce")
@@ -237,9 +270,7 @@ def principal_from_google_token(token: str, settings: Settings) -> VerifiedPrinc
         or token_audience
         not in (settings.google_oauth_client_id, [settings.google_oauth_client_id])
         or (authorized_party is not None and authorized_party != settings.google_oauth_client_id)
-        or not isinstance(email, str)
-        or email.strip().lower() != settings.google_oauth_allowed_email_normalized
-        or verified_email is not True
+        or not authoritative_allowed_email(claims, settings)
         or not _is_finite_number(issued_at)
         or not _is_finite_number(expires_at)
         or issued_at > now + 60
@@ -252,7 +283,7 @@ def principal_from_google_token(token: str, settings: Settings) -> VerifiedPrinc
         issuer=CANONICAL_GOOGLE_ISSUER,
         subject=subject,
         owner_id=stable_google_owner_id(issuer, subject),
-        email=email.strip().lower(),
+        email=settings.google_oauth_allowed_email_normalized,
         issued_at=int(issued_at),
         expires_at=int(expires_at),
         nonce=nonce if isinstance(nonce, str) else None,
@@ -277,6 +308,7 @@ def cloud_run_service_id_token(audience: str, expected_service_account: str) -> 
     issuer = claims.get("iss")
     token_audience = claims.get("aud")
     authorized_party = claims.get("azp")
+    subject = claims.get("sub")
     email = claims.get("email")
     email_verified = claims.get("email_verified")
     issued_at = claims.get("iat")
@@ -293,7 +325,9 @@ def cloud_run_service_id_token(audience: str, expected_service_account: str) -> 
         or not _is_finite_number(expires_at)
         or expires_at <= issued_at
         or expires_at <= now + TOKEN_CACHE_MARGIN_SECONDS
-        or (authorized_party is not None and authorized_party != audience)
+        or not isinstance(subject, str)
+        or not subject.isdecimal()
+        or authorized_party != subject
     ):
         raise InvalidIdentityToken
     return token

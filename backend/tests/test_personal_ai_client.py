@@ -14,6 +14,7 @@ from personal_travel.clients.personal_ai import (
     PersonalAIHealth,
     PersonalAIProposalUnknown,
 )
+from personal_travel.config import Settings
 
 
 def _client_with_transport(
@@ -46,6 +47,7 @@ def test_personal_ai_health_returns_typed_response(monkeypatch: pytest.MonkeyPat
 
 def test_personal_ai_outbound_identity_keeps_user_and_transport_tokens_separate(
     caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     user_token = "synthetic-user-id-token-secret"
     service_token = "synthetic-service-id-token-secret"
@@ -54,6 +56,11 @@ def test_personal_ai_outbound_identity_keeps_user_and_transport_tokens_separate(
     def fetch_service_token(audience: str, service_account: str) -> str:
         fetched.append((audience, service_account))
         return service_token
+
+    monkeypatch.setattr(
+        "personal_travel.clients.personal_ai.get_settings",
+        lambda: Settings(personal_ai_base_url="https://personal-ai.test"),
+    )
 
     client = PersonalAIClient(
         auth_context=PersonalAIAuthContext(
@@ -73,6 +80,15 @@ def test_personal_ai_outbound_identity_keeps_user_and_transport_tokens_separate(
     assert user_token != headers["Authorization"].removeprefix("Bearer ")
     assert all(user_token not in record.getMessage() for record in caplog.records)
     assert all(service_token not in record.getMessage() for record in caplog.records)
+    with pytest.raises(ValueError):
+        PersonalAIClient(
+            base_url="https://other-service.test",
+            auth_context=PersonalAIAuthContext(
+                user_id_token=user_token,
+                service_audience="https://personal-ai.test",
+                service_account="travel-ai@project.iam.gserviceaccount.com",
+            ),
+        )
 
 
 def test_personal_ai_health_reports_http_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:

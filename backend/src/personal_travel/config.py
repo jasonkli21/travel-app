@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     google_oauth_client_secret: SecretStr | None = None
     google_oauth_redirect_uri: AnyHttpUrl | None = None
     google_oauth_allowed_email: str = Field(default="", max_length=320)
+    google_oauth_allowed_hosted_domain: str = Field(default="", max_length=253)
     google_oidc_issuer: Literal["https://accounts.google.com", "accounts.google.com"] = (
         "https://accounts.google.com"
     )
@@ -30,6 +31,7 @@ class Settings(BaseSettings):
     personal_ai_auth_mode: Literal["none", "google_cloud_run_iam"] = "none"
     personal_ai_user_id_token_audience: str = Field(default="", max_length=500)
     personal_ai_service_iam_audience: str = Field(default="", max_length=500)
+    personal_ai_allow_custom_service_audience: bool = False
     personal_ai_service_account: str = Field(default="", max_length=320)
     database_url: str = "postgresql+psycopg://travel:travel@localhost:5432/travel"
     database_connect_timeout_seconds: int = Field(default=5, ge=1, le=30)
@@ -74,6 +76,20 @@ class Settings(BaseSettings):
                 self.auth_oauth_flow_cookie_name,
                 self.auth_ai_token_cookie_name,
             )
+            if cookie_names != (
+                "__Host-travel_session",
+                "__Host-travel_csrf",
+                "__Host-travel_oauth_flow",
+                "__Host-travel_ai_token",
+            ):
+                raise ValueError("Authentication cookie names must match the web proxy contract.")
+            hosted_domain = self.google_oauth_allowed_hosted_domain.strip().lower()
+            if allowed_email.rsplit("@", 1)[1] not in {"gmail.com", "googlemail.com"} and (
+                not hosted_domain
+                or hosted_domain != allowed_email.rsplit("@", 1)[1]
+                or not hosted_domain.isascii()
+            ):
+                raise ValueError("A non-Gmail owner requires a matching Workspace hosted domain.")
             cookie_name_characters = "!#$%&'*+-.^_`|~"
             if len(set(cookie_names)) != len(cookie_names) or any(
                 not name.startswith("__Host-")
@@ -103,6 +119,7 @@ class Settings(BaseSettings):
             parsed_service_audience = urlsplit(service_audience)
             service_account = self.personal_ai_service_account.strip().lower()
             service_account_name, separator, service_account_domain = service_account.partition("@")
+            ai_url = urlsplit(str(self.personal_ai_base_url))
             if (
                 self.travel_auth_mode != "google_oidc"
                 or self.personal_ai_user_id_token_audience != self.google_oauth_client_id
@@ -117,6 +134,17 @@ class Settings(BaseSettings):
                 or not service_account_name
                 or not service_account_domain.endswith(".iam.gserviceaccount.com")
                 or any(character.isspace() for character in service_account)
+                or ai_url.scheme != "https"
+                or not ai_url.hostname
+                or ai_url.username is not None
+                or ai_url.password is not None
+                or ai_url.query
+                or ai_url.fragment
+                or (
+                    not self.personal_ai_allow_custom_service_audience
+                    and (parsed_service_audience.scheme, parsed_service_audience.netloc)
+                    != (ai_url.scheme, ai_url.netloc)
+                )
             ):
                 raise ValueError(
                     "Cloud Run AI transport requires a Google user-token audience matching the "

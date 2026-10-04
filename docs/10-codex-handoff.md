@@ -4,6 +4,12 @@ Status: Phases 1–5 delivered and independently reviewed locally; P6.0/P6.1
 identity foundation implemented locally, review pending; remaining Phase 6 work planned
 Date: 2026-10-04
 
+The six identity review findings have a local remediation change set awaiting
+independent coordinator re-review. See the identity release checkpoint for the
+180-test PostgreSQL result, mounted synthetic sign-in/typed CRUD/logout check,
+frontend checks and exact remaining external gates. Complete the rest of
+Phase 6 after the identity review gate, then stop before Phase 7 as requested.
+
 ## Objective
 
 The Phase 1 manual itinerary planner, Phase 2 reservations/saved-places slice,

@@ -1,6 +1,6 @@
 # Phase 6 identity foundation — local checkpoint
 
-**Status:** P6.0 identity decision and P6.1 implementation complete locally; independent review pending. Phase 6 booking/document import remains planned.
+**Status:** P6.0/P6.1 identity review remediation implemented locally; independent re-review pending. Phase 6 booking/document import remains planned.
 **Date:** 2026-10-04
 
 ## Delivered identity boundary
@@ -20,6 +20,39 @@
 - After the eight-hour settings cap correction, the backend suite and static checks were rerun.
 
 The tests use synthetic signed credentials and fake provider responses. A mounted end-to-end browser sign-in/logout run has not been performed; the proxy and browser-flow logic were exercised through automated boundary tests.
+
+## Identity review remediation checkpoint
+
+The six findings in [the independent identity review](../reviews/phase-6-identity-review.md)
+have local fixes pending coordinator re-review. The centralized typed web client
+adds session CSRF proof to unsafe writes and rejects duplicate or malformed
+CSRF cookies. Owner migration transfers validated nested proposal snapshot
+owners, rejects foreign references, and marks in-flight remote results failed
+because their old-owner keys cannot be reconciled under the new owner. Google
+service assertions now validate realistic numeric `sub`/`azp` identity claims.
+OAuth code exchange and signing-key reads have elapsed deadlines; synchronous
+auth SQL and token verification run outside the event loop, with worker-owned
+callback SQL sessions. Only authoritative Gmail or configured verified
+Workspace identities are accepted, and the current owner allowlist is checked
+on every session lookup. Authenticated AI transport requires the configured
+HTTPS destination and an explicit custom-audience setting when needed. Google
+mode fixes cookie names to the web proxy's contract.
+
+After these changes, the full migrated disposable-schema PostgreSQL suite
+passed **180 tests, 0 skipped**; Ruff check and format check, and mypy over 75
+source files passed. Pinned pnpm 10.17.1 passed **30 frontend tests**, lint,
+typecheck and optimized production build. A repeatable mounted production
+Next.js plus synthetic FastAPI smoke ran sign-in state/nonce and signed-token
+verification through the real callback, typed trip creation/list/delete via
+the same-origin proxy, missing-CSRF rejection, logout/revocation and private
+page protection. No Google or Cloud Run endpoint was contacted. This mounted
+check used HTTP requests with a browser cookie jar; a visual browser session
+was separately checked for private-page redirection before login.
+
+The mounted check uses a disposable local PostgreSQL database and the
+explicitly guarded `frontend/scripts/mounted-identity-smoke.mjs` with
+`backend/tests/fixtures/synthetic_identity_server.py`. It is synthetic
+integration evidence, not a live provider/deployment result.
 
 ## Remaining gates
 

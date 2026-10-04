@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import json
@@ -11,6 +12,7 @@ from typing import Annotated, Any
 from urllib.parse import urlencode
 
 import httpx
+from anyio.to_thread import run_sync
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
@@ -38,6 +40,7 @@ GOOGLE_AUTHORIZATION_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 LOGIN_ATTEMPT_TTL_SECONDS = 600
 MAX_TOKEN_RESPONSE_BYTES = 16 * 1024
+OAUTH_EXCHANGE_DEADLINE_SECONDS = 5.0
 
 
 class OAuthCallbackRequest(BaseModel):
@@ -169,17 +172,20 @@ async def _exchange_code(code: str, code_verifier: str, settings: Settings) -> s
         "redirect_uri": str(settings.google_oauth_redirect_uri),
     }
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(5.0), follow_redirects=False) as client:
-            async with client.stream("POST", GOOGLE_TOKEN_URL, data=form) as result:
-                if result.status_code >= 500:
-                    raise IdentityProviderUnavailable
-                if result.status_code != 200:
-                    raise InvalidIdentityToken
-                body = bytearray()
-                async for chunk in result.aiter_bytes(chunk_size=4096):
-                    body.extend(chunk)
-                    if len(body) > MAX_TOKEN_RESPONSE_BYTES:
+        async with asyncio.timeout(OAUTH_EXCHANGE_DEADLINE_SECONDS):
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(OAUTH_EXCHANGE_DEADLINE_SECONDS), follow_redirects=False
+            ) as client:
+                async with client.stream("POST", GOOGLE_TOKEN_URL, data=form) as result:
+                    if result.status_code >= 500:
                         raise IdentityProviderUnavailable
+                    if result.status_code != 200:
+                        raise InvalidIdentityToken
+                    body = bytearray()
+                    async for chunk in result.aiter_bytes(chunk_size=4096):
+                        body.extend(chunk)
+                        if len(body) > MAX_TOKEN_RESPONSE_BYTES:
+                            raise IdentityProviderUnavailable
     except (httpx.HTTPError, TimeoutError) as error:
         raise IdentityProviderUnavailable from error
     if len(body) > MAX_TOKEN_RESPONSE_BYTES:
@@ -199,18 +205,34 @@ async def google_callback(
     payload: OAuthCallbackRequest,
     request: Request,
     response: Response,
-    session: SessionDependency,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> dict[str, bool]:
     _require_google_mode(settings)
-    attempt = _consume_login_attempt(
-        session,
-        state=payload.state,
-        browser_secret=request.cookies.get(settings.auth_oauth_flow_cookie_name),
-    )
+    session_factory = request.app.state.auth_session_factory
+
+    def consume_attempt() -> OAuthLoginAttempt:
+        with session_factory() as session:
+            return _consume_login_attempt(
+                session,
+                state=payload.state,
+                browser_secret=request.cookies.get(settings.auth_oauth_flow_cookie_name),
+            )
+
+    try:
+        async with asyncio.timeout(5):
+            attempt = await run_sync(consume_attempt, abandon_on_cancel=True)
+    except TimeoutError:
+        raise DomainError(
+            "authentication_unavailable",
+            "Authentication storage is temporarily unavailable.",
+            status_code=503,
+        ) from None
     try:
         token = await _exchange_code(payload.code, attempt.code_verifier, settings)
-        principal = principal_from_google_token(token, settings)
+        async with asyncio.timeout(4):
+            principal = await run_sync(
+                principal_from_google_token, token, settings, abandon_on_cancel=True
+            )
     except IdentityProviderUnavailable:
         raise DomainError(
             "identity_provider_unavailable",
@@ -222,6 +244,12 @@ async def google_callback(
             "invalid_identity_token",
             "Google could not verify the sign-in identity.",
             status_code=401,
+        ) from None
+    except TimeoutError:
+        raise DomainError(
+            "identity_provider_unavailable",
+            "Google sign-in is temporarily unavailable. Start again to retry.",
+            status_code=503,
         ) from None
     if principal.nonce is None or not secrets.compare_digest(principal.nonce, attempt.nonce):
         raise DomainError(
@@ -236,16 +264,22 @@ async def google_callback(
         remaining_user_token_ttl = principal.expires_at - int(now.timestamp()) - 60
         session_ttl_seconds = min(session_ttl_seconds, max(1, remaining_user_token_ttl))
 
-    with session.begin():
-        previous_session: ActiveSession | None = request.scope.get("auth_session")
-        if previous_session is not None:
-            revoke_session(session, previous_session.token_hash, now=now)
-        raw_session, csrf_token, active = create_session(
-            session,
-            principal,
-            ttl_seconds=session_ttl_seconds,
-            now=now,
-        )
+    def save_session() -> tuple[str, str, ActiveSession]:
+        with session_factory() as session, session.begin():
+            previous_session: ActiveSession | None = request.scope.get("auth_session")
+            if previous_session is not None:
+                revoke_session(session, previous_session.token_hash, now=now)
+            return create_session(session, principal, ttl_seconds=session_ttl_seconds, now=now)
+
+    try:
+        async with asyncio.timeout(5):
+            raw_session, csrf_token, active = await run_sync(save_session, abandon_on_cancel=True)
+    except TimeoutError:
+        raise DomainError(
+            "authentication_unavailable",
+            "Authentication storage is temporarily unavailable.",
+            status_code=503,
+        ) from None
     max_age = max(1, int((active.expires_at - now).total_seconds()))
     response.set_cookie(
         settings.auth_session_cookie_name,

@@ -36,6 +36,10 @@ subject as `usr_` plus the first 32 hexadecimal characters of
 upstream identity directory can recognize the same owner. A single normalized
 email allowlist entry is required, and `email_verified` must be exactly true;
 email is a gate and display attribute, never the durable owner key.
+The allowed address must be Gmail, or its domain must match a separately
+configured Workspace hosted domain and the verified token's `hd` claim.
+Every request checks the current allowlist against the stored session email,
+so changing the configured owner removes access from older sessions.
 
 ## Decision
 
@@ -68,6 +72,12 @@ that silently loses its upstream identity. The API proxy maps that cookie to
 `X-User-ID-Token`; the independent service identity uses `Authorization:
 Bearer ...` only on the backend-to-backend hop. The browser cannot set either
 credential directly.
+The web proxy and API use the same fixed `__Host-travel_*` cookie names; Google
+mode rejects alternate names until both sides support an explicit shared
+configuration. Authenticated AI requests require the configured HTTPS service
+URL. The Cloud Run service audience must have that service origin unless an
+operator explicitly enables a custom audience configured for that service;
+the outbound client still pins the destination to the configured HTTPS URL.
 
 `TRAVEL_AUTH_MODE=local` remains the explicit default for local CRUD and tests.
 It is confined by the existing local host/origin boundary. Private source

@@ -3,6 +3,16 @@
 Baseline: `9a80ff1`; coordinator independently ran 170 backend tests against
 migrated disposable PostgreSQL, zero skips. Identity stage remains open.
 
+## Local remediation evidence awaiting independent re-review
+
+All six required findings have candidate fixes in the identity remediation
+change set. Full migrated PostgreSQL verification passed 180 tests with zero
+skips; frontend tests passed 30 with lint, typecheck and production build;
+Ruff and mypy passed. The mounted synthetic sign-in/typed CRUD/logout smoke
+passed against the production Next build and migrated disposable database.
+These are implementation-agent results. The coordinator must independently
+review the final commit and decide whether this identity stage can close.
+
 ## Required remediation
 
 1. **UI writes omit CSRF (high).** `api-request.mjs` never reads the session
