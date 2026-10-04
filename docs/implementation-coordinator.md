@@ -1,6 +1,6 @@
 # Sequential implementation coordinator
 
-Updated: 2026-10-03 (America/Los_Angeles)
+Updated: 2026-10-04 (America/Los_Angeles)
 
 ## User mandate
 
@@ -174,3 +174,47 @@ Read `AGENTS.md` and required docs, this checkpoint, and the current phase
 release; inspect status/log and live agents. Independently review the entire
 stage against its plan and cross-cutting invariants. Record review findings and
 any remediation commits. Do not discard existing changes after interruptions.
+
+## Travel Phase 5 implementation checkpoint — review pending
+
+The previous entries document earlier checkpoints and are superseded by this
+current status. The complete P5.0–P5.5 implementation is committed locally in
+`personal-travel-app` on `codex/phase-0-scaffold-corrections`; independent
+coordinator review remains the next action. Do not begin Phase 6. Proposal
+gates remain off by default. The exact local behavior, verification evidence,
+unrun cases, and runtime limitation are in
+[`releases/phase-5-local-proposals.md`](releases/phase-5-local-proposals.md).
+
+Travel commits for this stage:
+
+- `0b87b45` pins the accepted contract and policy in ADR 0010.
+- `acd84c1` adds migration 0007, durable owner-scoped storage, accepted
+  `PersonalAIClient` generation, recovery, preview, atomic apply/replay and
+  rejection routes.
+- `562f4d7` adds lifecycle concurrency and failure-recovery coverage.
+- `30ec2f2` verifies expiry prevents apply without advancing the trip revision.
+- `f82c2bc` adds the separately gated responsive proposal review/apply UI.
+- The final documentation commit records current phase status and release
+  evidence.
+
+Final local verification passed: the migrated disposable PostgreSQL suite has
+124 passes and zero skips (one existing Starlette/httpx deprecation warning),
+Ruff check/format and mypy (68 source files) pass, and the frontend's pinned
+pnpm 10.17.1 checks pass (20 Node tests, ESLint, strict TypeScript and
+production build). A mounted browser check verified diff preview and ambiguous
+apply recovery. Actual Travel-to-upstream fake HTTP passed with Uvicorn
+`--loop asyncio`: ready proposal, explicit apply, exact replay, one item, one
+revision. No live provider, cloud, or deployment was contacted; upstream source
+was not modified.
+
+The default Uvicorn auto runtime on this host selects uvloop 0.23.0 and
+reproduces an upstream deadline clock mismatch: `loop.time()` is
+`11,162,431.484` seconds ahead of `time.monotonic()` (asyncio differed by about
+`-1.25e-7`). Upstream `ItineraryProposalService.create()` computes its absolute
+deadline with `monotonic()` and passes it to `asyncio.timeout_at()`, which uses
+the uvloop clock. The call is cancelled immediately; the service maps the
+result to `generation_outcome_unknown`. The asyncio fake run succeeds. No
+upstream changes were made; keep gates off for that runtime pending the
+independent upstream fix. Proposal-specific malformed/oversized/trickling
+response tests, opposite-trip shared-place concurrency, and log-capture privacy
+assertions remain unrun and are listed explicitly in the release record.

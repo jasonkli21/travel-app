@@ -99,12 +99,11 @@ only the owning trip revision for the new candidate relationship.
 
 ## Dependency footprint, preview, expiry, and replay
 
-A future stored proposal captures the trip revision and the revisions of every
-shared place referenced by its itinerary/reservations/candidates or by an
-operation. It must capture candidate/reservation scope through the trip
-revision, not by duplicating those records' timestamps. Apply acquires the trip
-root lock first, then shared place locks in ascending UUID order, and compares
-the complete footprint before any mutation. Editing one shared place invalidates
+A stored proposal captures the trip revision and revisions of shared places
+used by its footprint. Candidate/reservation scope is captured through the trip
+revision rather than duplicating timestamps. Apply acquires the trip root lock
+first, then shared place locks in ascending UUID order, and compares the
+complete footprint before any mutation. Editing one shared place invalidates
 only proposals whose footprint includes that place.
 
 Preview and apply use the same concrete travel rules as manual edits: inclusive
@@ -112,8 +111,8 @@ trip days, insertion positions, destination-day wall-clock preservation,
 timezone validation, DST gap/fold rejection, confirmed/booked protection,
 and reservation-overlap warnings. Preview includes every day's full final
 ordered item list and local schedule, plus deterministic warnings. There is no
-silent rebase. A later accepted upstream capability must return an explicit
-support mode. `research_evidence` proposals require verified citations for
+silent rebase. The accepted upstream capability returns an explicit support
+mode. `research_evidence` proposals require verified citations for
 every operation; insufficient, expired, or uncited outcomes cannot become
 proposals. A `context_only` proposal is permitted only when no research sessions
 were supplied and may rely only on the traveler instruction and typed current
@@ -123,8 +122,8 @@ remain insufficient or expired and cannot fall back to context-only policy.
 Both modes still pass through this application's deterministic preview and
 revalidation.
 
-The future proposal lifetime is at most 24 hours from creation and is shortened
-to the earliest referenced evidence expiry. It cannot be extended by replay.
+The proposal lifetime is at most 24 hours from creation and is shortened to the
+earliest referenced evidence expiry. It cannot be extended by replay.
 Idempotency is scoped to owner and trip: replay with the same normalized
 request returns the original proposal; reusing a key with a different request
 conflicts. Apply is explicit and atomic with the itinerary changes, terminal
@@ -134,8 +133,9 @@ An expired or stale ready proposal cannot apply; no automatic retry or rebase
 is permitted. Proposal rows are owned by and cascade with the trip so deletion
 does not retain its itinerary snapshot or private context.
 
-These lifecycle rules are requirements for a future accepted-contract stage;
-this ADR does not implement or expose that lifecycle.
+These decisions are implemented in the Phase 5 local proposal lifecycle. The
+separate release record lists executed checks and remaining runtime/review
+gates.
 
 ## Consequences
 
@@ -143,8 +143,9 @@ this ADR does not implement or expose that lifecycle.
 - Revisions make supplied cross-tab preconditions useful while retaining
   compatibility with older clients.
 - Reusable place edits are accounted for without cross-trip lock fanout.
-- Local strict DTO and preview code can be tested without representing itself
-  as an accepted personal-ai-system wire contract.
-- Proposal generation, storage, apply/replay, UI, auth, and deployment remain
-  unimplemented until their independent prerequisites and acceptance evidence
-  exist.
+- The travel app consumes this capability through typed HTTP and does not
+  import upstream Python packages or storage schemas.
+- The local implementation and its exact verification are recorded in the
+  [Phase 5 release record](../releases/phase-5-local-proposals.md). Independent
+  review is pending, and proposal gates remain off by default.
+- Authentication, private booking imports, and deployment remain out of scope.

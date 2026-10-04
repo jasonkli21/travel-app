@@ -1,8 +1,8 @@
 # Phase 5 implementation plan — structured AI proposals
 
-**Status:** P5.0–P5.2 local groundwork delivered; Phase 5 remains incomplete
-**Date:** 2026-10-03
-**Baseline:** `56c0cbf`, reviewed local Phases 0–4
+**Status:** P5.0–P5.5 implemented locally; awaiting independent review; gates off
+**Date:** 2026-10-04
+**Baseline:** `27cc9b1`, reviewed local Phase 0–4 plus P5.0–P5.2 groundwork
 **Roadmap:** [phased implementation plan](09-implementation-plan.md)
 **Prerequisites:** [audit](reviews/phase-0-4-audit.md), ADRs 0003, 0008 and 0009
 
@@ -28,7 +28,7 @@ before Phase 6 imports or any private hosted use.
 
 | Concern | Decision |
 | --- | --- |
-| Upstream capability | Phase 4's research-v1 does not supply itinerary patches. Accept and pin a separately versioned proposal HTTP contract in personal-ai-system before writing an enabled client. Record exact upstream revision, DTOs, capability gates and fake-backed fixtures. Do not invent an accepted upstream route here. |
+| Upstream capability | Accepted at `personal-ai-system` revision `8535cad3a146b1a19cab0958c439f170d19b8095`. Pin `itinerary-proposal-v1`, `travel-itinerary-context-v1`, and `itinerary-proposal-policy-v2`; consume only the documented HTTP routes and strict DTOs. Keep travel, upstream capability, and provider gates independent and off by default. |
 | Operation set | Add an item using an existing reviewed place/candidate; move an item; update local times; remove an optional item. No mutation of places, reservations or confirmed/required anchors. Initially bound a patch to 25 operations; finalize that limit with the accepted contract. |
 | Required vs optional | The current status enum is not an optionality flag. Initially permit removal only for unlinked, non-booked/non-completed items explicitly selected as removable by the user in this request. Persist that handle allowlist with the proposal. Moves/time edits cannot alter booked or confirmed reservation anchors. Do not infer optionality or add a new general protection model in this slice. |
 | Versioning | Add a nonnegative monotonically increasing trip revision and reusable-place revision. Every authoritative aggregate mutation increments the trip revision, including day/reservation/candidate edits; every place metadata edit increments its place revision. Root locks still protect SQL invariants. Timestamps are not concurrency tokens. |
@@ -40,29 +40,33 @@ before Phase 6 imports or any private hosted use.
 
 An ADR must record the explicit-removal/anchor policy, accepted contract, revision
 footprint, evidence expiry and replay semantics before enabling generation.
-If upstream acceptance is missing, implement/test only the local version and
-proposal-validation groundwork; report the generation gate as incomplete.
+ADR 0010 records these decisions. The gates remain off until the local runtime
+issue documented in the release record is resolved and independent review is
+complete.
 
 ## Current delivery checkpoint
 
-The local groundwork adds revisions and optional expected-revision checks to
-existing manual/provider writes, plus an internal strict DTO and pure bounded
-preview validator. Its exact implementation and verification are recorded in
-[`releases/phase-5-groundwork.md`](releases/phase-5-groundwork.md). It does not
-implement a proposal route, accepted upstream client, generation, durable
-proposal lifecycle, apply/replay, or proposal UI. The inspected upstream
-revision is recorded in ADR 0010; no compatible itinerary-patch API was
-present. Continue at the accepted-contract and P5.3 lifecycle gates below.
+The P5.0–P5.2 groundwork and P5.3–P5.5 implementation are present locally.
+The earlier groundwork review remains in
+[`releases/phase-5-groundwork.md`](releases/phase-5-groundwork.md); the current
+scope and exact verification are in
+[`releases/phase-5-local-proposals.md`](releases/phase-5-local-proposals.md).
+The accepted upstream contract and safety policy are pinned in ADR 0010. The
+proposal API, storage, lifecycle, gated client, and UI are implemented. The
+stage awaits independent review; do not call Phase 5 complete until that
+review closes. Keep all proposal gates off by default.
 
-## Proposed travel contracts
+## Travel API contracts
 
-These are travel-side design targets, not claims of an existing AI API.
+These are implemented travel-side routes. The upstream HTTP contract remains
+independent and is not exposed through the travel API.
 
 | Method | Travel route | Behavior |
 | --- | --- | --- |
-| POST | /v1/trips/{trip_id}/proposals | Owner-scoped bounded request, expected revision and idempotency key; capture immutable context, release SQL, call the accepted capability, validate and store a ready proposal. |
+| POST | /v1/trips/{trip_id}/proposals | Owner-scoped bounded request, mandatory expected revision and idempotency key; capture immutable context, release SQL, call the accepted capability, validate, then persist ready or safely recoverable generation state. |
+| GET | /v1/trips/{trip_id}/proposals/by-key/{idempotency_key} | Reconcile a timed-out generation by the same owner/trip key; never create a new key for automatic retry. |
 | GET | /v1/trips/{trip_id}/proposals/{proposal_id} | Return typed operations, deterministic diff, base/current revisions, expiry and ready/stale/expired/applied/rejected presentation. |
-| POST | /v1/trips/{trip_id}/proposals/{proposal_id}/apply | Revalidate expected footprint, rules and expiry; apply once atomically and return stored applied outcome on replay. |
+| POST | /v1/trips/{trip_id}/proposals/{proposal_id}/apply | Require expected revision; revalidate footprint, rules and expiry; apply once atomically and return stored applied outcome on replay. |
 | POST | /v1/trips/{trip_id}/proposals/{proposal_id}/reject | Idempotently reject a ready proposal without changing itinerary state. Applied proposals cannot be rejected. |
 
 Add revision fields to existing detail responses. Updated UI writes send an
@@ -90,21 +94,23 @@ response bytes are bounded before parsing.
 
 ## Data and service design
 
-Add an Alembic migration for revisions and a travel-owned ai_proposals table:
+Migration `0007` adds the travel-owned `itinerary_proposals` table (migration
+`0006` added revisions):
 
-- UUID, owner_id, trip_id FK, schema_version and capability revision;
+- UUID, owner_id, trip_id FK, schema and policy versions, support mode, opaque
+  trip handle, and upstream proposal ID;
 - request idempotency key and request fingerprint, unique per owner/trip/key;
 - immutable base trip revision and place-version footprint;
 - validated bounded operations and minimal evidence-reference metadata;
-- created/expiry time, ready/applied/rejected state, applied revision and
-  minimal replayable outcome.
+- immutable base snapshot, created/expiry time, generating/unknown/ready/
+  failed/applied/rejected lifecycle, applied revision and minimal replayable
+  outcome.
 
-Use conventional checked states and portable JSON for small validated operation
-lists if that is the simplest representation; do not add one table per model
-field. Derive stale/expired presentation from footprint/time. Never store a
-ready proposal for malformed output. Reusing a key with different request
-content returns a conflict. Decide retention and trip deletion cascade in the
-ADR; an audit must not retain deleted private trip data accidentally.
+The migration uses conventional checked states and portable JSON for bounded
+validated operations and snapshots. Stale/expired status is derived from the
+footprint/time; malformed output cannot become ready. Reusing a key with
+different request content returns a conflict. Proposal rows cascade with the
+trip, and stored snapshots exclude raw prompts and private booking data.
 
 Refactor transaction-owning public services only enough to share concrete
 validation/mutation helpers with a single proposal-apply transaction. Do not
@@ -227,9 +233,8 @@ cases, not to mirror implementation details.
 4. feat: integrate gated proposal generation and review UI.
 5. docs: record release and remediation evidence.
 
-Group complete vertical changes, not individual fields. Phase 5 completes only
-when every accepted operation is deterministically previewed/revalidated,
-replay is exactly-once within SQL, stale dependencies cannot apply, all checks
-pass without SQL skips and the accepted upstream path is verified. Until then,
-generation remains gated. Lessons for Phase 6: reuse version/replay and safe
-transaction primitives, not the itinerary operation schema for reservations.
+The Phase 5 implementation is committed for independent review. The release
+record separates each executed check from unrun cases and runtime limitations.
+Keep generation gated until the uvloop deadline issue and review gate are
+closed. Lessons for Phase 6: reuse version/replay and safe transaction
+primitives, not the itinerary operation schema for reservations.

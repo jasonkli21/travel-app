@@ -1,7 +1,7 @@
 # `personal-ai-system` integration
 
-Status: Phase 4 `research-v1` consumer implemented locally; travel gate off by default  
-Date: 2026-10-03
+Status: Phase 4 delivered; Phase 5 proposal integration implemented locally and gated off
+Date: 2026-10-04
 
 ## Rule
 
@@ -74,12 +74,52 @@ for local-first use only. Private cloud data, booking imports, and user-specific
 AI sessions require an authenticated identity and an explicitly authorized
 service boundary before implementation.
 
+## Accepted itinerary-proposal contract
+
+ADR 0010 pins the accepted local upstream revision and these versions:
+`itinerary-proposal-v1`, `travel-itinerary-context-v1`, and
+`itinerary-proposal-policy-v2`. The travel client uses the accepted proposal
+HTTP routes through `PersonalAIClient`; no upstream Python package or
+Firestore schema is imported. The local API supports owner-scoped generate,
+detail/by-key lookup, explicit apply, and explicit reject routes.
+
+`PERSONAL_AI_PROPOSALS_ENABLED` defaults to `false`. Independently, upstream
+`ITINERARY_PROPOSALS_ENABLED` defaults off, and its provider gate remains
+separate. The first UI flow uses `context_only`: it sends a bounded traveler
+instruction and projection of trip dates/timezone, day order/titles, item
+labels/types/status/schedules, opaque handles, candidate labels, and the
+user-selected removal allowlist. It does not attach research sessions. The
+backend contract also records `research_evidence` mode and validates cited
+evidence when explicitly supplied through the travel API.
+
+Neither mode sends travel IDs, owner IDs, reservation fields, notes, booking
+confirmations, source references, or provider payloads. The projection marks
+protected itinerary anchors without disclosing their booking details. Travel
+persists the instruction only as a one-way fingerprint, plus the bounded
+revalidation snapshot, validated operations, deterministic before/after
+preview, citation/expiry metadata, and stored apply outcome. Provider response
+bodies and raw prompts are not logged or persisted.
+
+Travel caps proposal request context at 48 KiB; the accepted upstream response
+is bounded at 128 KiB and the whole external operation has one bounded
+deadline. A stable downstream key supports reconciliation after an ambiguous
+POST; the client never retries with a new key. Apply requires an expected trip
+revision, fresh dependency footprint, and unexpired proposal. SQL applies
+operations, one revision, audit state, and the immutable replay result in one
+transaction. Repeated apply returns that exact outcome.
+
+The end-to-end local fake HTTP flow passed with Uvicorn's asyncio loop. On this
+host Uvicorn auto-selects uvloop 0.23.0; its `loop.time()` clock is about
+11.16 million seconds ahead of `time.monotonic()`. The pinned upstream code
+passes one clock's absolute deadline into code using the other, so generation
+immediately becomes `generation_outcome_unknown` under that runner. Proposal
+gates stay off in this runtime until upstream fixes the deadline conversion.
+See the [Phase 5 release record](releases/phase-5-local-proposals.md).
+
 ## Future AI work
 
-Memory-aware research, structured extraction, itinerary proposals, and
-model-driven actions remain deferred. Phase 5 local revisions and an internal
-preview validator do not define or call an accepted upstream proposal API.
-Later AI output that could affect travel state must be versioned and typed,
-checked against current ownership and hard constraints, previewed to the
-traveler, and applied only through existing travel-domain services after
-explicit confirmation.
+Memory-aware research, structured extraction, booking/document import,
+authentication, and hosted AI use remain deferred. Later AI output that could
+affect travel state must be versioned and typed, checked against current
+ownership and hard constraints, previewed to the traveler, and applied only
+through existing travel-domain services after explicit confirmation.

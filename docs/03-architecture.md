@@ -1,7 +1,7 @@
 # Architecture
 
-Status: Phase 0–4 architecture reviewed locally
-Date: 2026-10-03
+Status: Phase 0–4 delivered; Phase 5 implementation present for review, gates off
+Date: 2026-10-04
 
 ## System shape
 
@@ -105,9 +105,11 @@ The app should use transactions for cross-row invariants.
 Trip aggregate reads use shared root locks and mutations use exclusive root
 locks, refreshing ORM collections before calculation. SQL rejects duplicate
 day/order positions and invalid coordinate pairs/ranges. Contiguity, same-trip
-links and ownership remain deterministic service rules. Shared reusable places
-have an independent update lock. These PostgreSQL locks protect invariants;
-they do not provide optimistic cross-tab editing or future proposal versions.
+links and ownership remain deterministic service rules. Trip and place
+revisions provide optimistic stale-write detection alongside these locks.
+Shared reusable places have an independent update lock. Proposal application
+locks the trip first, then its shared-place footprint in UUID order, and
+revalidates operations and projection integrity in one transaction.
 
 ### `personal-ai-system`
 
@@ -173,25 +175,35 @@ identifiers, notes, or reservation details are sent as context. Research does
 not mutate itinerary state. Saving a candidate is a separate user-authored
 transaction using the existing place and saved-place tables.
 
-### Future proposed edit
+### Gated proposed itinerary edit
 
-This is a design flow, not a delivered integration. ADR 0010 records the
-current upstream contract boundary. Local revision and preview groundwork
-does not expose an AI route, establish a wire contract, or authorize proposal
-generation or application.
+The local implementation uses the accepted upstream proposal contract pinned
+in ADR 0010. The travel proposal and upstream capability/provider gates are
+independent and default off. Travel stores owner-scoped request identity,
+contract/policy versions, a bounded immutable base snapshot, typed operations,
+preview, expiry, and replay outcome. It does not store raw prompts, private
+booking notes, confirmation codes, source references, or provider responses.
 
 ```text
 UI request
  -> travel API
- -> personal-ai-system
- -> typed proposal
- -> travel API validates shape
- -> UI renders diff
- -> user applies
- -> travel API revalidates current state
- -> transaction
+ -> trip snapshot transaction ends
+ -> personal-ai-system accepted typed proposal contract
+ -> travel validates response and rechecks the dependency footprint
+ -> UI shows full itinerary, operation diff, warnings, revisions and expiry
+ -> traveler explicitly applies or rejects
+ -> travel revalidates under trip/place locks
+ -> one transaction stores operations, outcome and revision
  -> PostgreSQL
 ```
+
+The client uses a single bounded deadline and response byte limit. Ambiguous
+generation outcomes reconcile through the same stable downstream key; they
+never trigger an automatic POST with a new key. Apply replay returns the
+exact stored outcome. The upstream fake HTTP flow passed with Uvicorn's
+asyncio loop. On this host Uvicorn auto-selects uvloop, which exposes an
+upstream `loop.time()`/`time.monotonic()` mismatch; see the Phase 5 release
+record and keep both generation gates disabled in that runtime until fixed.
 
 ## Async work
 

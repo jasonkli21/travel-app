@@ -1,7 +1,7 @@
 # Local development
 
-Status: Phase 4 local instructions
-Date: 2026-10-03
+Status: Phase 5 local instructions
+Date: 2026-10-04
 
 ## Prerequisites
 
@@ -81,6 +81,37 @@ the AI backend with `RESEARCH_ENABLED=true`, `RESEARCH_STORAGE=memory`, and
 Travel. Fake results are explicitly synthetic and are not verified real-world
 information. Memory storage is process-local and loses its research sessions
 on restart. Real search-provider behavior is not implied by this setup.
+
+### Itinerary proposals (local fake only)
+
+Proposal generation is separately gated at the browser, travel API, and AI
+service. All gates default off. To show the proposal panel, set
+`NEXT_PUBLIC_TRAVEL_PROPOSALS_ENABLED=true` in `frontend/.env.local`, set
+`PERSONAL_AI_PROPOSALS_ENABLED=true` and `PERSONAL_AI_BASE_URL` in the root
+`.env`, and run the upstream backend locally with
+`ITINERARY_PROPOSALS_ENABLED=true`, `ITINERARY_PROPOSAL_GENERATOR=fake`, and
+`ITINERARY_PROPOSAL_STORAGE=memory`. The fake generator and process-local store
+use no provider credentials; its output is synthetic. Keep the provider gate
+off. The UI sends context-only requests and does not attach research sessions.
+
+When `uvloop` is installed, run the local upstream fake with Uvicorn's asyncio
+loop while this upstream bug is open:
+
+```bash
+cd /path/to/personal-ai-system/backend
+ITINERARY_PROPOSALS_ENABLED=true \
+ITINERARY_PROPOSAL_GENERATOR=fake \
+ITINERARY_PROPOSAL_STORAGE=memory \
+uv run uvicorn personal_ai.main:app --host 127.0.0.1 --port 8001 --loop asyncio --no-access-log
+```
+
+On this host, Uvicorn auto-selects uvloop 0.23.0, whose `loop.time()` differs
+from `time.monotonic()` by about 11.16 million seconds. The accepted upstream
+proposal code passes that loop-based absolute deadline into synchronous code
+that compares it with `time.monotonic()`, so the fake endpoint returns
+`generation_outcome_unknown` immediately under uvloop. Keep the default-off
+gates off in that runtime until the upstream deadline conversion is fixed.
+Travel contract, lifecycle, and UI tests remain local and credential-free.
 
 ## Start PostgreSQL
 
@@ -185,9 +216,10 @@ Phase 4 adds no frontend package dependency, database migration, or travel-side
 research-session table. Migration `0005` repairs legacy schedule/order data
 and adds SQL integrity. Phase 5 groundwork adds migration `0006` with
 nonnegative trip/place revisions; it is additive and initializes existing
-rows to zero. The travel research client consumes the AI service's versioned
-HTTP contract and does not share its Python packages. The local proposal DTO
-is not an AI or public travel API contract.
+rows to zero. Migration `0007` adds owner-scoped proposal persistence with
+trip-delete cascade. Travel clients consume versioned AI HTTP contracts and
+do not share its Python packages. Proposal generation/apply always require
+trip revisions; existing manual writes retain optional legacy preconditions.
 
 ## Database migrations
 
@@ -210,8 +242,8 @@ uv run --locked alembic upgrade head
 
 Then run `uv run --locked alembic check` to verify ORM/migration parity.
 Migration `0005` requires an online connection; offline SQL can be generated
-through `0004`, but is not a complete upgrade to head. Migration `0006` is the
-current head for this partial groundwork.
+through `0004`, but is not a complete upgrade to head. Migration `0007` is the
+current head.
 
 ## Backup and migration recovery
 

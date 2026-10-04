@@ -2,29 +2,38 @@
 
 A local-first personal travel planning application with a rich itinerary UI and an explicit integration boundary to `personal-ai-system`.
 
-The application owns authoritative travel state. `personal-ai-system` owns reusable AI capabilities such as research, memory, evidence-grounded synthesis, and—later—structured extraction/action proposals.
+The application owns authoritative travel state. `personal-ai-system` owns
+reusable AI capabilities such as research and evidence-grounded synthesis,
+plus the separately versioned itinerary-proposal capability.
 
 ## Current status
 
-**Phase 4 delivered, with partial Phase 5 local groundwork.** The repository has
+**Phases 1–4 are delivered locally; the Phase 5 implementation is present for
+review.** The repository has
 the Phase 1 owner-scoped itinerary planner, Phase 2 manual reservations and
 saved-place candidates, and a Phase 3 trip map, submitted place search/import,
 and on-demand route estimates with deterministic transfer warnings. Phase 4
 adds a gated typed integration with `personal-ai-system`'s accepted
 `research-v1` API, bounded trip-day context, cited results, and user-entered
 manual candidates. Research is disabled by default and does not modify the
-itinerary. The Phase 5 groundwork adds trip/place revisions, optional stale
-write preconditions, and an internal immutable proposal preview validator.
-Phase 5 is incomplete: no accepted itinerary-proposal API exists upstream, and
-Travel has no proposal generation, storage, apply, or rejection routes. The
-local DTO is not an upstream wire contract. Geoapify features are optional;
-manual planning works without provider keys. External booking imports,
-AI proposals, authentication, and cloud deployment remain planned.
+itinerary. Phase 5 adds monotonic trip/place revisions, a durable owner-scoped
+proposal lifecycle, accepted typed HTTP integration, immutable previews,
+atomic apply/replay and rejection, and an explicit review/apply UI. Proposal
+gates remain off by default. The accepted upstream revision and exact local
+checks are in [the Phase 5 release record](docs/releases/phase-5-local-proposals.md).
+Phase 5 awaits independent review.
+The upstream fake HTTP flow passed with asyncio. This host's default Uvicorn
+auto loop selects uvloop, where the upstream currently reports an immediate
+unknown generation outcome because it mixes loop and monotonic clock domains;
+keep the gates off in that runtime until the upstream issue is addressed. Geoapify
+features are optional; manual planning works without provider keys. External
+booking imports, authentication, and cloud deployment remain planned.
 
 The [Phase 0–4 audit](docs/reviews/phase-0-4-audit.md) records the architecture
 review, integrity/security/recovery fixes and verification. Migration `0005`
 repairs legacy moved-item schedules and enforces ordering/coordinate integrity;
-Phase 5 groundwork migration `0006` adds trip/place revisions. Read the
+Phase 5 migration `0006` adds trip/place revisions and `0007` adds proposal
+storage. Read the
 [migration recovery instructions](docs/07-local-development.md) before
 upgrading an existing database. Local ownership is still not authentication.
 

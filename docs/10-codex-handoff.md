@@ -1,7 +1,7 @@
 # Codex handoff
 
-Status: Phase 4 delivered; partial Phase 5 local groundwork handoff
-Date: 2026-10-03
+Status: Phase 4 delivered; Phase 5 implementation present for independent review
+Date: 2026-10-04
 
 ## Objective
 
@@ -10,39 +10,45 @@ Phase 3 maps/location/logistics slice, and Phase 4 bounded AI research consumer
 are implemented locally. Review evidence and commit references are recorded in
 the phase release documents.
 
-Phase 5 has local P5.0–P5.2 groundwork only: revision/precondition accounting
-and an internal deterministic preview validator. See
-[`releases/phase-5-groundwork.md`](releases/phase-5-groundwork.md). No accepted
-upstream itinerary-proposal API, proposal generation, storage, apply/replay,
-rejection, or proposal UI is implemented.
+Phase 5 P5.0–P5.5 is implemented locally and awaits independent review. The
+accepted upstream contract, durable storage, lifecycle, apply/replay, rejection,
+gated generation client, and explicit review UI are described in
+[`releases/phase-5-local-proposals.md`](releases/phase-5-local-proposals.md).
+All proposal gates remain off by default. The earlier groundwork record stays
+in [`releases/phase-5-groundwork.md`](releases/phase-5-groundwork.md).
 
 The Phase 4 consumer uses the accepted `research-v1` API in
 `personal-ai-system`; do not change that API from this repository. Booking and
-email import, AI proposals, authentication, and cloud deployment remain
-deferred.
+email import, authentication, and cloud deployment remain deferred. Phase 5
+proposal generation is implemented locally but remains gated and under review.
 
 The [comprehensive Phase 0–4 audit](reviews/phase-0-4-audit.md) documents current
-fixes and verification. Migration `0006` is the current head; `0005` still
+fixes and verification. Migration `0007` is the current head; `0005` still
 requires online legacy-data inspection/repair and a pre-upgrade backup before
 upgrading an existing database. See local development and ADR 0009 before
 changing concurrency or local HTTP boundaries.
 
 ## Next implementation work
 
+The next action is independent review of the complete Phase 5 implementation
+and release evidence. Do not start Phase 6 until that review is recorded and
+any findings are resolved. The accepted upstream uvloop clock-domain issue is
+documented in the release record; default-off gates are intentional.
+
 Detailed [Phase 5](phase-5-implementation-plan.md),
 [Phase 6](phase-6-implementation-plan.md),
 [Phase 7](phase-7-implementation-plan.md),
 [Phase 8](phase-8-implementation-plan.md) and
 [Phase 9](phase-9-implementation-plan.md) plans are now recorded against
-`56c0cbf`. They do not mark any later capability delivered. Begin with Phase
-5's accepted upstream proposal contract and P5.3 durable lifecycle/apply gates;
+`56c0cbf`. They do not mark any later capability delivered. Phase 5's accepted
+upstream proposal contract and P5.3 durable lifecycle/apply are implemented;
 the independent review and remediation are recorded in
 [`reviews/phase-5-groundwork-review.md`](reviews/phase-5-groundwork-review.md).
 Existing writes now accept an optional `X-Expected-Revision`, which the web
 proxy explicitly allowlists and forwards; omitted headers preserve legacy
 compatibility. A successful stale/uncertain recovery reload resets open editor
-drafts against the newly loaded snapshot. Keep generation gated until the
-upstream contract is accepted; do not invent upstream APIs in this repository.
+drafts against the newly loaded snapshot. Keep proposal generation gated; do
+not invent upstream APIs in this repository.
 
 Phase 6 establishes verified identity before private imports, with explicit
 local-owner migration and one secure source/blob lifecycle reused by Phase 8.

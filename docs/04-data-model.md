@@ -1,7 +1,7 @@
 # Data model
 
-Status: Phase 4 delivered locally; partial Phase 5 revision/preview groundwork
-Date: 2026-10-03
+Status: Phase 5 proposal lifecycle implemented locally; independent review pending, gates off
+Date: 2026-10-04
 
 The initial migration implements the core itinerary graph. Phase 1 adds
 application services and ordering constraints; Phase 2 adds manual reservations,
@@ -9,7 +9,7 @@ trip-scoped saved-place candidates, richer place metadata, reservation links,
 and retained source attribution for provider-imported places. Phase 4 stores
 manual candidates in these existing tables; AI sessions and evidence remain
 owned by `personal-ai-system` and are not copied into this database.
-Attachments and AI proposals remain planned rather than implemented.
+Attachments remain planned rather than implemented.
 
 ## Implemented scaffold tables
 
@@ -174,24 +174,47 @@ created_at
 
 Blob bytes live outside Postgres.
 
-### `ai_proposals`
+## Implemented Phase 5 storage
 
-Do not create this table until the proposal lifecycle is defined.
+### `itinerary_proposals` — migration `0007`
 
-Potential need:
+Travel owns the durable proposal lifecycle. The trip foreign key cascades on
+deletion; `(owner_id, trip_id, idempotency_key)` is unique. An
+`(owner_id, trip_id, created_at)` index supports scoped record ordering.
+Portable JSON columns contain only the
+validated bounded projection, operations, full preview, citation metadata, and
+minimal replay outcome.
 
 ```text
-proposal id
-trip id
-proposal kind/version
-input snapshot/version
-typed operations
-evidence references
-status
-created_at/applied_at
+id UUID PK
+owner_id, trip_id FK -> trips ON DELETE CASCADE
+idempotency_key, deterministic downstream_key
+request_fingerprint SHA-256
+state: generating | outcome_unknown | ready | failed | applied | rejected
+schema_version, policy_version, support_mode, opaque trip_handle
+upstream_proposal_id?, generation_deadline
+base_trip_revision, base_place_revisions JSON, base_snapshot JSON
+operations JSON?, preview JSON?, citations JSON
+expires_at?, failure_code?
+applied_outcome JSON?, applied_at?, rejected_at?
+created_at, updated_at
 ```
 
-The requirement is auditability and stale-proposal detection, not storing arbitrary model prose.
+Checks constrain lifecycle/support states and nonnegative base revisions. The
+base snapshot is an internal mapping for revalidation; it carries itinerary and
+candidate identities/labels, local schedules, place revisions, and only the
+reservation status/timing needed to protect anchors and calculate conflicts.
+It excludes reservation provider names, notes, confirmations and source
+references. Raw instructions are sent only to the accepted upstream client and
+persist as a one-way request fingerprint; provider response bodies are never
+stored. Trip deletion removes proposal snapshots/outcomes with `ON DELETE
+CASCADE`.
+
+Applied outcomes are immutable and replayed exactly on later apply calls,
+including when the proposal would otherwise be stale or expired. `stale` and
+`expired` are presentation states derived from the current trip/place footprint
+and expiry; they are not stored lifecycle values. Records remain available
+while the trip exists; no independent proposal-retention worker is implemented.
 
 ## Ordering
 

@@ -19,11 +19,13 @@ When working on AI integration, also read `docs/06-ai-integration.md`.
 
 ## Current implementation status
 
-Phase 4 bounded AI research is delivered locally. **Phase 5 has only local
-P5.0–P5.2 groundwork and remains incomplete**; see
-[`docs/releases/phase-5-groundwork.md`](docs/releases/phase-5-groundwork.md).
+Phases 1–4 are delivered locally. The Phase 5 implementation is present for
+independent review; it remains gated off and must not be described as a
+completed phase. Its accepted contract, release evidence, and local upstream
+runtime caveat are recorded in
+[`docs/releases/phase-5-local-proposals.md`](docs/releases/phase-5-local-proposals.md).
 
-The delivered scaffold and Phase 1–4 implementations include:
+Current delivered capabilities include:
 
 - Next.js frontend shell.
 - FastAPI application and health endpoint.
@@ -45,8 +47,9 @@ The delivered scaffold and Phase 1–4 implementations include:
   authoritative trip state.
 - Monotonic trip/shared-place revisions, optional `X-Expected-Revision`
   preconditions on existing writes, and stale-write 409 recovery in the UI.
-- Internal bounded typed proposal DTOs and immutable deterministic preview
-  validation; these are not exposed as an AI or travel API contract.
+- Phase 5 implementation: accepted `itinerary-proposal-v1` integration with travel-owned durable
+  lifecycle, stable-key recovery, immutable deterministic preview, atomic
+  apply/replay, explicit rejection, and accessible responsive review UI.
 - Phase 0–4 audit remediation: migration `0005` repairs legacy moved-item dates,
   SQL order/coordinate integrity, local host/origin guards, bounded external
   deadlines, database readiness and migrated disposable-schema test fixtures.
@@ -54,12 +57,14 @@ The delivered scaffold and Phase 1–4 implementations include:
 - CI skeleton.
 - product/design/architecture/implementation/release documentation.
 
-The travel-side AI research gate defaults off and external AI/provider gates
-must be configured separately. No accepted upstream itinerary-proposal
-capability, generation route/client, proposal storage, apply/reject lifecycle,
-or proposal UI exists. Do not claim Phase 5 complete or later phases delivered
-because they appear in planning docs. External booking imports, AI proposals,
-authentication, cloud deployment, and attachments remain planned.
+The travel-side research and proposal gates default off; upstream capability,
+storage, and provider gates must be configured separately. The local fake HTTP
+proposal integration passes with Uvicorn's asyncio loop. On this host,
+Uvicorn's auto-selected uvloop exposes an upstream clock-domain bug that makes
+generation return `generation_outcome_unknown`; keep proposal gates off in
+that runtime until upstream fixes it. Phase 6+ remain planned. External
+booking imports, authentication, cloud deployment, and attachments remain
+planned.
 
 ## Architectural invariants
 

@@ -1,6 +1,6 @@
 # Phased implementation plan
 
-Status: active roadmap; Phase 4 delivered locally; Phase 5 groundwork partial
+Status: active roadmap; Phase 4 delivered; Phase 5 implementation present for independent review
 Date: 2026-10-03
 
 Each phase should produce a useful, testable vertical slice.
@@ -135,12 +135,14 @@ and [`releases/phase-4-ai-research.md`](releases/phase-4-ai-research.md).
 
 ## Phase 5 — Structured AI proposals
 
-Detailed plan: [Phase 5](phase-5-implementation-plan.md). P5.0–P5.2 local
-groundwork is delivered; the phase is incomplete. Revisions and an internal
-preview validator exist, but accepted upstream proposal contract, generation,
-storage, apply/replay, and proposal UI remain prerequisites/work. The first
-removal operation requires an explicit user-selected removable-item allowlist;
-status alone does not establish optionality.
+Detailed plan: [Phase 5](phase-5-implementation-plan.md). The P5.0–P5.5 local
+implementation is present for independent review; proposal gates remain off by
+default. It pins the accepted upstream contract, adds durable owner-scoped
+storage and atomic apply/replay, gated generation, and the explicit review UI.
+The first removal operation requires an explicit user-selected removable-item
+allowlist; status alone does not establish optionality. A local Uvicorn/uvloop
+deadline mismatch is recorded in the release note; fake HTTP verification
+passes with asyncio.
 
 Build:
 
@@ -262,8 +264,8 @@ External contract/credential gates must be reported explicitly; local
 groundwork or fake-backed tests alone do not complete an enabled integration.
 The five detailed plans use the reviewed `56c0cbf` baseline and specify goals,
 boundaries, contracts, work packages, failure matrices, commits and exit gates.
-These documents describe planned scope; the Phase 5 release note identifies
-the limited P5.0–P5.2 implementation and the unfinished Phase 5–9 features.
+These documents describe planned scope; release notes identify locally
+implemented, reviewed, gated, and externally unverified work separately.
 
 ## Later ideas
 
