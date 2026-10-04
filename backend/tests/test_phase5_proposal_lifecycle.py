@@ -312,7 +312,20 @@ def test_generation_preview_apply_and_exact_outcome_replay(
     assert proposal["support_mode"] == "context_only"
     assert proposal["preview"]["after"][0]["items"][0]["start_time"] == "09:30"
     assert proposal["preview"]["after"][0]["items"][0]["end_time"] == "10:00"
+    assert proposal["operations"][0]["start_time"] == "09:30"
+    assert "end_time" not in proposal["operations"][0]
     assert "PRIVATE itinerary note" not in response.text
+
+    detail_urls = (
+        f"/v1/trips/{trip['id']}/proposals/{proposal['proposal_id']}",
+        f"/v1/trips/{trip['id']}/proposals/by-key/{key}",
+    )
+    for url in detail_urls:
+        detail = proposal_client.get(url)
+        assert detail.status_code == 200
+        operation = detail.json()["operations"][0]
+        assert operation["start_time"] == "09:30"
+        assert "end_time" not in operation
 
     mismatch = proposal_client.post(
         f"/v1/trips/{trip['id']}/proposals",
@@ -370,11 +383,24 @@ def test_explicit_null_clears_only_the_present_time_field(
 ) -> None:
     trip, _item_id, _place_id = create_trip_with_item(proposal_client)
     monkeypatch.setattr(PersonalAIClient, "create_itinerary_proposal", fake_time_change(None))
-    response = request_proposal(proposal_client, trip, uuid4())
+    key = uuid4()
+    response = request_proposal(proposal_client, trip, key)
     assert response.status_code == 201, response.text
     proposal = response.json()
     assert proposal["preview"]["after"][0]["items"][0]["start_time"] is None
     assert proposal["preview"]["after"][0]["items"][0]["end_time"] == "10:00"
+    assert proposal["operations"][0]["start_time"] is None
+    assert "end_time" not in proposal["operations"][0]
+    detail_urls = (
+        f"/v1/trips/{trip['id']}/proposals/{proposal['proposal_id']}",
+        f"/v1/trips/{trip['id']}/proposals/by-key/{key}",
+    )
+    for url in detail_urls:
+        detail = proposal_client.get(url)
+        assert detail.status_code == 200
+        operation = detail.json()["operations"][0]
+        assert operation["start_time"] is None
+        assert "end_time" not in operation
 
 
 def test_sql_apply_matches_full_preview_for_ordered_multi_operation_batch(
