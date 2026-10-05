@@ -7,6 +7,7 @@ from personal_travel.api.routes import (
     itinerary,
     location,
     places,
+    private_deletions,
     proposals,
     research,
     reservations,
@@ -20,6 +21,7 @@ api_router.include_router(auth.router, prefix="/v1")
 api_router.include_router(trips.router, prefix="/v1")
 api_router.include_router(itinerary.router, prefix="/v1")
 api_router.include_router(imports.router, prefix="/v1")
+api_router.include_router(private_deletions.router, prefix="/v1")
 api_router.include_router(places.router, prefix="/v1")
 api_router.include_router(reservations.router, prefix="/v1")
 api_router.include_router(saved_places.router, prefix="/v1")

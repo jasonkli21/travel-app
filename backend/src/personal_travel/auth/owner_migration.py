@@ -19,9 +19,12 @@ from personal_travel.db.base import Base
 from personal_travel.domain.proposals import ProposalTripSnapshot
 from personal_travel.models import (
     AuthIdentity,
+    BookingDeletionIntent,
+    BookingImport,
     ItineraryProposal,
     OwnerMigrationAudit,
     Place,
+    SourceAttachment,
     Trip,
 )
 from personal_travel.services.errors import DomainError
@@ -34,8 +37,15 @@ OWNER_SCOPED_TABLES = (
     "saved_places",
     "itinerary_proposals",
 )
+PRIVATE_SCOPED_TABLES = (
+    SourceAttachment.__tablename__,
+    BookingImport.__tablename__,
+    BookingDeletionIntent.__tablename__,
+)
+FINGERPRINT_TABLES = (*OWNER_SCOPED_TABLES, *PRIVATE_SCOPED_TABLES)
 LOCK_TABLES_SQL = (
     "LOCK TABLE trips, places, reservations, saved_places, itinerary_proposals, "
+    "source_attachments, booking_imports, booking_deletion_intents, "
     "auth_identities, owner_migration_audits IN SHARE ROW EXCLUSIVE MODE"
 )
 MAX_BACKUP_BYTES = 16 * 1024 * 1024 * 1024
@@ -197,7 +207,7 @@ def _graph_fingerprint(session: Session, source_owner_id: str, target_owner_id: 
     """
     digest = hashlib.sha256()
     owner_ids = (source_owner_id, target_owner_id)
-    for table_name in OWNER_SCOPED_TABLES:
+    for table_name in FINGERPRINT_TABLES:
         table = Base.metadata.tables[table_name]
         rows = session.execute(
             select(table)
@@ -269,6 +279,10 @@ def inspect_owner_migration(
 
     counts = {name: _count(session, name, source_owner_id) for name in OWNER_SCOPED_TABLES}
     target_counts = {name: _count(session, name, target_owner_id) for name in OWNER_SCOPED_TABLES}
+    counts.update({name: _count(session, name, source_owner_id) for name in PRIVATE_SCOPED_TABLES})
+    target_counts.update(
+        {name: _count(session, name, target_owner_id) for name in PRIVATE_SCOPED_TABLES}
+    )
     counts.update(
         {
             "trip_days": _related_count(
@@ -305,6 +319,9 @@ def inspect_owner_migration(
     counts["proposal_snapshot_owner_id"] = len(source_proposals) - mismatched_snapshots
 
     conflicts = {
+        "private_records_require_separate_migration": sum(
+            counts[name] + target_counts[name] for name in PRIVATE_SCOPED_TABLES
+        ),
         "proposal_snapshot_owner_mismatch": mismatched_snapshots,
         "target_provider_place_collision": _related_count(
             session,

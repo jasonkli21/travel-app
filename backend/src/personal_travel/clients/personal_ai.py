@@ -112,6 +112,14 @@ class PersonalAIExtractionUnknown(PersonalAIExtractionError):
     """The POST outcome is ambiguous; recovery must use the existing key."""
 
 
+class PersonalAIExtractionRejected(PersonalAIExtractionError):
+    """The upstream request was conclusively rejected before a result was created."""
+
+    def __init__(self, status_code: int) -> None:
+        self.status_code = status_code
+        super().__init__("booking extraction request was rejected")
+
+
 class PersonalAIClient:
     """Typed HTTP boundary to personal-ai-system."""
 
@@ -294,6 +302,7 @@ class PersonalAIClient:
         """POST exactly once, then recover only through the same idempotency key."""
         loop = asyncio.get_running_loop()
         deadline = loop.time() + self._timeout
+        rejection_status: int | None = None
         try:
             async with asyncio.timeout_at(deadline):
                 headers = await self._outbound_headers()
@@ -309,6 +318,10 @@ class PersonalAIClient:
                             deadline=deadline,
                             headers=headers,
                         )
+                    except httpx.HTTPStatusError as error:
+                        if error.response.status_code in {400, 401, 403, 404, 409, 413, 422}:
+                            rejection_status = error.response.status_code
+                        result = None
                     except (
                         httpx.HTTPError,
                         TimeoutError,
@@ -333,8 +346,10 @@ class PersonalAIClient:
                         return self._check_extraction_identity(
                             reconciled, idempotency_key, source_sha256
                         )
+                    if rejection_status is not None:
+                        raise PersonalAIExtractionRejected(rejection_status)
                     raise PersonalAIExtractionUnknown("booking extraction outcome is unknown")
-        except PersonalAIExtractionUnknown:
+        except (PersonalAIExtractionUnknown, PersonalAIExtractionRejected):
             raise
         except (PersonalAIError, TimeoutError, httpx.HTTPError, ValueError, ValidationError):
             raise PersonalAIExtractionUnknown("booking extraction outcome is unknown") from None

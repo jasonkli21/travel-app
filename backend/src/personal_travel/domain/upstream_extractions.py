@@ -7,7 +7,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-UPSTREAM_REVISION = "ece8cfc3db044aab3b275709c12e71eb17f2520d"
+UPSTREAM_REVISION = "ebd00a8e2fb2d8b59a5fb5fa3aa44268e5e79b63"
 SCHEMA_VERSION = "booking-document-extraction-v1"
 
 

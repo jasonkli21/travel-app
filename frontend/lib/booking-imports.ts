@@ -11,6 +11,7 @@ export type BookingImportState =
   | "expired";
 export type SourceRetention = "delete_after_confirmation" | "keep_until_expiry";
 export type ImportDecision = "create_separate" | "link_existing" | "skip";
+export type ReservationStatus = "tentative" | "confirmed";
 
 export interface BookingImportSummary {
   id: string;
@@ -65,6 +66,7 @@ export interface BookingCandidate {
 
 export interface CandidateEdit {
   reservation_type?: ReservationType | "rail" | "car" | null;
+  reservation_status?: ReservationStatus | null;
   provider_name?: string | null;
   confirmation_code?: string | null;
   starts_at_date?: string | null;
@@ -73,6 +75,8 @@ export interface CandidateEdit {
   ends_at_date?: string | null;
   ends_at_time?: string | null;
   ends_at_timezone?: string | null;
+  starts_at_trip_local?: TripLocalTime | null;
+  ends_at_trip_local?: TripLocalTime | null;
 }
 
 export interface DuplicateSuggestion {
@@ -98,6 +102,7 @@ export interface ConfirmationEntry {
   provider_name?: string | null;
   confirmation_code?: string | null;
   reservation_type?: ReservationType | null;
+  reservation_status?: ReservationStatus | null;
   starts_at_date?: string | null;
   starts_at_time?: string | null;
   starts_at_timezone?: string | null;
@@ -130,6 +135,7 @@ export interface ConfirmBookingsInput {
 export interface ImportEditInput {
   candidate_id: string;
   reservation_type?: ReservationType | "rail" | "car" | null;
+  reservation_status?: ReservationStatus | null;
   provider_name?: string | null;
   confirmation_code?: string | null;
   starts_at_date?: string | null;
@@ -143,6 +149,13 @@ export interface ImportEditInput {
 export interface ReviewWorkspace {
   trip: TripDetail;
   reservations: Reservation[];
+}
+
+export interface DeletionRetryResult {
+  attempted: number;
+  deleted: number;
+  failed: number;
+  pending: number;
 }
 
 export const bookingImportsEnabled =
@@ -196,6 +209,8 @@ export const bookingImportApi = {
     }),
   deleteSource: (tripId: string, importId: string) =>
     request<void>(`/trips/${tripId}/imports/${importId}/source`, { method: "DELETE" }),
+  retryPendingDeletions: () =>
+    request<DeletionRetryResult>("/private-import-deletion-intents/retry", { method: "POST" }),
   sourceUrl: (tripId: string, importId: string) =>
     `/api/v1/trips/${tripId}/imports/${importId}/source`,
 };

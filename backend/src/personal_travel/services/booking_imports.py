@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import json
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta, timezone
-from typing import cast
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -21,32 +19,30 @@ from personal_travel.api.schemas.booking_imports import (
     ImportConfirmRequest,
     ImportEditsRequest,
 )
-from personal_travel.api.schemas.reservations import ReservationCreate
 from personal_travel.auth.contracts import PersonalAIAuthContext
 from personal_travel.clients.personal_ai import (
     PersonalAIClient,
     PersonalAIExtractionError,
+    PersonalAIExtractionRejected,
     PersonalAIExtractionUnknown,
 )
 from personal_travel.config import Settings
-from personal_travel.domain.types import ReservationType
 from personal_travel.domain.upstream_extractions import (
     UPSTREAM_REVISION,
     UpstreamBookingExtractionResult,
 )
 from personal_travel.models.import_source import BookingImport, SourceAttachment
-from personal_travel.models.place import Place
 from personal_travel.models.reservation import Reservation
 from personal_travel.models.trip import Trip
-from personal_travel.repositories.trips import SqlAlchemyTripRepository
 from personal_travel.services.errors import DomainError, not_found
-from personal_travel.services.reservations import ReservationService
+from personal_travel.services.private_deletion import PrivateDeletionService, enqueue_in_session
 from personal_travel.services.source_lifecycle import SourceLifecycleService
 from personal_travel.services.source_parser import MAX_TEXT_CHARS, SourceParseError, parse_pdf
 from personal_travel.services.source_store import LocalSourceStore
 from personal_travel.services.time_utils import as_aware_utc, resolve_local_datetime
 
 CLAIM_LEASE = timedelta(seconds=60)
+UPSTREAM_RESULT_RETENTION = timedelta(days=7)
 MAX_SOURCE_BYTES = 10 * 1024 * 1024
 OFFSET_ZONE = re.compile(r"^([+-])(0\d|1[0-4]):([0-5]\d)$")
 
@@ -146,18 +142,42 @@ class BookingImportService:
             lambda: LocalSourceStore(settings.private_source_dir)
         )
 
-    async def extract(self, owner_id: str, trip_id: UUID, import_id: UUID) -> dict[str, object]:
+    async def extract(
+        self,
+        owner_id: str,
+        trip_id: UUID,
+        import_id: UUID,
+        *,
+        request_deadline: float | None = None,
+    ) -> dict[str, object]:
         if not self._settings.personal_ai_extractions_enabled:
             raise DomainError(
                 "booking_extraction_unavailable",
                 "Booking extraction is unavailable until enabled for this travel service.",
                 status_code=503,
             )
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self._settings.personal_ai_extraction_timeout_seconds
+        if request_deadline is not None:
+            deadline = min(deadline, request_deadline)
+        try:
+            async with asyncio.timeout_at(deadline):
+                return await self._extract_with_deadline(owner_id, trip_id, import_id, deadline)
+        except TimeoutError as error:
+            raise DomainError(
+                "extraction_timeout",
+                "Booking extraction exceeded its total time limit.",
+                status_code=408,
+            ) from error
+
+    async def _extract_with_deadline(
+        self, owner_id: str, trip_id: UUID, import_id: UUID, deadline: float
+    ) -> dict[str, object]:
         claim = await run_in_threadpool(self._claim, owner_id, trip_id, import_id)
         if isinstance(claim, dict):
             return claim
         try:
-            text, media_type, source_hash = await run_in_threadpool(
+            text, media_type, source_hash, text_hash = await run_in_threadpool(
                 self._read_source, owner_id, trip_id, import_id
             )
         except DomainError:
@@ -171,46 +191,68 @@ class BookingImportService:
 
         result: UpstreamBookingExtractionResult | None
         if not claim.post_attempted:
-            await run_in_threadpool(self._mark_post_attempted, claim)
-            payload: dict[str, object] = {
-                "schema_version": "booking-document-extraction-v1",
-                "idempotency_key": str(claim.key),
-                "source_sha256": source_hash,
-                "media_type": media_type,
-                "consent": "submit_for_booking_extraction",
-                "synthetic_fixture": False,
-                "document_text": text,
-            }
+            await run_in_threadpool(self._mark_post_attempted, claim, text_hash)
+        payload: dict[str, object] = {
+            "schema_version": "booking-document-extraction-v1",
+            "idempotency_key": str(claim.key),
+            "source_sha256": text_hash,
+            "media_type": media_type,
+            "consent": "submit_for_booking_extraction",
+            "synthetic_fixture": False,
+            "document_text": text,
+        }
+        if claim.post_attempted:
+            try:
+                result = await self._client.get_booking_extraction_by_key(claim.key, text_hash)
+            except PersonalAIExtractionError:
+                await run_in_threadpool(self._release_claim, claim)
+                return await run_in_threadpool(self._detail, owner_id, trip_id, import_id)
+            if result is not None and result.state == "running":
+                await run_in_threadpool(self._release_claim, claim)
+                return await run_in_threadpool(self._detail, owner_id, trip_id, import_id)
+            if result is None:
+                # A durable pre-dispatch marker can outlive a crash before POST.
+                # Re-submit the exact same payload under the existing stable key;
+                # the upstream begin fence makes that safe after any lost response.
+                try:
+                    result = await self._client.create_booking_extraction(
+                        payload=payload, idempotency_key=claim.key, source_sha256=text_hash
+                    )
+                except PersonalAIExtractionRejected as error:
+                    await run_in_threadpool(
+                        self._fail_claim, claim, f"upstream_rejected_{error.status_code}"
+                    )
+                    return await run_in_threadpool(self._detail, owner_id, trip_id, import_id)
+                except PersonalAIExtractionError:
+                    await run_in_threadpool(self._release_claim, claim)
+                    return await run_in_threadpool(self._detail, owner_id, trip_id, import_id)
+        else:
             try:
                 result = await self._client.create_booking_extraction(
-                    payload=payload, idempotency_key=claim.key, source_sha256=source_hash
+                    payload=payload, idempotency_key=claim.key, source_sha256=text_hash
                 )
+            except PersonalAIExtractionRejected as error:
+                await run_in_threadpool(
+                    self._fail_claim, claim, f"upstream_rejected_{error.status_code}"
+                )
+                return await run_in_threadpool(self._detail, owner_id, trip_id, import_id)
             except PersonalAIExtractionUnknown:
                 await run_in_threadpool(self._release_claim, claim)
                 return await run_in_threadpool(self._detail, owner_id, trip_id, import_id)
             except PersonalAIExtractionError:
                 await run_in_threadpool(self._release_claim, claim)
                 return await run_in_threadpool(self._detail, owner_id, trip_id, import_id)
-        else:
-            try:
-                result = await self._client.get_booking_extraction_by_key(claim.key, source_hash)
-            except PersonalAIExtractionError:
-                await run_in_threadpool(self._release_claim, claim)
-                return await run_in_threadpool(self._detail, owner_id, trip_id, import_id)
-            if result is None or result.state == "running":
-                await run_in_threadpool(self._release_claim, claim)
-                return await run_in_threadpool(self._detail, owner_id, trip_id, import_id)
 
         assert result is not None
         try:
-            await run_in_threadpool(self._validate_result, result, text, source_hash)
+            await run_in_threadpool(self._validate_result, result, text, claim.key, text_hash)
         except DomainError:
             await run_in_threadpool(self._fail_claim, claim, "invalid_upstream_result")
             return await run_in_threadpool(self._detail, owner_id, trip_id, import_id)
         return await run_in_threadpool(self._save_result, claim, result)
 
     def delete_upstream_extraction(self, owner_id: str, trip_id: UUID, import_id: UUID) -> None:
-        """Delete the upstream keyed result, including a POST racing source deletion."""
+        """Retry durable upstream deletion without requiring the source row to remain."""
         with self._factory() as session, session.begin():
             trip = session.scalar(
                 select(Trip).where(Trip.id == trip_id, Trip.owner_id == owner_id).with_for_update()
@@ -233,15 +275,23 @@ class BookingImportService:
             if item.extraction_key is None:
                 item.upstream_delete_pending = False
                 return
-            extraction_key, source_hash = item.extraction_key, item.source_sha256
-
+            extraction_key = item.extraction_key
+            digest = item.extraction_text_sha256 or item.source_sha256
+            enqueue_in_session(
+                session,
+                owner_id=owner_id,
+                extraction_key=extraction_key,
+                source_sha256=digest,
+            )
         try:
             deleted = asyncio.run(
-                self._client.delete_booking_extraction_by_key(extraction_key, source_hash)
+                PrivateDeletionService(self._factory, self._client).retry_one(
+                    owner_id, extraction_key
+                )
             )
-            if deleted.state != "deleted":
-                raise PersonalAIExtractionError("upstream deletion was not confirmed")
-        except (PersonalAIExtractionError, RuntimeError):
+        except RuntimeError:
+            deleted = False
+        if not deleted:
             raise DomainError(
                 "upstream_delete_pending",
                 "The local source is deleted, but AI result deletion is pending. "
@@ -249,40 +299,61 @@ class BookingImportService:
                 status_code=503,
             ) from None
 
-        with self._factory() as session, session.begin():
-            trip = session.scalar(
-                select(Trip).where(Trip.id == trip_id, Trip.owner_id == owner_id).with_for_update()
-            )
-            if trip is None:
-                raise not_found("trip")
-            item = session.scalar(
-                select(BookingImport)
-                .where(
-                    BookingImport.id == import_id,
-                    BookingImport.trip_id == trip_id,
-                    BookingImport.owner_id == owner_id,
-                    BookingImport.extraction_key == extraction_key,
-                )
-                .with_for_update()
-            )
-            if item is not None:
-                item.upstream_delete_pending = False
-
     @staticmethod
     def _validate_result(
-        result: UpstreamBookingExtractionResult, source_text: str, source_hash: str
+        result: UpstreamBookingExtractionResult,
+        source_text: str,
+        idempotency_key: UUID,
+        text_hash: str,
     ) -> None:
-        if result.source_sha256 != source_hash:
+        if result.idempotency_key != idempotency_key or result.source_sha256 != text_hash:
             raise DomainError(
-                "invalid_upstream_result", "The extraction result did not match this source."
+                "invalid_upstream_result", "The extraction result did not match this request."
+            )
+        if (
+            result.expires_at <= result.created_at
+            or result.expires_at > result.created_at + timedelta(days=7)
+            or result.created_at > datetime.now(UTC) + timedelta(minutes=1)
+        ):
+            raise DomainError(
+                "invalid_upstream_result", "The extraction result had an invalid retention window."
             )
         if result.state != "completed":
+            if result.candidates or (result.state == "failed") != (result.failure_code is not None):
+                raise DomainError(
+                    "invalid_upstream_result",
+                    "The extraction result had an invalid terminal state.",
+                )
             return
         if len(result.candidates) > 10:
             raise DomainError(
                 "invalid_upstream_result", "The extraction result exceeded its limit."
             )
+        identities: set[str] = set()
+        spans: set[tuple[int, int]] = set()
+        allowed_uncertainty = {
+            "reservation_type",
+            "provider_name",
+            "confirmation_code",
+            "starts_at",
+            "ends_at",
+            "starts_at_timezone",
+            "ends_at_timezone",
+        }
         for candidate in result.candidates:
+            if (
+                candidate.candidate_id in identities
+                or (candidate.source_start, candidate.source_end) in spans
+            ):
+                raise DomainError(
+                    "invalid_upstream_result", "The extraction result repeated candidate evidence."
+                )
+            identities.add(candidate.candidate_id)
+            spans.add((candidate.source_start, candidate.source_end))
+            if not set(candidate.uncertain_fields) <= allowed_uncertainty:
+                raise DomainError(
+                    "invalid_upstream_result", "The extraction result had unsupported uncertainty."
+                )
             if not 0 <= candidate.source_start < candidate.source_end <= len(source_text):
                 raise DomainError(
                     "invalid_upstream_result", "The extraction result had an invalid source span."
@@ -291,6 +362,32 @@ class BookingImportService:
             if not excerpt.strip() or len(excerpt) > 240 or excerpt != candidate.source_excerpt:
                 raise DomainError(
                     "invalid_upstream_result", "The extraction result had invalid source evidence."
+                )
+            if (
+                (
+                    candidate.reservation_type is None
+                    and "reservation_type" not in candidate.uncertain_fields
+                )
+                or (
+                    candidate.provider_name is None
+                    and "provider_name" not in candidate.uncertain_fields
+                )
+                or (
+                    candidate.confirmation_code is None
+                    and "confirmation_code" not in candidate.uncertain_fields
+                )
+                or (
+                    candidate.provider_name is not None
+                    and candidate.provider_name.casefold() not in excerpt.casefold()
+                )
+                or (
+                    candidate.confirmation_code is not None
+                    and candidate.confirmation_code.casefold() not in excerpt.casefold()
+                )
+            ):
+                raise DomainError(
+                    "invalid_upstream_result",
+                    "The extraction result included unsupported candidate facts.",
                 )
             for day, local_time, zone, name in (
                 (
@@ -315,11 +412,40 @@ class BookingImportService:
                     )
                 if zone is not None:
                     _zone(zone, field=name)
+            for endpoint in ("starts_at", "ends_at"):
+                day = getattr(candidate, f"{endpoint}_date")
+                local_time = getattr(candidate, f"{endpoint}_time")
+                timezone_name = getattr(candidate, f"{endpoint}_timezone")
+                text_value = getattr(candidate, f"{endpoint}_text")
+                uncertainty = endpoint
+                timezone_uncertainty = f"{endpoint}_timezone"
+                if day is not None or local_time is not None:
+                    if not text_value or text_value.casefold() not in excerpt.casefold():
+                        raise DomainError(
+                            "invalid_upstream_result",
+                            "A schedule value lacked literal source evidence.",
+                        )
+                    if (
+                        timezone_name is not None
+                        and timezone_name.casefold() not in excerpt.casefold()
+                    ):
+                        raise DomainError(
+                            "invalid_upstream_result",
+                            "A timezone lacked literal evidence in this candidate's source span.",
+                        )
+                elif uncertainty not in candidate.uncertain_fields:
+                    raise DomainError(
+                        "invalid_upstream_result", "An omitted schedule was not marked uncertain."
+                    )
+                if timezone_name is None and timezone_uncertainty not in candidate.uncertain_fields:
+                    raise DomainError(
+                        "invalid_upstream_result",
+                        "An unresolved timezone was not marked uncertain.",
+                    )
 
     def _claim(
         self, owner_id: str, trip_id: UUID, import_id: UUID
     ) -> ExtractionClaim | dict[str, object]:
-        now = datetime.now(UTC)
         with self._factory() as session, session.begin():
             trip = session.scalar(
                 select(Trip).where(Trip.id == trip_id, Trip.owner_id == owner_id).with_for_update()
@@ -337,9 +463,29 @@ class BookingImportService:
             )
             if item is None:
                 raise not_found("import")
+            now = datetime.now(UTC)
             if item.state == "review_ready":
                 return self._detail_for(item, trip.timezone, trip.reservations)
             if item.state in {"applied", "rejected", "failed"}:
+                return self._detail_for(item, trip.timezone, trip.reservations)
+            if (
+                item.extraction_post_attempted
+                and item.extraction_key is not None
+                and item.extraction_key_created_at is not None
+                and item.extraction_key_created_at + UPSTREAM_RESULT_RETENTION <= now
+            ):
+                item.state = "failed"
+                item.extraction_claim_token = None
+                item.extraction_claimed_at = None
+                item.candidate_snapshot = {"failure_code": "upstream_result_expired"}
+                if item.extraction_text_sha256 is not None:
+                    enqueue_in_session(
+                        session,
+                        owner_id=owner_id,
+                        extraction_key=item.extraction_key,
+                        source_sha256=item.extraction_text_sha256,
+                    )
+                    item.upstream_delete_pending = True
                 return self._detail_for(item, trip.timezone, trip.reservations)
             source = session.scalar(
                 select(SourceAttachment).where(
@@ -356,6 +502,7 @@ class BookingImportService:
                 return self._detail_for(item, trip.timezone, trip.reservations)
             if item.extraction_key is None:
                 item.extraction_key = uuid4()
+                item.extraction_key_created_at = now
             if item.upstream_revision is None:
                 item.upstream_revision = UPSTREAM_REVISION
             token = uuid4()
@@ -372,7 +519,9 @@ class BookingImportService:
                 state=item.state,
             )
 
-    def _read_source(self, owner_id: str, trip_id: UUID, import_id: UUID) -> tuple[str, str, str]:
+    def _read_source(
+        self, owner_id: str, trip_id: UUID, import_id: UUID
+    ) -> tuple[str, str, str, str]:
         lifecycle = SourceLifecycleService(self._factory)
         descriptor = lifecycle.download_descriptor(owner_id, trip_id, import_id)
         store = self._source_store_factory()
@@ -402,11 +551,24 @@ class BookingImportService:
                 raise DomainError(
                     "source_unavailable", "The source is unavailable.", status_code=410
                 )
-            return text, descriptor.media_type, descriptor.sha256
+            text_sha256 = hashlib.sha256(text.encode("utf-8")).hexdigest()
+            with self._factory() as session:
+                persisted_hash = session.scalar(
+                    select(BookingImport.extraction_text_sha256).where(
+                        BookingImport.id == import_id,
+                        BookingImport.trip_id == trip_id,
+                        BookingImport.owner_id == owner_id,
+                    )
+                )
+            if persisted_hash is not None and persisted_hash != text_sha256:
+                raise DomainError(
+                    "source_unavailable", "The recovered source text changed.", status_code=410
+                )
+            return text, descriptor.media_type, descriptor.sha256, text_sha256
         finally:
             store.close()
 
-    def _mark_post_attempted(self, claim: ExtractionClaim) -> None:
+    def _mark_post_attempted(self, claim: ExtractionClaim, text_sha256: str) -> None:
         with self._factory() as session, session.begin():
             trip = session.scalar(
                 select(Trip)
@@ -429,6 +591,30 @@ class BookingImportService:
                 raise DomainError(
                     "extraction_claim_lost", "The import changed; reopen it.", status_code=409
                 )
+            now = datetime.now(UTC)
+            source = session.scalar(
+                select(SourceAttachment).where(
+                    SourceAttachment.id == item.source_id,
+                    SourceAttachment.owner_id == claim.owner_id,
+                    SourceAttachment.trip_id == claim.trip_id,
+                )
+            )
+            if (
+                item.state != "extracting"
+                or source is None
+                or source.state != "ready"
+                or source.expires_at <= now
+            ):
+                raise DomainError(
+                    "source_unavailable", "The source is unavailable.", status_code=410
+                )
+            if item.extraction_text_sha256 not in {None, text_sha256}:
+                raise DomainError(
+                    "source_unavailable",
+                    "The source text changed during recovery.",
+                    status_code=410,
+                )
+            item.extraction_text_sha256 = text_sha256
             item.extraction_post_attempted = True
 
     def _release_claim(self, claim: ExtractionClaim) -> None:
@@ -457,7 +643,6 @@ class BookingImportService:
     def _save_result(
         self, claim: ExtractionClaim, result: UpstreamBookingExtractionResult
     ) -> dict[str, object]:
-        now = datetime.now(UTC)
         with self._factory() as session, session.begin():
             trip = session.scalar(select(Trip).where(Trip.id == claim.trip_id).with_for_update())
             if trip is None:
@@ -475,10 +660,23 @@ class BookingImportService:
                 raise DomainError(
                     "extraction_claim_lost", "The import changed; reopen it.", status_code=409
                 )
+            now = datetime.now(UTC)
+            was_rejected = item.state == "rejected"
             item.extraction_claim_token = None
             item.extraction_claimed_at = None
             item.upstream_extraction_id = result.extraction_id
             item.upstream_result_expires_at = result.expires_at
+            if was_rejected:
+                item.candidate_snapshot = None
+                if item.extraction_key is not None and item.extraction_text_sha256 is not None:
+                    enqueue_in_session(
+                        session,
+                        owner_id=item.owner_id,
+                        extraction_key=item.extraction_key,
+                        source_sha256=item.extraction_text_sha256,
+                    )
+                    item.upstream_delete_pending = True
+                return self._detail_for(item, trip.timezone, trip.reservations)
             if result.state == "completed" and result.expires_at > now:
                 item.candidate_snapshot = {
                     "schema_version": result.schema_version,
@@ -495,6 +693,10 @@ class BookingImportService:
                 item.candidate_snapshot = {
                     "failure_code": result.failure_code or "provider_unavailable"
                 }
+            elif result.state == "completed":
+                item.state = "expired"
+                item.candidate_snapshot = None
+                item.review_revision += 1
             else:
                 item.state = "extracting"
             return self._detail_for(item, trip.timezone, trip.reservations)
@@ -552,6 +754,8 @@ class BookingImportService:
                 item.candidate_snapshot.get("failure_code") if item.candidate_snapshot else None
             ),
             "outcome_unknown": item.state == "extracting" and item.extraction_post_attempted,
+            "candidates": [],
+            "duplicate_suggestions": [],
         }
         snapshot = item.candidate_snapshot
         if (
@@ -579,12 +783,23 @@ class BookingImportService:
                     candidate.get("ends_at_timezone"),
                     trip_timezone,
                 )
-                candidate["current"] = candidate | edits.get(candidate["candidate_id"], {})
+                effective = candidate | edits.get(candidate["candidate_id"], {})
+                effective["starts_at_trip_local"] = _trip_local_parts(
+                    effective.get("starts_at_date"),
+                    effective.get("starts_at_time"),
+                    effective.get("starts_at_timezone"),
+                    trip_timezone,
+                )
+                effective["ends_at_trip_local"] = _trip_local_parts(
+                    effective.get("ends_at_date"),
+                    effective.get("ends_at_time"),
+                    effective.get("ends_at_timezone"),
+                    trip_timezone,
+                )
+                candidate["current"] = effective
                 views.append(candidate)
             data["candidates"] = views
             data["duplicate_suggestions"] = _duplicates(views, reservations or [])
-        else:
-            data["candidates"] = []
         return data
 
     def update_edits(
@@ -686,249 +901,28 @@ class BookingImportService:
             item.state = "rejected"
             item.candidate_snapshot = None
             item.review_revision += 1
+            if (
+                item.extraction_post_attempted
+                and item.extraction_key is not None
+                and item.extraction_text_sha256 is not None
+            ):
+                enqueue_in_session(
+                    session,
+                    owner_id=owner_id,
+                    extraction_key=item.extraction_key,
+                    source_sha256=item.extraction_text_sha256,
+                )
+                item.upstream_delete_pending = True
             return self._detail_for(item, trip.timezone, trip.reservations)
 
     def confirm(
         self, owner_id: str, trip_id: UUID, import_id: UUID, payload: ImportConfirmRequest
     ) -> dict[str, object]:
-        fingerprint = hashlib.sha256(
-            json.dumps(
-                payload.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
-            ).encode()
-        ).hexdigest()
-        with self._factory() as session, session.begin():
-            # Fixed lock order shared with extraction and source lifecycle: trip, then import.
-            trip = SqlAlchemyTripRepository(session).get(
-                owner_id=owner_id, trip_id=trip_id, for_update=True
-            )
-            if trip is None:
-                raise not_found("trip")
-            item = session.scalar(
-                select(BookingImport)
-                .where(
-                    BookingImport.id == import_id,
-                    BookingImport.trip_id == trip_id,
-                    BookingImport.owner_id == owner_id,
-                )
-                .with_for_update()
-            )
-            if item is None:
-                raise not_found("import")
-            if item.confirmation_key is not None:
-                if (
-                    item.confirmation_key == payload.confirmation_key
-                    and item.confirmation_fingerprint == fingerprint
-                ):
-                    assert item.confirmation_outcome is not None
-                    return item.confirmation_outcome
-                raise DomainError(
-                    "confirmation_already_final",
-                    "This import already has a confirmation outcome. Reopen it to see the result.",
-                    status_code=409,
-                    details={"confirmation_key": str(item.confirmation_key)},
-                )
-            if item.state != "review_ready" or not item.candidate_snapshot:
-                raise DomainError(
-                    "review_unavailable",
-                    "This extraction is not ready to confirm.",
-                    status_code=409,
-                )
-            if (
-                item.upstream_result_expires_at is not None
-                and item.upstream_result_expires_at <= datetime.now(UTC)
-            ):
-                raise DomainError(
-                    "extraction_expired",
-                    "This extraction expired. Upload the source again to review it.",
-                    status_code=410,
-                )
-            if item.review_revision != payload.expected_import_revision:
-                raise DomainError(
-                    "stale_revision",
-                    "The import changed; reload before confirming.",
-                    status_code=409,
-                )
-            if trip.revision != payload.expected_trip_revision:
-                raise DomainError(
-                    "stale_revision",
-                    "The trip changed after it was loaded. Reload before confirming.",
-                    status_code=409,
-                    details={"aggregate": "trip", "current_revision": trip.revision},
-                )
-            upstream = {
-                candidate["candidate_id"]: candidate
-                for candidate in item.candidate_snapshot.get("upstream", [])
-            }
-            edits = item.candidate_snapshot.get("edits", {})
-            entries = {entry.candidate_id: entry for entry in payload.entries}
-            if len(entries) != len(payload.entries) or set(entries) != set(upstream) or not entries:
-                raise DomainError(
-                    "invalid_confirmation",
-                    "Choose create, link, or skip for every candidate before confirming.",
-                )
-            reservation_service = ReservationService(session, owner_id)
-            outcomes: list[dict[str, object]] = []
-            for candidate_id, entry in entries.items():
-                if entry.decision == "skip":
-                    outcomes.append({"candidate_id": candidate_id, "outcome": "skipped"})
-                    continue
-                if entry.decision == "link_existing":
-                    reservation = next(
-                        (
-                            value
-                            for value in trip.reservations
-                            if value.id == entry.existing_reservation_id
-                        ),
-                        None,
-                    )
-                    if reservation is None:
-                        raise not_found("reservation")
-                    if entry.place_id is not None and entry.place_id != reservation.place_id:
-                        raise DomainError(
-                            "invalid_link_choice", "A linked reservation keeps its existing place."
-                        )
-                else:
-                    merged = dict(upstream[candidate_id]) | edits.get(candidate_id, {})
-                    starts_date = (
-                        entry.starts_at_date
-                        if "starts_at_date" in entry.model_fields_set
-                        else merged.get("starts_at_date")
-                    )
-                    starts_time = (
-                        entry.starts_at_time
-                        if "starts_at_time" in entry.model_fields_set
-                        else merged.get("starts_at_time")
-                    )
-                    starts_zone = (
-                        entry.starts_at_timezone
-                        if "starts_at_timezone" in entry.model_fields_set
-                        else merged.get("starts_at_timezone")
-                    )
-                    ends_date = (
-                        entry.ends_at_date
-                        if "ends_at_date" in entry.model_fields_set
-                        else merged.get("ends_at_date")
-                    )
-                    ends_time = (
-                        entry.ends_at_time
-                        if "ends_at_time" in entry.model_fields_set
-                        else merged.get("ends_at_time")
-                    )
-                    ends_zone = (
-                        entry.ends_at_timezone
-                        if "ends_at_timezone" in entry.model_fields_set
-                        else merged.get("ends_at_timezone")
-                    )
-                    starts_at = _source_instant(
-                        starts_date, starts_time, starts_zone, field="start time"
-                    )
-                    ends_at = _source_instant(ends_date, ends_time, ends_zone, field="end time")
-                    if ends_at is not None and starts_at is None:
-                        raise DomainError(
-                            "invalid_reservation_schedule", "An end time requires a start time."
-                        )
-                    if ends_at is not None and starts_at is not None and ends_at < starts_at:
-                        raise DomainError(
-                            "invalid_reservation_time_range",
-                            "End must occur after start across the converted timezones.",
-                        )
-                    provider = (
-                        entry.provider_name
-                        if "provider_name" in entry.model_fields_set
-                        else merged.get("provider_name")
-                    )
-                    reference = (
-                        entry.confirmation_code
-                        if "confirmation_code" in entry.model_fields_set
-                        else merged.get("confirmation_code")
-                    )
-                    reservation_type = (
-                        entry.reservation_type
-                        if "reservation_type" in entry.model_fields_set
-                        else _mapped_type(merged.get("reservation_type"))
-                    )
-                    if not provider or not reservation_type:
-                        raise DomainError(
-                            "required_candidate_field",
-                            "Select a reservation type and enter a provider before confirming.",
-                        )
-                    place = self._trip_place(session, trip, entry.place_id)
-                    data = ReservationCreate(
-                        reservation_type=cast(ReservationType, reservation_type),
-                        status="tentative",
-                        provider_name=provider,
-                        confirmation_code=reference,
-                        place_id=entry.place_id,
-                        source_reference=f"booking-import:{item.id}:candidate:{candidate_id}",
-                    )
-                    reservation = reservation_service.create_in_transaction(
-                        trip, data, starts_at=starts_at, ends_at=ends_at, place=place
-                    )
-                linked_item = None
-                if entry.itinerary_item_id is not None:
-                    linked_item = next(
-                        (
-                            candidate
-                            for day in trip.days
-                            for candidate in day.items
-                            if candidate.id == entry.itinerary_item_id
-                        ),
-                        None,
-                    )
-                    if linked_item is None:
-                        raise not_found("itinerary item")
-                    if linked_item.reservation_id not in {None, reservation.id}:
-                        raise DomainError(
-                            "item_already_linked",
-                            "This itinerary item already links to another reservation.",
-                            status_code=409,
-                        )
-                    linked_item.reservation = reservation
-                outcomes.append(
-                    {
-                        "candidate_id": candidate_id,
-                        "outcome": "linked" if entry.decision == "link_existing" else "created",
-                        "reservation_id": str(reservation.id),
-                        "itinerary_item_id": str(linked_item.id) if linked_item else None,
-                    }
-                )
-            if any(entry.decision != "skip" for entry in entries.values()):
-                trip.revision += 1
-            trip_revision = trip.revision
-            item.state = "applied"
-            item.confirmation_key = payload.confirmation_key
-            item.confirmation_fingerprint = fingerprint
-            item.confirmation_outcome = {
-                "confirmation_key": str(payload.confirmation_key),
-                "import_id": str(item.id),
-                "trip_id": str(trip.id),
-                "trip_revision": trip_revision,
-                "upstream_revision": item.upstream_revision,
-                "outcomes": outcomes,
-            }
-            item.review_revision += 1
-            if item.retention_choice == "delete_after_confirmation":
-                item.candidate_snapshot = None
-            session.flush()
-            return item.confirmation_outcome
+        from personal_travel.services.booking_confirmation import BookingConfirmationService
 
-    @staticmethod
-    def _trip_place(session: Session, trip: Trip, place_id: UUID | None) -> Place | None:
-        if place_id is None:
-            return None
-        place = session.scalar(
-            select(Place).where(Place.id == place_id, Place.owner_id == trip.owner_id)
+        return BookingConfirmationService(self._factory).confirm(
+            owner_id, trip_id, import_id, payload
         )
-        if place is None:
-            raise not_found("place")
-        belongs = any(saved.place_id == place_id for saved in trip.saved_places)
-        belongs = belongs or any(
-            candidate.place_id == place_id for day in trip.days for candidate in day.items
-        )
-        belongs = belongs or any(candidate.place_id == place_id for candidate in trip.reservations)
-        if not belongs:
-            raise not_found("trip place")
-        return place
 
 
 def _trip_local_parts(

@@ -22,7 +22,9 @@ from sqlalchemy.orm import Session
 from starlette.testclient import TestClient
 
 import personal_travel.api.routes.auth as auth_routes
-from personal_travel.auth.contracts import VerifiedPrincipal
+import personal_travel.api.routes.imports as import_routes
+import personal_travel.api.routes.private_deletions as private_deletion_routes
+from personal_travel.auth.contracts import PersonalAIAuthContext, VerifiedPrincipal
 from personal_travel.auth.google_oidc import stable_google_owner_id
 from personal_travel.auth.sessions import create_session, secret_digest
 from personal_travel.config import Settings, get_settings
@@ -68,6 +70,7 @@ def signed_token(
     nonce: str,
     *,
     audience: str = "travel-client.apps.googleusercontent.com",
+    subject: str = "synthetic-login-subject",
 ) -> tuple[str, str, str]:
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     private_bytes = private_key.private_bytes(
@@ -77,12 +80,14 @@ def signed_token(
     )
     signer = RSASigner.from_string(private_bytes)
     now = datetime.now(UTC)
-    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "synthetic-login-key")])
+    certificate_subject = x509.Name(
+        [x509.NameAttribute(NameOID.COMMON_NAME, "synthetic-login-key")]
+    )
     cert = (
         (
             x509.CertificateBuilder()
-            .subject_name(subject)
-            .issuer_name(subject)
+            .subject_name(certificate_subject)
+            .issuer_name(certificate_subject)
             .public_key(private_key.public_key())
             .serial_number(x509.random_serial_number())
             .not_valid_before(now - timedelta(minutes=1))
@@ -96,7 +101,7 @@ def signed_token(
         signer,
         {
             "iss": "https://accounts.google.com",
-            "sub": "synthetic-login-subject",
+            "sub": subject,
             "aud": audience,
             "email": "owner@gmail.com",
             "email_verified": True,
@@ -106,7 +111,7 @@ def signed_token(
         },
         key_id="synthetic-login-key",
     ).decode("ascii")
-    return token, cert, "synthetic-login-subject"
+    return token, cert, subject
 
 
 def set_google_key_fixture(monkeypatch: pytest.MonkeyPatch, certificate: str) -> None:
@@ -500,7 +505,15 @@ def test_ai_user_token_must_be_valid_and_match_current_session_before_body_parse
     )
     use_settings(api_client, settings)
     raw_session, csrf = make_identity_and_session(database_engine)
-    path = f"/v1/trips/{uuid4()}/research"
+    trip_id = uuid4()
+    import_id = uuid4()
+    paths = [
+        f"/v1/trips/{trip_id}/research",
+        f"/v1/trips/{trip_id}/imports/{import_id}/confirm",
+        f"/v1/trips/{trip_id}/imports/{import_id}/reject",
+        f"/v1/trips/{trip_id}/imports/{import_id}/source",
+        "/v1/private-import-deletion-intents/retry",
+    ]
     cookies = {
         settings.auth_session_cookie_name: raw_session,
         settings.auth_csrf_cookie_name: csrf,
@@ -511,28 +524,43 @@ def test_ai_user_token_must_be_valid_and_match_current_session_before_body_parse
         "synthetic-ai-nonce",
     )
     set_google_key_fixture(monkeypatch, certificate)
-    wrong_audience_response = api_client.post(
-        path,
-        cookies=cookies,
-        headers={**common_headers, "x-user-id-token": wrong_owner},
-        content=b"not-json",
-    )
-    assert wrong_audience_response.status_code == 403
-    assert wrong_audience_response.json()["error"]["code"] == "ai_identity_mismatch"
+    for path in paths:
+        method = "DELETE" if path.endswith("/source") else "POST"
+        wrong_audience_response = api_client.request(
+            method,
+            path,
+            cookies=cookies,
+            headers={**common_headers, "x-user-id-token": wrong_owner},
+            content=b"not-json" if method == "POST" else None,
+        )
+        assert wrong_audience_response.status_code == 403
+        assert wrong_audience_response.json()["error"]["code"] == "ai_identity_mismatch"
 
     valid_audience, certificate, _subject = signed_token(
         "synthetic-other-ai-nonce",
         audience="another-client.apps.googleusercontent.com",
     )
     set_google_key_fixture(monkeypatch, certificate)
-    invalid_audience_response = api_client.post(
-        path,
+    for path in paths:
+        method = "DELETE" if path.endswith("/source") else "POST"
+        invalid_audience_response = api_client.request(
+            method,
+            path,
+            cookies=cookies,
+            headers={**common_headers, "x-user-id-token": valid_audience},
+            content=b"not-json" if method == "POST" else None,
+        )
+        assert invalid_audience_response.status_code == 401
+        assert invalid_audience_response.json()["error"]["code"] == "invalid_ai_identity"
+
+    missing_user_token = api_client.post(
+        f"/v1/trips/{trip_id}/imports/{import_id}/reject",
         cookies=cookies,
-        headers={**common_headers, "x-user-id-token": valid_audience},
+        headers=common_headers,
         content=b"not-json",
     )
-    assert invalid_audience_response.status_code == 401
-    assert invalid_audience_response.json()["error"]["code"] == "invalid_ai_identity"
+    assert missing_user_token.status_code == 401
+    assert missing_user_token.json()["error"]["code"] == "ai_identity_required"
 
 
 def test_ai_requires_verified_user_token_matching_session_before_domain_access(
@@ -559,3 +587,137 @@ def test_ai_requires_verified_user_token_matching_session_before_domain_access(
     )
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "ai_identity_required"
+
+
+def test_authenticated_cleanup_routes_receive_verified_user_and_service_context(
+    api_client: TestClient,
+    database_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = google_settings(
+        personal_ai_auth_mode="google_cloud_run_iam",
+        personal_ai_user_id_token_audience="travel-client.apps.googleusercontent.com",
+        personal_ai_service_iam_audience="https://travel-ai.test",
+        personal_ai_service_account="travel-ai@project.iam.gserviceaccount.com",
+        private_imports_enabled=True,
+        private_source_dir="/private/tmp/phase6-synthetic-source",
+    )
+    use_settings(api_client, settings)
+    raw_session, csrf = make_identity_and_session(database_engine)
+    user_token, certificate, _ = signed_token("synthetic-ai-nonce", subject="synthetic-subject")
+    set_google_key_fixture(monkeypatch, certificate)
+    headers = {
+        "origin": "http://localhost:3000",
+        "x-csrf-token": csrf,
+        "x-user-id-token": user_token,
+    }
+    cookies = {
+        settings.auth_session_cookie_name: raw_session,
+        settings.auth_csrf_cookie_name: csrf,
+    }
+    trip_id, confirm_id, reject_id, source_id = (uuid4() for _ in range(4))
+    retentions = {
+        confirm_id: "delete_after_confirmation",
+        reject_id: "keep_until_expiry",
+    }
+    observed: list[tuple[str, PersonalAIAuthContext | None]] = []
+
+    class Store:
+        def close(self) -> None:
+            return None
+
+    class SourceService:
+        def get_import(self, _owner_id, _trip_id, import_id):
+            return ({"id": str(import_id), "retention_choice": retentions[import_id]}, None)
+
+    class BookingService:
+        def __init__(self, context):
+            self.context = context
+
+        def reject(self, _owner_id, _trip_id, import_id):
+            observed.append(("reject", self.context))
+            return {"id": str(import_id), "state": "rejected"}
+
+        def confirm(self, _owner_id, _trip_id, import_id, _payload):
+            observed.append(("confirm", self.context))
+            return {"import_id": str(import_id), "saved": True}
+
+        def delete_upstream_extraction(self, _owner_id, _trip_id, _import_id):
+            observed.append(("reject_delete", self.context))
+
+    monkeypatch.setattr(import_routes, "_gate", lambda: Store())
+    monkeypatch.setattr(import_routes, "_service", lambda _request: SourceService())
+    monkeypatch.setattr(
+        import_routes,
+        "_booking_service",
+        lambda request: BookingService(request.scope.get("personal_ai_auth_context")),
+    )
+    monkeypatch.setattr(
+        import_routes,
+        "_delete_source",
+        lambda request, *_args: observed.append(
+            ("source_delete", request.scope.get("personal_ai_auth_context"))
+        ),
+    )
+
+    confirm = api_client.post(
+        f"/v1/trips/{trip_id}/imports/{confirm_id}/confirm",
+        cookies=cookies,
+        headers=headers,
+        json={
+            "confirmation_key": str(uuid4()),
+            "expected_trip_revision": 0,
+            "expected_import_revision": 0,
+            "entries": [],
+        },
+    )
+    reject = api_client.post(
+        f"/v1/trips/{trip_id}/imports/{reject_id}/reject",
+        cookies=cookies,
+        headers=headers,
+    )
+    source_delete = api_client.delete(
+        f"/v1/trips/{trip_id}/imports/{source_id}/source",
+        cookies=cookies,
+        headers=headers,
+    )
+
+    assert confirm.status_code == 200
+    assert reject.status_code == 200
+    assert source_delete.status_code == 204
+    assert [kind for kind, _ in observed] == [
+        "confirm",
+        "source_delete",
+        "reject",
+        "reject_delete",
+        "source_delete",
+    ]
+    for kind, context in observed:
+        assert context is not None, kind
+        assert context.user_id_token == user_token
+        assert context.service_audience == "https://travel-ai.test"
+        assert context.service_account == "travel-ai@project.iam.gserviceaccount.com"
+
+    class RetryService:
+        def __init__(self, _factory, client):
+            observed.append(("retry_client", client._auth_context))
+
+        async def retry_pending(self, _owner_id):
+            return {"attempted": 0, "deleted": 0, "failed": 0, "pending": 0}
+
+    class PersonalAIClientFixture:
+        def __init__(self, *, timeout_seconds, auth_context):
+            self._auth_context = auth_context
+            assert timeout_seconds > 0
+
+    monkeypatch.setattr(private_deletion_routes, "get_settings", lambda: settings)
+    monkeypatch.setattr(private_deletion_routes, "PersonalAIClient", PersonalAIClientFixture)
+    monkeypatch.setattr(private_deletion_routes, "PrivateDeletionService", RetryService)
+    retry = api_client.post(
+        "/v1/private-import-deletion-intents/retry", cookies=cookies, headers=headers
+    )
+    assert retry.status_code == 200
+    assert observed[-1][0] == "retry_client"
+    retry_context = observed[-1][1]
+    assert retry_context is not None
+    assert retry_context.user_id_token == user_token

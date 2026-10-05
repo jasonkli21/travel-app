@@ -68,7 +68,7 @@ def test_invalid_dst_repair_aborts_and_can_be_recovered(database_engine: Engine)
         seed_moved_item(connection, date="2026-03-08", time="2026-03-07T07:30:00Z")
         command.upgrade(config, "head")
     with database_engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0012"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0013"
         assert connection.scalar(text("SELECT count(*) FROM itinerary_items")) == 0
 
 
@@ -133,6 +133,7 @@ def test_source_lifecycle_downgrade_preserves_detached_import_outcomes(
         assert row.request_key == "request_001"
         assert row.source_sha256 == "1" * 64
         assert row.source_media_type == "text/plain" and row.source_byte_size == 1
+        command.upgrade(config, "head")
 
 
 def test_revision_migration_initializes_populated_legacy_rows(database_engine: Engine) -> None:

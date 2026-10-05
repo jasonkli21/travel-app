@@ -74,6 +74,8 @@ class BookingImport(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         UUID(as_uuid=True), nullable=True
     )
     extraction_claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    extraction_key_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    extraction_text_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     extraction_post_attempted: Mapped[bool] = mapped_column(nullable=False, default=False)
     upstream_delete_pending: Mapped[bool] = mapped_column(nullable=False, default=False)
     upstream_extraction_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
@@ -93,6 +95,10 @@ class BookingImport(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         CheckConstraint("length(request_fingerprint) = 64", name="request_fingerprint_length"),
         CheckConstraint("length(source_sha256) = 64", name="source_hash_length"),
         CheckConstraint(
+            "extraction_text_sha256 IS NULL OR length(extraction_text_sha256) = 64",
+            name="extraction_text_hash_length",
+        ),
+        CheckConstraint(
             "(source_media_type = 'text/plain' AND source_byte_size <= 1048576) "
             "OR (source_media_type = 'application/pdf' AND source_byte_size <= 10485760)",
             name="source_media_size",
@@ -111,4 +117,17 @@ class BookingImport(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "'expired')",
             name="booking_import_state",
         ),
+    )
+
+
+class BookingDeletionIntent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Minimal owner-scoped key needed to finish upstream privacy deletion."""
+
+    __tablename__ = "booking_deletion_intents"
+    owner_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    extraction_key: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    source_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    __table_args__ = (
+        UniqueConstraint("owner_id", "extraction_key", name="uq_booking_deletion_owner_key"),
+        CheckConstraint("length(source_sha256) = 64", name="booking_deletion_hash_length"),
     )

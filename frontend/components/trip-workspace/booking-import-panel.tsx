@@ -1,8 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { PlaceSummary, Reservation, ReservationType, SavedPlace, TripDetail } from "../../lib/api";
+import {
+  createEntryError,
+  emptyCandidateDraft,
+  isDefinitiveUploadFailure,
+  normalizeReservationType,
+} from "../../lib/booking-import-form.mjs";
 import {
   bookingImportApi,
   bookingImportsEnabled,
@@ -13,13 +19,17 @@ import {
   type ConfirmBookingsInput,
   type ConfirmationEntry,
   type ImportDecision,
+  type ReservationStatus,
   type SourceRetention,
 } from "../../lib/booking-imports";
+import { ApiError } from "../../lib/api-request.mjs";
 import { errorMessage } from "../../lib/errors";
 
 type Draft = CandidateEdit & {
   place_id: string;
   itinerary_item_id: string;
+  reservation_status: ReservationStatus | "";
+  acknowledgedUncertainty: boolean;
 };
 
 type PendingUpload = {
@@ -29,36 +39,16 @@ type PendingUpload = {
   retention: SourceRetention;
 };
 
-const emptyDraft = (candidate: BookingCandidate): Draft => ({
-  reservation_type: candidate.current.reservation_type ?? candidate.reservation_type,
-  provider_name: candidate.current.provider_name ?? candidate.provider_name ?? "",
-  confirmation_code: candidate.current.confirmation_code ?? candidate.confirmation_code ?? "",
-  starts_at_date: candidate.current.starts_at_date ?? candidate.starts_at_date,
-  starts_at_time: candidate.current.starts_at_time ?? candidate.starts_at_time,
-  starts_at_timezone: candidate.current.starts_at_timezone ?? candidate.starts_at_timezone ?? "",
-  ends_at_date: candidate.current.ends_at_date ?? candidate.ends_at_date,
-  ends_at_time: candidate.current.ends_at_time ?? candidate.ends_at_time,
-  ends_at_timezone: candidate.current.ends_at_timezone ?? candidate.ends_at_timezone ?? "",
-  place_id: "",
-  itinerary_item_id: "",
-});
-
 function initialDrafts(candidates: BookingCandidate[]): Record<string, Draft> {
-  return Object.fromEntries(candidates.map((candidate) => [candidate.candidate_id, emptyDraft(candidate)]));
+  return Object.fromEntries(
+    candidates.map((candidate) => [candidate.candidate_id, emptyCandidateDraft(candidate)]),
+  );
 }
 
 function currentTimeZoneHint(candidate: BookingCandidate, endpoint: "starts_at" | "ends_at") {
-  const current = candidate[`${endpoint}_trip_local`];
+  const current = candidate.current[`${endpoint}_trip_local`];
   if (!current) return "Trip-local time will appear when a source timezone is known.";
   return `Trip time: ${current.date} at ${current.time}`;
-}
-
-function reservationType(value: Draft["reservation_type"]): ReservationType | null {
-  if (value === "rail") return "train";
-  if (value === "car") return "car_rental";
-  if (value === "lodging" || value === "flight" || value === "train" || value === "car_rental"
-    || value === "activity" || value === "dining" || value === "other") return value;
-  return null;
 }
 
 export default function BookingImportPanel({
@@ -90,6 +80,14 @@ export default function BookingImportPanel({
   const [pendingUploadKey, setPendingUploadKey] = useState<string | null>(null);
   const [pendingUploadPayload, setPendingUploadPayload] = useState<PendingUpload | null>(null);
   const [pendingConfirm, setPendingConfirm] = useState<ConfirmBookingsInput | null>(null);
+  const mutationInFlight = useRef(false);
+  const [uploadDefinitelyFailed, setUploadDefinitelyFailed] = useState(false);
+
+  const beginMutation = () => {
+    if (mutationInFlight.current) return false;
+    mutationInFlight.current = true;
+    return true;
+  };
 
   const tripItems = useMemo(
     () => trip.days.flatMap((day) => day.items.map((item) => ({ day, item }))),
@@ -139,28 +137,43 @@ export default function BookingImportPanel({
   }, [trip.id]);
 
   const upload = async () => {
-    if (pending || disabled || stale) return;
+    if (pending || disabled || stale || !beginMutation()) return;
     const selectedFile = file;
     const text = selectedFile ? "" : pastedText;
     if (!pendingUploadPayload && !selectedFile && !text.trim()) {
       setError("Paste a booking document or choose a PDF/text file.");
+      mutationInFlight.current = false;
+      return;
+    }
+    const isPdf = selectedFile?.type === "application/pdf" || selectedFile?.name.toLowerCase().endsWith(".pdf");
+    const isText = selectedFile?.type === "text/plain" || selectedFile?.name.toLowerCase().endsWith(".txt");
+    if (!pendingUploadPayload && selectedFile && !isPdf && !isText) {
+      setError("Choose a plain text file or a PDF.");
+      mutationInFlight.current = false;
       return;
     }
     const uploadPayload = pendingUploadPayload ?? {
       body: selectedFile ?? text,
-      mediaType: selectedFile
-        ? selectedFile.type === "application/pdf" || selectedFile.name.toLowerCase().endsWith(".pdf")
-          ? "application/pdf" as const : "text/plain" as const
-        : "text/plain" as const,
+      mediaType: isPdf ? "application/pdf" as const : "text/plain" as const,
       filename: selectedFile?.name,
       retention,
     };
+    const byteLength = typeof uploadPayload.body === "string"
+      ? new TextEncoder().encode(uploadPayload.body).length
+      : uploadPayload.body.size;
+    const maxBytes = uploadPayload.mediaType === "application/pdf" ? 10 * 1024 * 1024 : 1024 * 1024;
+    if (byteLength < 1 || byteLength > maxBytes) {
+      setError(`This source must be between 1 byte and ${uploadPayload.mediaType === "application/pdf" ? "10 MiB" : "1 MiB"}.`);
+      mutationInFlight.current = false;
+      return;
+    }
     const key = pendingUploadKey ?? crypto.randomUUID();
     setPendingUploadKey(key);
     setPendingUploadPayload(uploadPayload);
     setPending("upload");
     setError(null);
     setNotice(null);
+    setUploadDefinitelyFailed(false);
     try {
       const uploaded = await bookingImportApi.upload(
         trip.id,
@@ -172,20 +185,32 @@ export default function BookingImportPanel({
       );
       setPendingUploadKey(null);
       setPendingUploadPayload(null);
+      setUploadDefinitelyFailed(false);
       setPastedText("");
       setFile(null);
       await loadImports();
       await openImport(uploaded.id);
       setNotice("The private source is stored for this import. Start extraction when you are ready.");
     } catch (nextError) {
-      setError(`${errorMessage(nextError)} If the upload may have reached the server, retry this same upload to recover it safely.`);
+      const definite = isDefinitiveUploadFailure(
+        nextError instanceof ApiError ? nextError.status : null,
+      );
+      setUploadDefinitelyFailed(definite);
+      if (definite) {
+        setPendingUploadKey(null);
+        setPendingUploadPayload(null);
+      }
+      setError(definite
+        ? `${errorMessage(nextError)} This upload was rejected before it was saved; correct the input and submit again.`
+        : `${errorMessage(nextError)} If the upload may have reached the server, retry this same upload to recover it safely.`);
     } finally {
       setPending(null);
+      mutationInFlight.current = false;
     }
   };
 
   const extract = async () => {
-    if (!activeId || pending || disabled || stale) return;
+    if (!activeId || pending || disabled || stale || !beginMutation()) return;
     setPending("extract");
     setError(null);
     try {
@@ -203,27 +228,29 @@ export default function BookingImportPanel({
       setError(`${errorMessage(nextError)} Use “Check extraction status” to recover by the saved key.`);
     } finally {
       setPending(null);
+      mutationInFlight.current = false;
     }
   };
 
   const saveCorrections = async () => {
-    if (!review || !activeId || pending || disabled || stale) return;
+    if (!review || !activeId || pending || disabled || stale || !beginMutation()) return;
     setPending("save-edits");
     setError(null);
     try {
       const edits = review.candidates.map((candidate) => {
-        const draft = drafts[candidate.candidate_id] ?? emptyDraft(candidate);
+        const draft = drafts[candidate.candidate_id] ?? emptyCandidateDraft(candidate);
         return {
           candidate_id: candidate.candidate_id,
-          reservation_type: draft.reservation_type ?? null,
-          provider_name: draft.provider_name ?? null,
-          confirmation_code: draft.confirmation_code ?? null,
+          reservation_type: normalizeReservationType(draft.reservation_type),
+          reservation_status: draft.reservation_status || null,
+          provider_name: draft.provider_name?.trim() || null,
+          confirmation_code: draft.confirmation_code?.trim() || null,
           starts_at_date: draft.starts_at_date ?? null,
           starts_at_time: draft.starts_at_time ?? null,
-          starts_at_timezone: draft.starts_at_timezone ?? null,
+          starts_at_timezone: draft.starts_at_timezone || null,
           ends_at_date: draft.ends_at_date ?? null,
           ends_at_time: draft.ends_at_time ?? null,
-          ends_at_timezone: draft.ends_at_timezone ?? null,
+          ends_at_timezone: draft.ends_at_timezone || null,
         };
       });
       const updated = await bookingImportApi.saveEdits(
@@ -241,6 +268,7 @@ export default function BookingImportPanel({
       setStale(true);
     } finally {
       setPending(null);
+      mutationInFlight.current = false;
     }
   };
 
@@ -257,11 +285,12 @@ export default function BookingImportPanel({
           itinerary_item_id: drafts[candidate.candidate_id]?.itinerary_item_id || null,
         };
       }
-      const draft = drafts[candidate.candidate_id] ?? emptyDraft(candidate);
+      const draft = drafts[candidate.candidate_id] ?? emptyCandidateDraft(candidate);
       return {
         candidate_id: candidate.candidate_id,
         decision,
-        reservation_type: reservationType(draft.reservation_type),
+        reservation_type: normalizeReservationType(draft.reservation_type),
+        reservation_status: draft.reservation_status || null,
         provider_name: draft.provider_name?.trim() || null,
         confirmation_code: draft.confirmation_code?.trim() || null,
         starts_at_date: draft.starts_at_date || null,
@@ -283,15 +312,28 @@ export default function BookingImportPanel({
   };
 
   const confirm = async () => {
-    if (!review || !activeId || pending || disabled || stale) return;
+    if (!review || !activeId || pending || disabled || stale || !beginMutation()) return;
     const input = buildConfirmInput();
     if (!input || !input.entries.some((entry) => entry.decision !== "skip")) {
       setError("Choose at least one candidate to create or link. You can skip the others.");
+      mutationInFlight.current = false;
       return;
     }
     if (input.entries.some((entry) => entry.decision === "link_existing" && !entry.existing_reservation_id)) {
       setError("Choose the existing reservation for each candidate you want to link.");
+      mutationInFlight.current = false;
       return;
+    }
+    for (const entry of input.entries) {
+      if (entry.decision !== "create_separate") continue;
+      const candidate = review.candidates.find((value) => value.candidate_id === entry.candidate_id);
+      const draft = drafts[entry.candidate_id] ?? (candidate ? emptyCandidateDraft(candidate) : null);
+      const entryError = candidate && draft ? createEntryError(entry, candidate, draft) : "Choose a candidate to review.";
+      if (entryError) {
+        setError(entryError);
+        mutationInFlight.current = false;
+        return;
+      }
     }
     setPendingConfirm(input);
     setPending("confirm");
@@ -332,12 +374,16 @@ export default function BookingImportPanel({
       }
     } finally {
       setPending(null);
+      mutationInFlight.current = false;
     }
   };
 
   const reject = async () => {
-    if (!activeId || pending || disabled || stale) return;
-    if (!window.confirm("Reject this extraction and discard its candidate text? The original follows the retention choice shown for this import.")) return;
+    if (!activeId || pending || disabled || stale || !beginMutation()) return;
+    if (!window.confirm("Reject this extraction and discard its candidate text? The original follows the retention choice shown for this import.")) {
+      mutationInFlight.current = false;
+      return;
+    }
     setPending("reject");
     setError(null);
     try {
@@ -359,12 +405,16 @@ export default function BookingImportPanel({
       }
     } finally {
       setPending(null);
+      mutationInFlight.current = false;
     }
   };
 
   const deleteSource = async () => {
-    if (!activeId || pending || disabled) return;
-    if (!window.confirm("Delete the stored original and its retained candidate source excerpts? Saved booking outcomes will remain.")) return;
+    if (!activeId || pending || disabled || !beginMutation()) return;
+    if (!window.confirm("Delete the stored original and its retained candidate source excerpts? Saved booking outcomes will remain.")) {
+      mutationInFlight.current = false;
+      return;
+    }
     setPending("delete-source");
     setError(null);
     try {
@@ -386,6 +436,27 @@ export default function BookingImportPanel({
       }
     } finally {
       setPending(null);
+      mutationInFlight.current = false;
+    }
+  };
+
+  const retryDeletion = async () => {
+    if (!activeId || pending || disabled || !beginMutation()) return;
+    setPending("retry-deletion");
+    setError(null);
+    try {
+      const result = await bookingImportApi.retryPendingDeletions();
+      const updated = await bookingImportApi.get(trip.id, activeId);
+      setReview(updated);
+      await loadImports();
+      setNotice(result.pending === 0
+        ? "Pending AI result deletion completed."
+        : `AI result deletion is still pending for ${result.pending} import(s).`);
+    } catch (nextError) {
+      setError(errorMessage(nextError));
+    } finally {
+      setPending(null);
+      mutationInFlight.current = false;
     }
   };
 
@@ -439,6 +510,12 @@ export default function BookingImportPanel({
       <button className="primary" type="button" onClick={() => void upload()} disabled={writeDisabled}>
         {pending === "upload" ? "Uploading…" : pendingUploadKey ? "Retry same upload" : "Save private source"}
       </button>
+      {uploadDefinitelyFailed ? <button className="secondary" type="button" onClick={() => {
+        setUploadDefinitelyFailed(false);
+        setPastedText("");
+        setFile(null);
+        setError(null);
+      }} disabled={writeDisabled}>Clear rejected upload</button> : null}
 
       <div className="importList" aria-label="Saved booking imports">
         <h3>Saved imports</h3>
@@ -458,7 +535,7 @@ export default function BookingImportPanel({
               {review.source_state === "ready" ? <a className="secondary compact" href={bookingImportApi.sourceUrl(trip.id, review.id)}>Download original</a> : <span className="muted">Original source {review.source_state}</span>}
               {review.source_state === "ready" ? <button className="secondary compact" type="button" onClick={() => void deleteSource()} disabled={writeDisabled}>Delete original and excerpts</button> : null}
               {review.state === "received" || review.state === "extracting" ? <button className="primary compact" type="button" onClick={() => void extract()} disabled={writeDisabled}>{review.outcome_unknown ? "Check extraction status" : pending === "extract" ? "Checking…" : "Extract booking details"}</button> : null}
-              {review.upstream_delete_pending ? <button className="secondary compact" type="button" onClick={() => void deleteSource()} disabled={writeDisabled}>Retry AI result deletion</button> : null}
+              {review.upstream_delete_pending ? <button className="secondary compact" type="button" onClick={() => void retryDeletion()} disabled={writeDisabled}>{pending === "retry-deletion" ? "Retrying deletion…" : "Retry AI result deletion"}</button> : null}
             </div>
           </div>
           {review.upstream_delete_pending ? <p className="importRecovery" role="status">The original was deleted locally. Removal of the AI result is still pending; retry deletion to finish cleanup.</p> : null}
@@ -470,11 +547,11 @@ export default function BookingImportPanel({
               <div className="reviewExpiry">Validated candidates expire {review.upstream_result_expires_at ? new Date(review.upstream_result_expires_at).toLocaleString() : "soon"}. Original retention: {review.retention_choice.replaceAll("_", " ")}.</div>
               {review.duplicate_suggestions.length > 0 ? <div className="duplicateNotice" role="status"><strong>Possible existing reservations</strong><p>These are suggestions based on provider, confirmation reference, or schedule. Nothing will be linked or overwritten unless you choose it below.</p></div> : null}
               {review.candidates.length === 0 ? <p className="muted">No booking candidates were found.</p> : review.candidates.map((candidate) => {
-                const draft = drafts[candidate.candidate_id] ?? emptyDraft(candidate);
+                const draft = drafts[candidate.candidate_id] ?? emptyCandidateDraft(candidate);
                 const matches = review.duplicate_suggestions.filter((suggestion) => suggestion.candidate_id === candidate.candidate_id);
                 const updateDraft = (patch: Partial<Draft>) => setDrafts((current) => ({
                   ...current,
-                  [candidate.candidate_id]: { ...(current[candidate.candidate_id] ?? emptyDraft(candidate)), ...patch },
+                  [candidate.candidate_id]: { ...(current[candidate.candidate_id] ?? emptyCandidateDraft(candidate)), ...patch },
                 }));
                 return (
                   <article className="candidateReviewCard" key={candidate.candidate_id}>
@@ -489,7 +566,7 @@ export default function BookingImportPanel({
                     <div className="candidateFields">
                       <label>Action
                         <select value={decisions[candidate.candidate_id] ?? "skip"} onChange={(event) => setDecisions((current) => ({ ...current, [candidate.candidate_id]: event.target.value as ImportDecision }))} disabled={writeDisabled}>
-                          <option value="skip">Skip this candidate</option><option value="create_separate">Create a separate tentative reservation</option><option value="link_existing">Link to an existing reservation</option>
+                          <option value="skip">Skip this candidate</option><option value="create_separate">Create a separate reservation</option><option value="link_existing">Link to an existing reservation</option>
                         </select>
                       </label>
                       {decisions[candidate.candidate_id] === "link_existing" ? <>
@@ -506,8 +583,13 @@ export default function BookingImportPanel({
                         </label>
                       </> : null}
                       {decisions[candidate.candidate_id] === "create_separate" ? <>
+                        <label>Reservation status
+                          <select value={draft.reservation_status} onChange={(event) => updateDraft({ reservation_status: event.target.value as ReservationStatus })} disabled={writeDisabled}>
+                            <option value="">Choose a status</option><option value="tentative">Tentative</option><option value="confirmed">Confirmed</option>
+                          </select>
+                        </label>
                         <label>Reservation type
-                          <select value={reservationType(draft.reservation_type) ?? ""} onChange={(event) => updateDraft({ reservation_type: (event.target.value || null) as Draft["reservation_type"] })} disabled={writeDisabled}>
+                          <select value={normalizeReservationType(draft.reservation_type) ?? ""} onChange={(event) => updateDraft({ reservation_type: (event.target.value || null) as Draft["reservation_type"] })} disabled={writeDisabled}>
                             <option value="">Choose a type</option>{(["flight", "lodging", "train", "car_rental", "activity", "dining", "other"] as ReservationType[]).map((type) => <option key={type} value={type}>{type.replaceAll("_", " ")}</option>)}
                           </select>
                         </label>
@@ -525,9 +607,9 @@ export default function BookingImportPanel({
                         </label>
                         <div className="scheduleEdit">
                           <strong>Start schedule</strong>
-                          <label>Original date<input type="date" value={draft.starts_at_date ?? ""} onChange={(event) => updateDraft({ starts_at_date: event.target.value || null })} disabled={writeDisabled} /></label>
-                          <label>Original time<input type="time" value={draft.starts_at_time ?? ""} onChange={(event) => updateDraft({ starts_at_time: event.target.value || null })} disabled={writeDisabled} /></label>
-                          <label>Source timezone or UTC offset<input value={draft.starts_at_timezone ?? ""} onChange={(event) => updateDraft({ starts_at_timezone: event.target.value || null })} placeholder="America/New_York or +09:00" disabled={writeDisabled} /></label>
+                          <label>Local date<input type="date" value={draft.starts_at_date ?? ""} onChange={(event) => updateDraft({ starts_at_date: event.target.value || null })} disabled={writeDisabled} /></label>
+                          <label>Local time<input type="time" value={draft.starts_at_time ?? ""} onChange={(event) => updateDraft({ starts_at_time: event.target.value || null })} disabled={writeDisabled} /></label>
+                          <label>Timezone or UTC offset<input value={draft.starts_at_timezone ?? ""} onChange={(event) => updateDraft({ starts_at_timezone: event.target.value || null })} placeholder="America/New_York or +09:00" disabled={writeDisabled} /></label>
                           <span className="muted">{currentTimeZoneHint(candidate, "starts_at")}</span>
                         </div>
                         <div className="scheduleEdit">
@@ -537,6 +619,7 @@ export default function BookingImportPanel({
                           <label>Source timezone or UTC offset<input value={draft.ends_at_timezone ?? ""} onChange={(event) => updateDraft({ ends_at_timezone: event.target.value || null })} placeholder="America/New_York or +09:00" disabled={writeDisabled} /></label>
                           <span className="muted">{currentTimeZoneHint(candidate, "ends_at")}</span>
                         </div>
+                        {candidate.uncertain_fields.length > 0 ? <label className="uncertaintyAcknowledgement"><input type="checkbox" checked={draft.acknowledgedUncertainty} onChange={(event) => updateDraft({ acknowledgedUncertainty: event.target.checked })} disabled={writeDisabled} /> I reviewed the uncertain fields above and accept any values I leave unspecified.</label> : null}
                       </> : null}
                     </div>
                   </article>

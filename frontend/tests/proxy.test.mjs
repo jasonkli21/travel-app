@@ -145,6 +145,35 @@ test("proxy adds the AI user token only for exact capability path segments", asy
   assert.equal(forwarded.get("x-user-id-token"), null);
 });
 
+test("proxy forwards the AI user token only for privacy cleanup operations", async () => {
+  let forwarded;
+  const fetchImpl = async (_upstream, options) => {
+    forwarded = options.headers;
+    return Response.json({ ok: true });
+  };
+  const request = new Request(url, {
+    method: "POST",
+    headers: { cookie: "__Host-travel_ai_token=signed-user-token" },
+    body: "{}",
+  });
+  const tripId = "00000000-0000-4000-8000-000000000001";
+  const importId = "00000000-0000-4000-8000-000000000002";
+  for (const action of ["confirm", "reject"]) {
+    await proxyRequest(request, ["trips", tripId, "imports", importId, action], { fetchImpl });
+    assert.equal(forwarded.get("x-user-id-token"), "signed-user-token");
+  }
+  await proxyRequest(new Request(url, {
+    method: "DELETE",
+    headers: { cookie: "__Host-travel_ai_token=signed-user-token" },
+  }), ["trips", tripId, "imports", importId, "source"], { fetchImpl });
+  assert.equal(forwarded.get("x-user-id-token"), "signed-user-token");
+  await proxyRequest(request, ["private-import-deletion-intents", "retry"], { fetchImpl });
+  assert.equal(forwarded.get("x-user-id-token"), "signed-user-token");
+
+  await proxyRequest(request, ["trips", tripId, "imports", importId, "review"], { fetchImpl });
+  assert.equal(forwarded.get("x-user-id-token"), null);
+});
+
 test("proxy bounds chunked request bodies and reports backend failures", async () => {
   const request = new Request(url, { method: "POST", body: "x".repeat(65537) });
   assert.equal((await proxyRequest(request, ["trips"])).status, 413);

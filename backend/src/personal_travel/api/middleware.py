@@ -30,6 +30,7 @@ logger = logging.getLogger("personal_travel.requests")
 MAX_REQUEST_BYTES = 64 * 1024
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 UPLOAD_PATH = re.compile(r"^/v1/trips/[0-9a-fA-F-]{36}/imports$")
+EXTRACTION_PATH = re.compile(r"^/v1/trips/[0-9a-fA-F-]{36}/imports/[0-9a-fA-F-]{36}/extract$")
 UPLOAD_SECONDS = 30
 
 
@@ -225,10 +226,24 @@ class LocalBoundaryMiddleware:
                     and "/imports/" in path
                     and path.endswith("/extract")
                 )
+                is_import_cleanup_operation = (
+                    path.startswith("/v1/trips/")
+                    and "/imports/" in path
+                    and (
+                        path.endswith("/confirm")
+                        or path.endswith("/reject")
+                        or (path.endswith("/source") and method == "DELETE")
+                    )
+                )
+                is_deletion_retry_operation = (
+                    path == "/v1/private-import-deletion-intents/retry" and method == "POST"
+                )
                 ai_operation = (
                     (is_research_operation and settings.personal_ai_research_enabled)
                     or (is_proposal_operation and settings.personal_ai_proposals_enabled)
                     or (is_extraction_operation and settings.personal_ai_extractions_enabled)
+                    or is_import_cleanup_operation
+                    or is_deletion_retry_operation
                 )
                 if supplied_user_token is not None and not ai_operation:
                     await reject(
@@ -354,8 +369,35 @@ class LocalBoundaryMiddleware:
             # Content-Length. This also handles chunked requests without allocating
             # an unbounded body in FastAPI's JSON parser.
             body = bytearray()
+            extraction_deadline = None
+            if method == "POST" and EXTRACTION_PATH.fullmatch(path):
+                extraction_deadline = (
+                    asyncio.get_running_loop().time()
+                    + settings.personal_ai_extraction_timeout_seconds
+                )
+                scope["booking_extraction_deadline"] = extraction_deadline
             while True:
-                message = await receive()
+                if extraction_deadline is None:
+                    message = await receive()
+                else:
+                    remaining = extraction_deadline - asyncio.get_running_loop().time()
+                    if remaining <= 0:
+                        await reject(
+                            408,
+                            "extraction_timeout",
+                            "Booking extraction exceeded its total time limit.",
+                        )
+                        return
+                    try:
+                        async with asyncio.timeout(remaining):
+                            message = await receive()
+                    except TimeoutError:
+                        await reject(
+                            408,
+                            "extraction_timeout",
+                            "Booking extraction exceeded its total time limit.",
+                        )
+                        return
                 if message["type"] == "http.disconnect":
                     return
                 body.extend(message.get("body", b""))

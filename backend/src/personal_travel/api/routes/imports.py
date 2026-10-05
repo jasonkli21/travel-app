@@ -250,7 +250,12 @@ async def extract_import(
 ) -> dict[str, object]:
     store = _gate()
     store.close()
-    review = await _booking_service(request).extract(owner_id, trip_id, import_id)
+    review = await _booking_service(request).extract(
+        owner_id,
+        trip_id,
+        import_id,
+        request_deadline=request.scope.get("booking_extraction_deadline"),
+    )
     return _review_with_source_metadata(request, owner_id, trip_id, import_id, review)
 
 
@@ -295,6 +300,8 @@ def reject_import(
     result = _booking_service(request).reject(owner_id, trip_id, import_id)
     if metadata["retention_choice"] == "delete_after_confirmation":
         _delete_source(request, owner_id, trip_id, import_id)
+    else:
+        _booking_service(request).delete_upstream_extraction(owner_id, trip_id, import_id)
     return _review_with_source_metadata(request, owner_id, trip_id, import_id, result)
 
 

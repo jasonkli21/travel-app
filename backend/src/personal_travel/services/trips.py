@@ -3,12 +3,15 @@ from datetime import date, datetime, time
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from personal_travel.api.schemas import DayUpdate, TripCreate, TripUpdate
+from personal_travel.models.import_source import BookingImport
 from personal_travel.models.trip import Trip, TripDay
 from personal_travel.repositories.trips import SqlAlchemyTripRepository
 from personal_travel.services.errors import DomainError, not_found
+from personal_travel.services.private_deletion import enqueue_in_session
 from personal_travel.services.revisions import require_expected_revision
 from personal_travel.services.time_utils import (
     as_aware_utc,
@@ -142,6 +145,20 @@ class TripService:
         with self._session.begin():
             trip = self._get_in_transaction(trip_id)
             require_expected_revision(trip.revision, expected_revision, aggregate="trip")
+            imports = self._session.scalars(
+                select(BookingImport)
+                .where(BookingImport.trip_id == trip.id, BookingImport.owner_id == self._owner_id)
+                .order_by(BookingImport.id)
+                .with_for_update()
+            ).all()
+            for item in imports:
+                if item.extraction_key is not None and item.extraction_post_attempted:
+                    enqueue_in_session(
+                        self._session,
+                        owner_id=item.owner_id,
+                        extraction_key=item.extraction_key,
+                        source_sha256=item.extraction_text_sha256 or item.source_sha256,
+                    )
             self._trips.delete(trip)
 
     def _get_in_transaction(self, trip_id: UUID) -> Trip:

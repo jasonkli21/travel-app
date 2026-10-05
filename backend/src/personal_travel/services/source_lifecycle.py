@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from personal_travel.models.import_source import BookingImport, SourceAttachment
 from personal_travel.models.trip import Trip
 from personal_travel.services.errors import DomainError, not_found
+from personal_travel.services.private_deletion import enqueue_in_session
 
 SOURCE_RETENTION = timedelta(days=7)
 SessionFactoryLike = Callable[[], Session]
@@ -355,10 +356,16 @@ class SourceLifecycleService:
                     .with_for_update()
                 )
                 if item is not None:
+                    if item.extraction_key is not None and item.extraction_post_attempted:
+                        enqueue_in_session(
+                            session,
+                            owner_id=item.owner_id,
+                            extraction_key=item.extraction_key,
+                            source_sha256=item.extraction_text_sha256 or item.source_sha256,
+                        )
+                        item.upstream_delete_pending = True
                     item.source_id = None
                     item.candidate_snapshot = None
-                    if item.extraction_key is not None and item.extraction_post_attempted:
-                        item.upstream_delete_pending = True
                     item.extraction_claim_token = None
                     item.extraction_claimed_at = None
                     if item.state not in {"applied", "rejected", "failed", "expired"}:

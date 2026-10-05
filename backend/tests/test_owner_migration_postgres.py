@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -22,12 +22,15 @@ from personal_travel.auth.owner_migration import (
 from personal_travel.domain.proposals import ProposalTripSnapshot
 from personal_travel.models import (
     AuthIdentity,
+    BookingDeletionIntent,
+    BookingImport,
     ItineraryItem,
     ItineraryProposal,
     OwnerMigrationAudit,
     Place,
     Reservation,
     SavedPlace,
+    SourceAttachment,
     Trip,
     TripDay,
 )
@@ -434,4 +437,81 @@ def test_owner_migration_mismatched_backup_plan_confirmation_and_rollback(
             )
     with Session(database_engine) as session:
         assert session.scalar(select(Trip.owner_id)) == "local"
+        assert session.scalar(select(OwnerMigrationAudit.id)) is None
+
+
+def test_owner_migration_refuses_private_booking_graph_before_any_transfer(
+    database_engine: Engine, tmp_path: Path
+) -> None:
+    with Session(database_engine) as session, session.begin():
+        target = target_identity(session)
+        trip, _ = source_graph(session)
+        source = SourceAttachment(
+            owner_id="local",
+            trip_id=trip.id,
+            object_key="a" * 32,
+            sha256="a" * 64,
+            media_type="text/plain",
+            byte_size=1,
+            display_filename="synthetic.txt",
+            state="ready",
+            expires_at=datetime.now(UTC) + timedelta(days=1),
+        )
+        session.add(source)
+        session.flush()
+        extraction_key = uuid4()
+        session.add(
+            BookingImport(
+                owner_id="local",
+                trip_id=trip.id,
+                source_id=source.id,
+                request_key="synthetic-private-key",
+                request_fingerprint="b" * 64,
+                source_sha256="a" * 64,
+                source_media_type="text/plain",
+                source_byte_size=1,
+                state="received",
+                parser_version="source-v1",
+                review_revision=0,
+                retention_choice="keep_until_expiry",
+                extraction_key=extraction_key,
+                extraction_post_attempted=True,
+                extraction_text_sha256="c" * 64,
+            )
+        )
+        session.add(
+            BookingDeletionIntent(
+                owner_id="local",
+                extraction_key=uuid4(),
+                source_sha256="d" * 64,
+            )
+        )
+
+    plan = inspect(database_engine, target)
+    assert not plan.can_apply
+    assert plan.conflicts["private_records_require_separate_migration"] == 3
+    assert plan.counts["source_attachments"] == 1
+    assert plan.counts["booking_imports"] == 1
+    assert plan.counts["booking_deletion_intents"] == 1
+
+    backup = tmp_path / "private-graph-backup.sql"
+    backup.write_bytes(b"synthetic test database backup")
+    backup_hash = hashlib.sha256(backup.read_bytes()).hexdigest()
+    with Session(database_engine) as session:
+        with pytest.raises(OwnerMigrationRejected, match="conflicts"):
+            apply_owner_migration(
+                session,
+                source_owner_id="local",
+                target_owner_id=target,
+                run_id=uuid4(),
+                expected_plan_digest=plan.plan_digest,
+                backup_file=backup,
+                expected_backup_sha256=backup_hash,
+                confirmation=f"local -> {target}",
+            )
+    with Session(database_engine) as session:
+        assert session.scalar(select(Trip.owner_id)) == "local"
+        assert session.scalar(select(SourceAttachment.owner_id)) == "local"
+        assert session.scalar(select(BookingImport.owner_id)) == "local"
+        assert session.scalar(select(BookingDeletionIntent.owner_id)) == "local"
         assert session.scalar(select(OwnerMigrationAudit.id)) is None
