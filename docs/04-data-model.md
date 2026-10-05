@@ -156,6 +156,11 @@ Phase 4 manual research candidates create the `places` row and `saved_places`
 relationship in one transaction. Research session IDs, questions, answers,
 citations, and evidence have no travel-side table or migration.
 
+Phase 7 comparisons are also transient and add no tables. An explicitly saved
+Nominatim candidate uses the existing `places` source identity and attribution
+columns and the trip's existing `saved_places` relationship; evidence,
+comparison IDs, observations, and changing facts are not copied into SQL.
+
 ## Implemented Phase 6 identity foundation — migration `0009`
 
 Identity is optional and server-owned. In Google mode, owner IDs are stable

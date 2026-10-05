@@ -1,7 +1,7 @@
 # Phased implementation plan
 
-Status: active roadmap; Phases 1–5 delivered and reviewed locally; Phase 6 remediation verified locally and awaiting coordinator closeout
-Date: 2026-10-03
+Status: active roadmap; Phases 1–6 delivered/reviewed locally; Phase 7 initial comparison slice implemented with exit gate open
+Date: 2026-10-05
 
 Each phase should produce a useful, testable vertical slice.
 
@@ -183,20 +183,25 @@ Delivered and independently reviewed locally:
 See the [combined Phase 6 release](releases/phase-6-booking-imports.md) and
 [whole-review disposition](reviews/phase-6-whole-review.md) for exact
 repository revisions, checks, and external gates. Coordinator verification is
-the Phase 6 exit gate; Phase 7 remains planned.
+the Phase 6 exit gate; see its release record for the closeout.
 
 Gmail automation remains outside the first Phase 6 slice and requires a
 separate connector/consent plan after manual import proves the workflow.
 
 ## Phase 7 — Rich travel research
 
-Detailed plan: [Phase 7](phase-7-implementation-plan.md). Planned, not delivered.
-Start with accepted food/activity/neighborhood/day-trip categories. Hotel,
-flight and transit comparison require separately verified category contracts.
-Typed money/date/availability constraints are deterministic; optional memory
-retrieval requires verified ownership, consent and a narrow projection.
+Detailed plan: [Phase 7](phase-7-implementation-plan.md). An initial local,
+default-off comparison slice supports source-backed food/activity/neighborhood/
+day-trip place leads around a trip place. Travel checks category and radius
+deterministically, shows source attribution/freshness, and requires a separate
+reviewed save or Phase 5 proposal action. It adds no comparison tables.
 
-Expand only after the shared AI research platform supports it.
+The first accepted upstream place contract does not supply prices, dates,
+schedules, availability, accessibility, travel duration, or memory retrieval.
+These remain unsupported, along with hotels, flights, and transit offers.
+Category fixture verification and live provider approval remain open, so the
+Phase 7 exit gate is not closed. See the
+[Phase 7 release record](releases/phase-7-travel-comparison.md).
 
 Potential areas:
 
@@ -214,7 +219,8 @@ Combine:
 hard trip constraints
 + fresh evidence
 + travel-domain features
-+ relevant AI memory preferences
++ relevant AI memory preferences (only through a separately accepted,
+  consented, owner-scoped retrieval contract)
 -> explainable candidates
 ```
 

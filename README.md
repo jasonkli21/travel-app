@@ -31,6 +31,13 @@ upstream service identity, Cloud Run IAM, and live provider data-use settings
 are not provisioned or verified. See the [Phase 6 release record](docs/releases/phase-6-booking-imports.md), the [identity
 checkpoint](docs/releases/phase-6-identity.md), and the [P6.2 source
 checkpoint](docs/releases/phase-6-private-sources.md).
+Phase 7 adds a typed, default-off comparison of sourced place leads for food,
+activities, neighborhoods, and day trips. Travel checks place type and radius,
+shows source attribution and freshness, and requires a separate reviewed save
+or Phase 5 proposal action. The current upstream contract supplies no price,
+schedule, availability, accessibility, or memory retrieval data; category
+fixture and live-provider checks remain open. See the [Phase 7 release
+record](docs/releases/phase-7-travel-comparison.md).
 The upstream monotonic-deadline conversion was fixed and the local fake HTTP
 proposal flow passes under both Uvicorn `auto` (uvloop on this host) and
 `asyncio`. Proposal gates default off and require separate provider configuration. Geoapify features are optional; manual
@@ -127,7 +134,10 @@ the root `.env`. Provider keys are optional and should be restricted in
 Geoapify; the browser-visible tile key should be limited to the local web
 origin. AI research stays off unless `PERSONAL_AI_RESEARCH_ENABLED=true` is
 set in the travel API and the research gate is enabled in the separately
-configured `personal-ai-system`. Its provider gates remain independent.
+configured `personal-ai-system`. Comparisons also require
+`PERSONAL_AI_COMPARISONS_ENABLED=true`,
+`NEXT_PUBLIC_TRAVEL_COMPARISONS_ENABLED=true` in the web build, and the
+upstream travel-domain/provider gates. Provider gates remain independent.
 Use [`docs/07-local-development.md`](docs/07-local-development.md) for production
 build/start commands and lockfile maintenance.
 
@@ -139,7 +149,9 @@ candidates from the trip workspace. In the map section, you can search for a
 place, explicitly save a result as a candidate, and request travel estimates
 between scheduled places for one day. The research section can submit an
 on-demand question about one selected day, show cited source observations, and
-save a place only after the user enters its details. The API is available under
+save a place only after the user enters its details. The comparison section
+searches one place category around a trip place, shows source-backed leads, and
+lets the user explicitly save an eligible Nominatim candidate. The API is available under
 `/v1`; the web app reaches it through the same-origin `/api/v1/*` proxy.
 
 ## Documentation
@@ -161,8 +173,10 @@ Start with:
 Architecture decisions are under [`docs/decisions/`](docs/decisions/).
 Detailed plans for Phases 5–9 are linked from the
 [roadmap](docs/09-implementation-plan.md) and [documentation index](docs/README.md).
-Phase 5 and Phase 6 are independently reviewed locally. External enablement
-gates remain closed. Phases 7–9 remain planned work.
+Phase 5 and Phase 6 are independently reviewed locally. Phase 7's initial
+comparison slice is implemented; its exit gate and external/provider checks
+remain open. Cloud deployment and provider gates remain closed. Phases 8–9
+remain planned work.
 The Phase 4 task plan, consumer decision, and release record are in
 [`docs/phase-4-implementation-plan.md`](docs/phase-4-implementation-plan.md),
 [`docs/decisions/0008-personal-ai-research-context.md`](docs/decisions/0008-personal-ai-research-context.md),

@@ -1,6 +1,6 @@
 # Architecture
 
-Status: Phases 0–5 delivered and reviewed locally; external gates remain off
+Status: Phases 0–6 delivered/reviewed locally; Phase 7 initial comparison slice implemented; external gates remain off
 Date: 2026-10-04
 
 ## System shape
@@ -174,6 +174,26 @@ The travel-side gate defaults off. No trip, day, owner, item, or reservation
 identifiers, notes, or reservation details are sent as context. Research does
 not mutate itinerary state. Saving a candidate is a separate user-authored
 transaction using the existing place and saved-place tables.
+
+### Phase 7 domain comparison
+
+```text
+UI submits category, search text, reference place, radius, result limit and key
+ -> Travel snapshots trip/place revisions, then ends the SQL transaction
+ -> PersonalAIClient calls the accepted typed travel-domain lookup
+ -> Travel validates owner, constraints, claim/citation correlation and freshness
+ -> Travel checks typed place category and geographic radius deterministically
+ -> UI renders bounded results only for the current revision/expiry footprint
+ -> traveler separately saves a reviewed Nominatim place or starts Phase 5 proposal
+```
+
+The travel gate and web-build gate default off. The request sends the search
+text and reference coordinates, with no trip/place IDs or itinerary content.
+Travel stores no comparison record. Only type, location, distance, ranking,
+source and expiry are supported; dates, prices, hours, accessibility,
+availability, travel duration, and preference retrieval are unavailable. A
+saved place reuses the existing owner-scoped `places` and `saved_places`
+records and keeps verified OpenStreetMap attribution.
 
 ### Gated proposed itinerary edit
 

@@ -1,7 +1,7 @@
 # `personal-ai-system` integration
 
-Status: Phase 4 delivered; Phase 5 proposal integration implemented locally and gated off
-Date: 2026-10-04
+Status: Phase 4 delivered; Phase 5 proposals and the initial Phase 7 comparison slice are implemented locally and gated off
+Date: 2026-10-05
 
 ## Rule
 
@@ -133,11 +133,56 @@ Proposal gates still default off and require separate upstream capability,
 storage and provider configuration. See the [Phase 5 release
 record](releases/phase-5-local-proposals.md).
 
+## Accepted Phase 7 travel comparison contract
+
+ADR 0014 pins the accepted upstream revision and versions:
+`cb38e1b9aeeef304e0cae66b85f47fec284f4622`, `domain-lookup-v1`,
+`domain-comparison-v1`, `domain-module-v1`, `travel-comparison-v1`,
+`travel-features-v2`, and `travel-sources-v1`. Travel uses
+`POST /v1/domains/travel/lookup` and owner-scoped
+`GET /v1/domains/travel/comparisons/{comparison_id}` through
+`PersonalAIClient`; the response limit is 256 KiB and the operation uses the
+bounded AI deadline.
+
+`PERSONAL_AI_COMPARISONS_ENABLED` and
+`NEXT_PUBLIC_TRAVEL_COMPARISONS_ENABLED` default to `false`. The upstream
+domain, provider-policy, authentication, and service-IAM gates are independent.
+One explicit request sends a short category-tagged query and coordinates from a
+trip place with exactly two fail-closed constraints: the category's supported
+place types and a radius around those coordinates. It excludes trip/place IDs,
+itinerary content, reservations, notes, booking data, and source references.
+No preferences or memory are sent. Ambiguous lookups are retried only with the
+same normalized request and idempotency key.
+
+Travel validates the pinned domain/feature/source versions, owner correlation,
+typed claim-to-source citations, public source URLs, source freshness,
+category type, coordinates, and distance before displaying eligibility. The
+four category labels map to typed place-type sets for food, activities,
+neighborhoods, and day trips. This is a source-backed place lookup, not a
+schedule or booking check. The UI clearly leaves opening hours, prices,
+accessibility, availability, travel time, party/date suitability, and memory
+preferences unverified.
+
+Comparison output stays in UI memory. Saving a candidate reloads and
+revalidates the owner-scoped comparison before a revision-checked transaction.
+The save also confirms the current trip and reference-place revisions and
+center coordinates against the accepted comparison constraints.
+Coordinates and provider identity come from the verified source; only reviewed
+name/address/category/note fields come from the save form. Travel retains
+OpenStreetMap attribution and source identity only for a verified Nominatim
+result. Synthetic results cannot be saved as real places. Arranging a saved
+candidate starts the existing Phase 5 proposal flow and still requires its
+preview and separate apply action.
+
+No live Nominatim policy approval, provider, OAuth, service-IAM, or deployment
+configuration was performed. Phase 7 category fixture coverage and its full
+exit gate remain open. See [ADR 0014](decisions/0014-phase7-travel-comparison.md)
+and the [Phase 7 release record](releases/phase-7-travel-comparison.md).
+
 ## Future AI work
 
-Memory-aware research, structured extraction, booking/document import,
-and hosted AI use remain deferred. The P6.1 identity foundation is local and
-review pending. Later AI output that could
-affect travel state must be versioned and typed, checked against current
-ownership and hard constraints, previewed to the traveler, and applied only
-through existing travel-domain services after explicit confirmation.
+Memory retrieval and broader category evidence remain deferred, as do hosted
+AI use and any import beyond the accepted booking contract. Later AI output
+that could affect travel state must be versioned and typed, checked against
+current ownership and hard constraints, previewed to the traveler, and applied
+only through existing travel-domain services after explicit confirmation.

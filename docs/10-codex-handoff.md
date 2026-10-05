@@ -1,12 +1,12 @@
 # Codex handoff
 
-Status: Phases 1–5 delivered and independently reviewed locally; Phase 6 is a
-locally reviewed implementation with coordinator verification closed
+Status: Phases 1–6 delivered/reviewed locally; Phase 7 initial comparison slice implemented with exit gate open
 Date: 2026-10-05
 
 The identity and P6.2 checkpoints record their stage evidence. The combined
 Phase 6 release and whole-review report record remediation, checks, and
-external gates. Coordinator verification is closed. Stop before Phase 7; no further phase work is authorized.
+external gates. Phase 7's initial implementation and open gates are recorded in
+its release note. Stop before Phase 8 unless the user explicitly requests it.
 
 ## Objective
 
@@ -43,7 +43,9 @@ changing concurrency or local HTTP boundaries.
 Independent Phase 5 review is closed. P6.0–P6.5, including the upstream
 extraction candidate, atomic confirmation, and accessible review UI, are
 implemented and independently reviewed locally. Coordinator verification is
-closed; stop before Phase 7 unless the user explicitly resumes later work. Exact revisions, checks and external gates are recorded in the
+closed. Phase 7's initial source-bounded comparison slice is also implemented;
+its fixture and provider exit gates remain open. Exact revisions, checks and
+external gates are recorded in the
 [combined Phase 6 release](releases/phase-6-booking-imports.md), with
 the identity and P6.2 checkpoints kept as historical stage evidence. The
 upstream uvloop clock-domain issue was fixed in
@@ -73,9 +75,11 @@ candidate review, atomic confirmation, and the accessible review UI. The
 local implementation has passed remediation and independent coordinator
 verification. Read
 [`releases/phase-6-booking-imports.md`](releases/phase-6-booking-imports.md)
-and stop before Phase 7.
-Phase 7 requires category/evidence/rights contracts and consented preference
-projection. Phase 8 adds private document access and explicit static snapshots,
+and [`releases/phase-7-travel-comparison.md`](releases/phase-7-travel-comparison.md).
+ADR 0014 accepts the initial type/radius/source contract; the upstream has no
+memory-retrieval route, and the current category fixture/live-provider exit
+checks remain open. Stop before Phase 8 unless explicitly requested.
+Phase 8 adds private document access and explicit static snapshots,
 not offline synchronization. Phase 9 proves auth, quotas, SQL/blob restore and
 release/deployment controls; it does not defer basic security until then.
 Cloud actions continue to require separate authorization.
@@ -149,6 +153,11 @@ Backend:
   records, durable extraction/confirmation recovery, and replay records after
   source deletion.
 - owner-scoped trip/day research with bounded day context and safe errors.
+- gated typed domain comparison client and owner-scoped detail lookup, with a
+  256 KiB response bound and stable-key ambiguity handling.
+- transient food/activity/neighborhood/day-trip place comparisons, local
+  category/radius/freshness validation, and revision-checked, attribution-safe
+  candidate save. No comparison table or migration was added.
 - Streamed JSON/SSE byte bounds and whole-operation deadlines; synchronous
   SQL projections run in worker threads and release locks before provider work.
 - atomic manual place-plus-trip-candidate creation through existing tables.
@@ -174,6 +183,8 @@ Frontend:
   and visible conflict warnings.
 - selected-day research form, transfer disclosure, cited unexpired result
   rendering, and a user-entered manual candidate form.
+- default-off comparison panel with category/radius disclosure, source and
+  expiry display, reviewed candidate save, and Phase 5 proposal handoff.
 - TypeScript/ESLint setup and production build verification.
 - Boundary/geometry/context tests under `frontend/tests/`, also executed in CI.
 
@@ -241,6 +252,8 @@ POST   /v1/trips/{trip_id}/saved-places/import
 POST   /v1/trips/{trip_id}/logistics/estimate
 POST   /v1/trips/{trip_id}/saved-places/manual
 POST   /v1/trips/{trip_id}/research
+POST   /v1/trips/{trip_id}/research/compare
+POST   /v1/trips/{trip_id}/research/comparisons/{comparison_id}/candidates/{candidate_id}/save
 ```
 
 The route -> service -> repository boundary is implemented and remains
@@ -300,8 +313,27 @@ The Phase 4 service decisions are:
   session detail;
 - research does not mutate travel state; manual candidate creation is one SQL
   transaction, and itinerary addition remains in the existing item editor;
-- no research session, evidence, migration, or AI-derived place is persisted
-  by the travel application.
+- research-v1 sessions and evidence have no travel-side table. Phase 7
+  comparison results are also transient; only an explicitly saved, source-
+  verified place is persisted in the existing place/candidate tables.
+
+The Phase 7 service decisions are:
+
+- comparison and web-build gates default off; upstream domain, provider,
+  identity, and service-IAM gates remain independent;
+- requests send a category-tagged search query and a selected trip place's
+  coordinates with category and radius fail-closed constraints, not trip IDs,
+  itinerary, reservation data, or private notes;
+- trip/reference revisions are captured before upstream work, and SQL locks
+  are released before the HTTP call;
+- Travel independently checks place-type taxonomy, Haversine distance,
+  claim/citation correlation, owner, URL, source rights, and expiry;
+- only reviewed descriptive fields come from the save form; coordinates and
+  provider identity come from the revalidated source;
+- comparisons do not mutate travel state. Saved place creation is explicit,
+  and itinerary arrangement goes through a separate Phase 5 proposal;
+- the accepted provider contract supplies no price, date, schedule, hours,
+  availability, accessibility, travel-time, or preference-retrieval data.
 
 ## Things explicitly deferred
 
@@ -326,10 +358,11 @@ Do not add now:
 
 ## Personal AI integration rule
 
-Use only the accepted `research-v1` routes through the typed HTTP client. Do
-not import the AI repository's Python packages or forward its internal session
-records to the browser. New AI capabilities need an accepted upstream contract
-and a separate plan/review.
+Use the accepted `research-v1` routes for bounded prose research and the
+accepted typed travel-domain lookup/detail routes for place comparison. Keep
+both behind `PersonalAIClient`; do not import AI Python packages or forward
+internal records to the browser. New capabilities need an accepted upstream
+contract and a separate plan/review.
 
 ## Cloud rule
 

@@ -50,7 +50,8 @@ uses a new key, and no comparison session/table is added to Travel.
 
 Saving a result is a separate explicit action. The Travel API reloads the
 owner-scoped upstream comparison, revalidates its contract, candidate,
-category, evidence freshness, source identity, and rights metadata, then
+category, evidence freshness, source identity, rights metadata, and the current
+trip/reference-place revision and comparison center, then
 creates or reuses a trip candidate in one Travel transaction. Only a verified
 OpenStreetMap/Nominatim result carries provider attribution into the saved
 place. Synthetic results are marked and cannot be saved as real places.

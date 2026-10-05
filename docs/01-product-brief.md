@@ -163,6 +163,20 @@ Phase 4 adds manual-first, evidence-grounded research inside a trip workspace:
 The travel-side research gate defaults off. The local owner seam is still not
 authentication, and real private integrations remain out of scope.
 
+## Phase 7 initial comparison slice implemented locally
+
+Travel can explicitly compare source-backed place leads for food, activities,
+neighborhoods, and day trips around a geolocated trip place. The UI shows type,
+distance, source attribution, and freshness; Travel rechecks category and radius
+before a candidate can appear eligible. Saving a candidate and drafting an
+itinerary proposal are separate actions. Comparisons do not edit trip state.
+
+The current upstream place contract does not provide reliable dates, prices,
+hours, accessibility, availability, or travel duration, and it exposes no
+preference retrieval route. These remain unsupported. The comparison gate
+defaults off independently of the web build, upstream domain, source provider,
+and authentication gates. See the [Phase 7 release record](releases/phase-7-travel-comparison.md).
+
 ## Explicit non-goals for early phases
 
 - Gmail ingestion,

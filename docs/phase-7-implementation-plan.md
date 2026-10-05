@@ -1,11 +1,28 @@
 # Phase 7 implementation plan — richer evidence-grounded travel research
 
-**Status:** planned; no Phase 7 implementation delivered
-**Date:** 2026-10-03
+**Status:** initial source-bounded comparison slice implemented locally; full Phase 7 exit gate remains open
+**Date:** 2026-10-05
 **Baseline:** reviewed Phase 0–4 commit `56c0cbf`
 **Dependencies:** [Phase 5](phase-5-implementation-plan.md) proposal safety and
 [Phase 6](phase-6-implementation-plan.md) verified ownership
 **Roadmap:** [phased implementation plan](09-implementation-plan.md)
+
+## Delivery status
+
+The first local slice supports food, activity, neighborhood, and day-trip place
+leads using typed `place_type` and `location` evidence. Travel checks category
+and radius deterministically, snapshots trip/reference-place revisions, releases
+SQL locks before upstream work, and keeps comparisons transient. Candidate save
+revalidates owner, source, rights, and freshness before a revision-checked
+transaction; itinerary handoff remains a separate Phase 5 proposal action.
+
+This slice does not implement dates, price/budget, hours, accessibility,
+availability, travel time, memory retrieval, hotel/flight/transit offers, or a
+travel-owned comparison table. The accepted upstream contract does not provide
+those data. Synthetic fixtures cannot be saved as real places. Live provider
+approval and category fixture coverage remain open; see the
+[Phase 7 release record](releases/phase-7-travel-comparison.md) and
+[ADR 0014](decisions/0014-phase7-travel-comparison.md).
 
 ## Goal and scope boundary
 
@@ -31,7 +48,7 @@ traffic and an unbounded multi-category “plan everything” prompt.
 
 | Concern | Decision |
 | --- | --- |
-| Contract | Pin a versioned accepted upstream travel-research/comparison contract. research-v1 can continue answering bounded questions; do not pretend its prose is a typed candidate list. Record supported categories, limits, source rights, deadlines, cancellation/replay and result references. |
+| Contract | Pin the accepted `domain-lookup-v1` and `domain-comparison-v1` contracts for this typed consumer. `research-v1` remains a separate bounded-question API. Record category/type sets, source rights, deadlines, same-key replay and owner-scoped result references. |
 | Initial categories | Choose a documented supported subset of food/activity/neighborhood/day-trip candidates. Hotel/flight/transit capabilities need category-specific evidence and validation before enablement, rather than one generic bag of fields. |
 | Constraints | User-authored dates/timezone, geographic scope, party/accessibility requirements and optional budget are typed inputs. Existing itinerary/reservation anchors remain immutable context, with private confirmations/notes excluded. |
 | Money | Compare integer minor-unit amounts in one explicit currency. A quoted price requires observation/expiry, total-vs-per-person basis, taxes/fees inclusion and party/date basis. Unknown totals or currencies cannot satisfy a hard budget; no implicit FX conversion. |
@@ -42,11 +59,10 @@ traffic and an unbounded multi-category “plan everything” prompt.
 | Work | One explicit bounded request/session at a time. No automatic category/provider fan-out, background polling or new retry keys after unknown outcomes. Longer-running support needs an accepted resumable contract and an ADR before enablement. |
 | Mutation | Saving a place uses explicit reviewed fields through travel services; arranging items uses a new Phase 5 preview/apply action. Viewing or ranking candidates never writes travel state. |
 
-The category ADR must settle geographic meaning (area vs point), schedule
-coverage, price basis, rights/retention and required candidate fields. Limit
-initial comparison to ten candidates and the existing external request budget
-unless the accepted contract requires a separately justified bound. Require
-source fixture examples for every enabled category.
+ADR 0014 settles the initial geographic meaning as a point and radius. The
+current slice has no schedule or price basis because the accepted provider
+contract lacks those fields. Limit requests to ten candidates and the existing
+external request budget. Category fixture examples remain a Phase 7 exit gate.
 
 ## Travel request/result design
 
@@ -56,9 +72,9 @@ shape into a different product.
 
 | Method | Route target | Behavior |
 | --- | --- | --- |
-| POST | /v1/trips/{trip_id}/research/compare | Verified owner, selected day/date range, category, explicit constraints, memory consent and request key; snapshot current versions, project bounded context, call accepted upstream and validate candidates. |
-| GET | /v1/trips/{trip_id}/research/comparisons/{comparison_id} | Only if the accepted capability supports durable detail/resumption; expose a bounded owner-correlated projection, not upstream records. Otherwise keep results in UI memory as in Phase 4. |
-| POST | Existing saved-place/manual or provider-import route | User reviews candidate fields and explicitly creates/saves a place; provider identity/attribution may only be used when verified by the accepted place contract. |
+| POST | /v1/trips/{trip_id}/research/compare | Verified owner, category, query, selected trip-place ID, radius, result limit and request key; snapshot current revisions, call accepted upstream and validate candidates. |
+| GET | Upstream only: /v1/domains/travel/comparisons/{comparison_id} | Used internally for a separate explicit save; the Travel API exposes only its bounded compare response and save action. |
+| POST | /v1/trips/{trip_id}/research/comparisons/{comparison_id}/candidates/{candidate_id}/save | User reviews name/address/category/note; Travel supplies source-verified coordinates and provider attribution to the existing saved-place transaction. |
 | POST | Existing Phase 5 proposal route | Explicit request to arrange reviewed candidates; new snapshot, proposal validation and separate apply consent. |
 
 Do not invent a travel-owned comparison database solely to retain UI results.
@@ -127,9 +143,10 @@ contract, without a new autonomous request.
 
 ## Frontend behavior
 
-Build a focused comparison form with category/date/location/constraint fields,
-memory opt-in and disclosure. Show which constraints are hard, which preferences
-are advisory and which fields remain unknown.
+The current form uses category, query, a geolocated reference trip place,
+radius and result limit, with an explicit disclosure. It has no memory opt-in
+or date/price fields because the accepted contract does not support those data.
+The UI labels category and radius as hard checks and surfaces unknown details.
 
 Render a compact accessible candidate table/cards with comparable dimensions,
 units/price basis, per-claim citations, expiry and eligibility explanations.
@@ -215,14 +232,14 @@ Separate mocked contract coverage from live evidence/provider-rights approval.
 
 ## Commit sequence and exit gate
 
-1. docs: accept category, constraint, rights and memory contracts.
-2. feat: add typed deterministic travel comparisons.
-3. feat: integrate gated rich research and consented preference projection.
-4. feat: add comparison UI and explicit save/proposal handoff.
-5. docs: record supported-category release and verification.
+1. docs: accept the typed travel comparison and rights contract.
+2. feat: add the gated comparison client, deterministic checks and reviewed save.
+3. feat: add the comparison UI and Phase 5 proposal handoff.
+4. docs: record the implemented slice, verification and open gates.
 
-Phase 7 completes for the documented supported category set only when
-eligibility, evidence freshness, consent and explicit state handoff are proven.
-Unsupported hotel/flight/transit categories remain disabled and separately
-planned. Phase 9 must operationalize the actual provider cost/rights profile;
-this phase does not assume free quotas or guarantee booking availability.
+Phase 7 remains open until category fixtures, evidence freshness, rights and
+explicit state handoff are verified for each enabled category. Current code is
+an initial local slice, not proof of live provider coverage. Unsupported
+hotel/flight/transit categories remain disabled and separately planned. Phase
+9 must operationalize the actual provider cost/rights profile; this phase does
+not assume free quotas or guarantee booking availability.

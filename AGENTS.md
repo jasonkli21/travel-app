@@ -19,9 +19,8 @@ When working on AI integration, also read `docs/06-ai-integration.md`.
 
 ## Current implementation status
 
-Phases 1–5 are delivered and independently reviewed locally. Proposal gates
-remain off by default; live provider and deployment readiness are separate
-gates. The Phase 6 identity decision, secure-source lifecycle, booking
+Phases 1–5 are delivered and independently reviewed locally. The Phase 6
+identity decision, secure-source lifecycle, booking
 extraction, reservation review/confirmation, and review UI are implemented as
 a locally reviewed implementation. Whole-phase review and coordinator
 verification are closed. Private source ingress and
@@ -30,6 +29,11 @@ and Cloud Run IAM remain unprovisioned external gates. Phase 5 closure is record
 [`docs/releases/phase-5-local-proposals.md`](docs/releases/phase-5-local-proposals.md);
 Phase 6 scope and limits are in
 [`docs/releases/phase-6-booking-imports.md`](docs/releases/phase-6-booking-imports.md).
+Phase 7 has an initial locally implemented, default-off source comparison
+slice. It is not a whole-phase exit: category fixtures and live provider
+approval are unverified, and date, price, availability, accessibility, and
+memory retrieval remain unsupported. See
+[`docs/releases/phase-7-travel-comparison.md`](docs/releases/phase-7-travel-comparison.md).
 
 Current delivered capabilities include:
 
@@ -49,6 +53,9 @@ Current delivered capabilities include:
   transfer warnings.
 - A gated, typed `research-v1` integration with bounded active-day context,
   validated server-consumed SSE, cited results, and a research panel.
+- A separately gated typed Phase 7 domain comparison for food, activity,
+  neighborhood, and day-trip place leads; category and radius checks run in
+  Travel, evidence expires, and saving or proposal handoff is explicit.
 - Atomic manual place-plus-trip-candidate creation; AI results never mutate
   authoritative trip state.
 - Monotonic trip/shared-place revisions, optional `X-Expected-Revision`
@@ -68,8 +75,11 @@ Current delivered capabilities include:
 - CI skeleton.
 - product/design/architecture/implementation/release documentation.
 
-The travel-side research and proposal gates default off; upstream capability,
-storage, and provider gates must be configured separately. The upstream
+The travel-side research, comparison, and proposal gates default off; upstream
+capability, storage, identity, and provider gates must be configured separately.
+The comparison contract sends only search terms and the selected place's
+coordinates; it does not fetch memory or confirm hours, prices, access, or
+availability. The upstream
 clock-domain fix passes local fake HTTP verification with Uvicorn `auto`
 (uvloop on this host) and `asyncio`. Proposal gates remain off by default after independent local review. Migration `0008` adds exact upstream revision and
 operation-support provenance; migration `0009` adds verified identity,
@@ -147,7 +157,9 @@ CI must execute them without skips. Migration `0005` requires online inspection
 and a backup before legacy data repair.
 Detailed plans for Phases 5–9 are under
 `docs/phase-5-implementation-plan.md` through `docs/phase-9-implementation-plan.md`.
-Phase 5 and Phase 6 are independently reviewed locally. External enablement
-gates remain closed, and Phases 7–9 remain planned. Stop before Phase 7 unless
-the user explicitly requests later work. Start that work from its contract and
-dependency gates; documentation alone does not authorize cloud deployment.
+Phase 5 and Phase 6 are independently reviewed locally. Phase 7's initial
+consumer slice is implemented, with its complete exit gate still open. External
+enablement gates remain closed. Phase 8–9 remain planned; stop before Phase 8
+unless the user explicitly requests later work. Start that work from its
+contract and dependency gates; documentation alone does not authorize cloud
+deployment.
