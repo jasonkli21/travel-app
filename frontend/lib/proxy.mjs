@@ -1,6 +1,7 @@
 import { readProxyBody } from "./proxy-response.mjs";
 
 const MAX_REQUEST_BYTES = 64 * 1024;
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const SESSION_COOKIE = "__Host-travel_session";
 const CSRF_COOKIE = "__Host-travel_csrf";
 const OAUTH_FLOW_COOKIE = "__Host-travel_oauth_flow";
@@ -51,6 +52,53 @@ function safeSetCookies(response) {
   return values.filter((value) => {
     const name = value.split("=", 1)[0];
     return RESPONSE_COOKIE_NAMES.has(name);
+  });
+}
+
+function isImportUpload(path, method) {
+  return method === "POST" && path.length === 3 && path[0] === "trips"
+    && /^[0-9a-fA-F-]{36}$/.test(path[1]) && path[2] === "imports";
+}
+
+function streamedUpload(request, maxBytes, abortController, onTooLarge) {
+  const reader = request.body?.getReader();
+  if (!reader) return undefined;
+  let total = 0;
+  let cancelled = false;
+  const cancelReader = async (reason) => {
+    cancelled = true;
+    try { await reader.cancel(reason); } catch { /* the client stream may already be closed */ }
+    try { reader.releaseLock(); } catch { /* release is best effort after a pending read */ }
+  };
+  const onAbort = () => { void cancelReader(abortController.signal.reason); };
+  abortController.signal.addEventListener("abort", onAbort, { once: true });
+  return new ReadableStream({
+    async pull(controller) {
+      try {
+        const { value, done } = await reader.read();
+        if (done) {
+          if (!cancelled) controller.close();
+          abortController.signal.removeEventListener("abort", onAbort);
+          try { reader.releaseLock(); } catch { /* already released on cancellation */ }
+          return;
+        }
+        total += value.byteLength;
+        if (total > maxBytes) {
+          onTooLarge();
+          abortController.abort();
+          await cancelReader("upload exceeds byte limit");
+          controller.error(new RangeError("upload_too_large"));
+          return;
+        }
+        if (!cancelled) controller.enqueue(value);
+      } catch (error) {
+        if (!cancelled) controller.error(error);
+      }
+    },
+    async cancel(reason) {
+      abortController.signal.removeEventListener("abort", onAbort);
+      await cancelReader(reason);
+    },
   });
 }
 
@@ -113,8 +161,27 @@ export async function proxyRequest(request, path, {
     return errorResponse(400, "invalid_path", "This API path is not valid.");
   }
   const headers = new Headers();
+  const upload = isImportUpload(path, request.method.toUpperCase());
   const contentType = request.headers.get("content-type");
   if (contentType) headers.set("content-type", contentType);
+  if (upload) {
+    const mediaType = (contentType ?? "").split(";", 1)[0].trim().toLowerCase();
+    if (!["text/plain", "application/pdf"].includes(mediaType)) {
+      return errorResponse(415, "unsupported_media_type", "Use plain text or PDF.");
+    }
+    const requestKey = request.headers.get("x-import-request-key");
+    if (!requestKey || !/^[A-Za-z0-9_-]{8,128}$/.test(requestKey)) {
+      return errorResponse(400, "invalid_request_key", "A valid import request key is required.");
+    }
+    headers.set("x-import-request-key", requestKey);
+    const filename = request.headers.get("x-source-filename");
+    if (filename) headers.set("x-source-filename", filename.slice(0, 512));
+    const declared = request.headers.get("content-length");
+    const cap = mediaType === "text/plain" ? 1024 * 1024 : MAX_UPLOAD_BYTES;
+    if (declared && (!/^\d+$/.test(declared) || Number(declared) > cap)) {
+      return errorResponse(413, "request_too_large", "The upload exceeds its size limit.");
+    }
+  }
   const expectedRevision = request.headers.get("x-expected-revision");
   if (expectedRevision !== null) headers.set("x-expected-revision", expectedRevision);
   const cookies = cookieMap(request);
@@ -130,6 +197,13 @@ export async function proxyRequest(request, path, {
     const csrf = request.headers.get("x-csrf-token");
     if (csrf) headers.set("x-csrf-token", csrf);
   }
+  const controller = new AbortController();
+  let uploadTooLarge = false;
+  let uploadTimedOut = false;
+  const timeout = setTimeout(() => {
+    if (upload) uploadTimedOut = true;
+    controller.abort();
+  }, upload ? 30_000 : 60_000);
   try {
     const response = await fetchImpl(
       `${backendBaseUrl.trim().replace(/\/+$/, "")}/v1/${path.join("/")}${url.search}`,
@@ -137,10 +211,19 @@ export async function proxyRequest(request, path, {
         method: request.method,
         headers,
         body: request.method === "GET" || request.method === "HEAD"
-          ? undefined : await readRequestBody(request),
+          ? undefined : upload
+            ? streamedUpload(
+              request,
+              contentType.split(";", 1)[0].trim().toLowerCase() === "text/plain"
+                ? 1024 * 1024 : MAX_UPLOAD_BYTES,
+              controller,
+              () => { uploadTooLarge = true; },
+            )
+            : await readRequestBody(request),
+        ...(upload ? { duplex: "half" } : {}),
         cache: "no-store",
         redirect: "error",
-        signal: AbortSignal.timeout(60_000),
+        signal: controller.signal,
       },
     );
     const responseHeaders = new Headers({ "Cache-Control": "no-store" });
@@ -149,14 +232,29 @@ export async function proxyRequest(request, path, {
       if (value) responseHeaders.set(name, value);
     }
     for (const cookie of safeSetCookies(response)) responseHeaders.append("set-cookie", cookie);
-    return new Response(await readProxyBody(response), {
+    const isSource = request.method === "GET" && path.length === 5 && path[0] === "trips"
+      && /^[0-9a-fA-F-]{36}$/.test(path[1]) && path[2] === "imports"
+      && /^[0-9a-fA-F-]{36}$/.test(path[3]) && path[4] === "source";
+    if (isSource) {
+      for (const name of ["content-disposition", "x-content-type-options"]) {
+        const value = response.headers.get(name);
+        if (value) responseHeaders.set(name, value);
+      }
+    }
+    return new Response(isSource ? response.body : await readProxyBody(response), {
       status: response.status,
       headers: responseHeaders,
     });
   } catch (error) {
+    if (uploadTooLarge) {
+      return errorResponse(413, "request_too_large", "The upload exceeds its size limit.");
+    }
+    if (uploadTimedOut) {
+      return errorResponse(408, "upload_timeout", "The upload took too long.");
+    }
     if (error instanceof RangeError) {
       return errorResponse(413, "request_too_large", "The request body exceeds 64 KiB.");
     }
     return errorResponse(503, "travel_api_unavailable", "The travel API is unavailable. Try again.");
-  }
+  } finally { clearTimeout(timeout); }
 }

@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from personal_travel.api.routes import (
     auth,
     health,
+    imports,
     itinerary,
     location,
     places,
@@ -18,6 +19,7 @@ api_router.include_router(health.router)
 api_router.include_router(auth.router, prefix="/v1")
 api_router.include_router(trips.router, prefix="/v1")
 api_router.include_router(itinerary.router, prefix="/v1")
+api_router.include_router(imports.router, prefix="/v1")
 api_router.include_router(places.router, prefix="/v1")
 api_router.include_router(reservations.router, prefix="/v1")
 api_router.include_router(saved_places.router, prefix="/v1")

@@ -148,3 +148,113 @@ test("proxy bounds chunked request bodies and reports backend failures", async (
   assert.equal(response.status, 503);
   assert.ok(!(await response.text()).includes("PRIVATE"));
 });
+
+test("private source upload streams beyond the ordinary JSON cap", async () => {
+  const bytes = new Uint8Array(70 * 1024).fill(97);
+  const input = new ReadableStream({
+    start(controller) { controller.enqueue(bytes); controller.close(); },
+  });
+  let seenHeaders;
+  let size = 0;
+  const request = new Request(
+    "http://localhost:3000/api/v1/trips/00000000-0000-4000-8000-000000000001/imports",
+    {
+      method: "POST",
+      headers: {
+        host: "localhost:3000",
+        origin: "http://localhost:3000",
+        cookie: "__Host-travel_session=session; __Host-travel_csrf=csrf",
+        "x-csrf-token": "csrf",
+        "x-import-request-key": "upload_0001",
+        "x-source-filename": "booking.txt",
+        "content-type": "text/plain",
+      },
+      body: input,
+      duplex: "half",
+    },
+  );
+  const response = await proxyRequest(request, [
+    "trips", "00000000-0000-4000-8000-000000000001", "imports",
+  ], {
+    fetchImpl: async (_url, options) => {
+      seenHeaders = options.headers;
+      assert.equal(options.duplex, "half");
+      const reader = options.body.getReader();
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+      }
+      return Response.json({ size });
+    },
+  });
+  assert.equal(response.status, 200);
+  assert.equal(size, bytes.byteLength);
+  assert.equal(seenHeaders.get("x-import-request-key"), "upload_0001");
+  assert.equal(seenHeaders.get("x-source-filename"), "booking.txt");
+  assert.equal(seenHeaders.get("cookie"), "__Host-travel_session=session; __Host-travel_csrf=csrf");
+});
+
+test("private source upload enforces its own byte cap and requires an idempotency key", async () => {
+  const body = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new Uint8Array(512 * 1024));
+      controller.enqueue(new Uint8Array(512 * 1024 + 1));
+      controller.close();
+    },
+  });
+  const request = new Request(
+    "http://localhost:3000/api/v1/trips/00000000-0000-4000-8000-000000000001/imports",
+    {
+      method: "POST",
+      headers: {
+        host: "localhost:3000",
+        origin: "http://localhost:3000",
+        "x-import-request-key": "upload_0002",
+        "content-type": "text/plain",
+      },
+      body,
+      duplex: "half",
+    },
+  );
+  const path = ["trips", "00000000-0000-4000-8000-000000000001", "imports"];
+  const response = await proxyRequest(request, path, {
+    fetchImpl: async (_url, options) => {
+      const reader = options.body.getReader();
+      while (true) {
+        const { done } = await reader.read();
+        if (done) break;
+      }
+      return Response.json({ ok: true });
+    },
+  });
+  assert.equal(response.status, 413);
+
+  const missingKey = new Request(
+    "http://localhost:3000/api/v1/trips/00000000-0000-4000-8000-000000000001/imports",
+    { method: "POST", headers: { "content-type": "text/plain" }, body: "private" },
+  );
+  assert.equal((await proxyRequest(missingKey, path, {
+    fetchImpl: () => { throw new Error("must not read an unkeyed upload"); },
+  })).status, 400);
+});
+
+test("private source download preserves binary bytes and inert response headers", async () => {
+  const bytes = new Uint8Array([0, 255, 10, 13, 128]);
+  const request = new Request("http://localhost:3000/api/v1/trips/source");
+  const response = await proxyRequest(request, [
+    "trips", "00000000-0000-4000-8000-000000000001", "imports",
+    "00000000-0000-4000-8000-000000000002", "source",
+  ], {
+    fetchImpl: async () => new Response(bytes, {
+      headers: {
+        "content-type": "application/pdf",
+        "content-disposition": "attachment; filename=source",
+        "x-content-type-options": "nosniff",
+      },
+    }),
+  });
+  assert.deepEqual(new Uint8Array(await response.arrayBuffer()), bytes);
+  assert.equal(response.headers.get("content-disposition"), "attachment; filename=source");
+  assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+});

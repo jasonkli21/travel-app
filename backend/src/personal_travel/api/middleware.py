@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 from datetime import UTC, datetime
 from hmac import compare_digest
 from time import monotonic
@@ -27,6 +28,17 @@ from personal_travel.db.session import SessionFactory
 
 logger = logging.getLogger("personal_travel.requests")
 MAX_REQUEST_BYTES = 64 * 1024
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+UPLOAD_PATH = re.compile(r"^/v1/trips/[0-9a-fA-F-]{36}/imports$")
+UPLOAD_SECONDS = 30
+
+
+class UploadTooLarge(Exception):
+    pass
+
+
+class UploadDeadlineExceeded(Exception):
+    pass
 
 
 class LocalBoundaryMiddleware:
@@ -274,6 +286,62 @@ class LocalBoundaryMiddleware:
                         service_audience=settings.personal_ai_service_iam_audience,
                         service_account=settings.personal_ai_service_account,
                     )
+
+            upload = method == "POST" and UPLOAD_PATH.fullmatch(path) is not None
+            if upload:
+                if (
+                    not settings.private_imports_enabled
+                    or settings.travel_auth_mode != "google_oidc"
+                ):
+                    await reject(
+                        404, "private_imports_disabled", "Private imports are unavailable."
+                    )
+                    return
+                media_type = (headers.get("content-type") or "").split(";", 1)[0].strip().lower()
+                if media_type not in {"text/plain", "application/pdf"}:
+                    await reject(415, "unsupported_media_type", "Use plain text or PDF.")
+                    return
+                limit = 1024 * 1024 if media_type == "text/plain" else MAX_UPLOAD_BYTES
+                content_length = headers.get("content-length")
+                if content_length is not None:
+                    try:
+                        if int(content_length) > limit or int(content_length) < 0:
+                            await reject(
+                                413, "request_too_large", "The upload exceeds its size limit."
+                            )
+                            return
+                    except ValueError:
+                        await reject(400, "invalid_length", "Invalid Content-Length.")
+                        return
+                count = 0
+                deadline = monotonic() + UPLOAD_SECONDS
+
+                async def bounded_receive() -> Message:
+                    nonlocal count
+                    remaining = deadline - monotonic()
+                    if remaining <= 0:
+                        raise UploadDeadlineExceeded
+                    try:
+                        async with asyncio.timeout(remaining):
+                            part = await receive()
+                    except TimeoutError as exc:
+                        raise UploadDeadlineExceeded from exc
+                    if part["type"] == "http.request":
+                        count += len(part.get("body", b""))
+                        if count > limit:
+                            raise UploadTooLarge
+                    return part
+
+                scope["request_id"] = request_id
+                try:
+                    await self.app(scope, bounded_receive, send_response)
+                except UploadTooLarge:
+                    if not response_started:
+                        await reject(413, "request_too_large", "The upload exceeds its size limit.")
+                except UploadDeadlineExceeded:
+                    if not response_started:
+                        await reject(408, "upload_timeout", "The upload took too long.")
+                return
 
             # Read at most one bounded JSON request before dispatch, regardless of
             # Content-Length. This also handles chunked requests without allocating

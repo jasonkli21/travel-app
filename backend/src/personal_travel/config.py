@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
@@ -41,6 +42,8 @@ class Settings(BaseSettings):
     personal_ai_timeout_seconds: float = Field(default=45.0, gt=0, le=50)
     personal_ai_research_enabled: bool = False
     personal_ai_proposals_enabled: bool = False
+    private_imports_enabled: bool = False
+    private_source_dir: str = ""
     personal_ai_proposal_timeout_seconds: float = Field(default=45.0, gt=0, le=49)
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     allowed_hosts: str = "localhost,127.0.0.1,::1"
@@ -53,6 +56,14 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_identity_configuration(self) -> "Settings":
+        if self.private_imports_enabled:
+            source_path = Path(self.private_source_dir).expanduser()
+            if self.travel_auth_mode != "google_oidc" or not self.private_source_dir:
+                raise ValueError(
+                    "Private imports require Google mode and a private source directory."
+                )
+            if not source_path.is_absolute():
+                raise ValueError("Private source storage must use an absolute directory path.")
         if self.travel_auth_mode == "google_oidc":
             allowed_email = self.google_oauth_allowed_email_normalized
             if (
