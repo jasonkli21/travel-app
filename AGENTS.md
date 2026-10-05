@@ -21,14 +21,14 @@ When working on AI integration, also read `docs/06-ai-integration.md`.
 
 Phases 1–5 are delivered and independently reviewed locally. Proposal gates
 remain off by default; live provider and deployment readiness are separate
-gates. The Phase 6 identity decision, local P6.1 foundation, and P6.2 secure
-source lifecycle are implemented in review-pending stages. Phase 6 extraction,
-reservation confirmation, and review UI are not implemented. Private source
-ingress defaults off and remains unavailable in local auth mode. Google OAuth
+gates. The Phase 6 identity decision, secure-source lifecycle, booking
+extraction, reservation review/confirmation, and review UI are implemented as
+a local candidate pending whole-phase review. Private source ingress and
+extraction default off and remain unavailable in local auth mode. Google OAuth
 and Cloud Run IAM remain unprovisioned external gates. Phase 5 closure is recorded in
 [`docs/releases/phase-5-local-proposals.md`](docs/releases/phase-5-local-proposals.md);
-identity-stage scope and limits are in
-[`docs/releases/phase-6-identity.md`](docs/releases/phase-6-identity.md).
+Phase 6 scope and limits are in
+[`docs/releases/phase-6-booking-imports.md`](docs/releases/phase-6-booking-imports.md).
 
 Current delivered capabilities include:
 
@@ -58,10 +58,11 @@ Current delivered capabilities include:
 - Phase 0–4 audit remediation: migration `0005` repairs legacy moved-item dates,
   SQL order/coordinate integrity, local host/origin guards, bounded external
   deadlines, database readiness and migrated disposable-schema test fixtures.
-- Phase 6 P6.2: migration `0010` adds owner-scoped source/import metadata;
-  authenticated streamed text/PDF intake, opaque local storage, bounded PDF
-  parsing, safe download/deletion, and bounded cleanup are implemented behind
-  an off-by-default gate. No extraction or booking confirmation is included.
+- Phase 6: migrations `0010`–`0012` add verified identity and owner-scoped
+  source/import records. Authenticated streamed text/PDF intake, opaque local
+  storage, bounded parsing, safe download/deletion, typed extraction, durable
+  recovery, atomic reviewed reservation confirmation, and the review UI are
+  implemented behind off-by-default gates. No real private input was used.
 - Docker Compose Postgres for local development.
 - CI skeleton.
 - product/design/architecture/implementation/release documentation.
@@ -75,8 +76,9 @@ opaque sessions, OAuth attempts, and migration audit. Google mode derives each
 domain owner from the server-verified Google issuer and subject; explicit local
 mode remains available and unauthenticated. No domain route trusts browser
 owner headers. Local-to-verified-owner migration is explicit, backed up, and
-never triggered by first login. Phase 6 extraction, confirmation, and review
-UI, cloud deployment, and general attachments remain planned.
+never triggered by first login. The Phase 6 extraction, confirmation, and
+review UI are local candidates pending whole-phase review. Live private input,
+cloud deployment, and general attachments remain gated or planned.
 
 ## Architectural invariants
 
@@ -142,7 +144,8 @@ The comprehensive current review and verification are recorded in
 `docs/reviews/phase-0-4-audit.md`. PostgreSQL checks require `TEST_DATABASE_URL`;
 CI must execute them without skips. Migration `0005` requires online inspection
 and a backup before legacy data repair.
-Detailed plans for unimplemented Phases 5–9 are under
+Detailed plans for Phases 5–9 are under
 `docs/phase-5-implementation-plan.md` through `docs/phase-9-implementation-plan.md`.
-Start later feature work from its contract/dependency gates; documentation
-alone does not mark a capability implemented or authorize cloud deployment.
+Phase 5 is reviewed, Phase 6 is implemented as a review candidate, and Phases
+7–9 remain planned. Start later feature work from its contract/dependency
+gates; documentation alone does not authorize cloud deployment.

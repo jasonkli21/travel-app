@@ -1,20 +1,19 @@
 # Phase 6 implementation plan — authenticated booking and document import
 
-**Status:** P6.0/P6.1 identity and P6.2 secure-source lifecycle implemented
-locally; whole-Phase 6 review pending; extraction, confirmation, and UI remain planned
-**Date:** 2026-10-03
-**Baseline:** reviewed Phase 0–4 commit `56c0cbf`; Phase 5 version/replay slice required
+**Status:** P6.0–P6.5 implemented as a local candidate; whole-Phase 6 review pending
+**Date:** 2026-10-05
+**Baseline:** travel `cf6696b`; upstream `96cf73b`; Phase 5 version/replay slice present
 **Roadmap:** [phased implementation plan](09-implementation-plan.md)
 **Prerequisites:** [audit](reviews/phase-0-4-audit.md), [Phase 5](phase-5-implementation-plan.md)
 
 ## Goal and scope boundary
 
-P6.2 delivers only authenticated local source intake, storage, scoped reads and
-deletion, and cleanup. It does not deliver extraction, confirmed reservations,
-or review UI and does not complete Phase 6. Its local checkpoint is in
-[`releases/phase-6-private-sources.md`](releases/phase-6-private-sources.md).
-The feature gate stays off by default. No accepted upstream extraction or
-retention contract exists, and no real private input has been used.
+Phase 6 delivers authenticated local source intake, storage, scoped reads and
+deletion, typed extraction, candidate review, and explicit atomic reservation
+confirmation. The implementation is a review candidate documented in
+[`releases/phase-6-booking-imports.md`](releases/phase-6-booking-imports.md).
+Travel and upstream gates stay off by default. No real private input, live
+provider, Google OAuth, or hosted IAM boundary has been used.
 
 A verified owner can manually submit a booking email/document, review extracted
 candidate reservation fields with source context, correct uncertainties and
@@ -42,7 +41,7 @@ only the secure storage lifecycle required for its documents.
 | Web session | Use secure HttpOnly sessions, appropriate SameSite/CSRF protection and logout/expiry. The proxy propagates only verified server credentials. API routes all use request-derived identity; service-to-AI credentials are audience-bound and independent of browser identity. |
 | Local mode | Existing unauthenticated local CRUD may remain behind explicit local mode. Private import/upload routes remain disabled there; tests use a verified identity override and synthetic inputs. No silent fallback to local when token verification fails. |
 | Existing owner data | Provide an explicit backed-up local-to-verified-owner migration, with dry run, counts and collision detection. Never auto-claim all local records on first login or derive owners from mutable email addresses. |
-| Extraction contract | Accept/pin a separate versioned personal-ai-system extraction contract, including privacy/retention, bounded input/output, idempotency and durable outcome recovery. Phase 4 research-v1 is not an extraction API. |
+| Extraction contract | Pin the separate versioned `booking-document-extraction-v1` candidate in personal-ai-system, including privacy/retention, bounded input/output, idempotency and durable outcome recovery. Travel pins upstream commit `ece8cfc3db044aab3b275709c12e71eb17f2520d`; whole-Phase 6 review remains required before acceptance. Phase 4 research-v1 is not an extraction API. |
 | Input | Pasted email/plaintext first, then text-bearing PDF. Initial limits: 1 MiB text, 10 MiB PDF, 100 pages and 200,000 extracted characters; finalize against measured parsing and accepted downstream limits. Reject encrypted/unsupported/scanned-only documents clearly. |
 | Output | At most ten typed reservation candidates. Missing or uncertain dates/timezones/provider/confirmation fields remain explicit uncertainties, not guessed facts. Confirmation applies a selected corrected batch atomically. |
 | Storage | Opaque application-generated object keys, outside source/web roots, restrictive local permissions, byte/hash/MIME validation and short-lived authorized reads. Original filenames are display metadata only. P6.2 uses local storage only and stays off by default. |
@@ -182,12 +181,16 @@ P6.5 UI + release/security verification
 
 ADR 0011 accepts Google OIDC, the server-side browser session, verified stable
 owner mapping and independent AI service/user credentials for the identity
-boundary. No upstream booking/document extraction or retention contract is
-accepted; source types, limits, and recovery semantics remain open for a later
-stage.
+boundary. Upstream ADR 0020 and the separate
+`booking-document-extraction-v1` contract define the extraction candidate;
+the travel client pins upstream commit
+`ece8cfc3db044aab3b275709c12e71eb17f2520d`. The exact pin records the
+implemented contract, while whole-Phase 6 review still gates acceptance and
+external private-input use.
 
-**Status:** identity decision accepted locally; private imports stay disabled
-until a separate HTTP/authentication/retention decision is accepted.
+**Status:** identity decision accepted locally; extraction contract and privacy
+boundary implemented as candidates. Private imports remain disabled pending
+whole-phase review and external gates.
 
 ### P6.1 — Implement identity and migrate local ownership
 
@@ -214,13 +217,15 @@ limits and reconciliation cleanup. Add SQL metadata/migrations.
 counts, parser failure, interrupted promotion and missing blobs fail safely;
 cleanup is idempotent and cannot delete another owner's objects.
 
-**Status:** implemented locally, review pending. The exact upload route streams
-after authentication with separate 1 MiB text/10 MiB PDF and 30-second limits;
+**Status:** implemented locally, review pending. The earlier P6.2 checkpoint
+records the source lifecycle before extraction and UI were added. The exact
+upload route streams after authentication with separate 1 MiB text/10 MiB PDF
+and 30-second limits;
 ordinary JSON remains capped at 64 KiB. PDFs run in a spawned process with an
 8-second wall/CPU cap, a 512 MiB RSS watchdog on macOS or address/data-space
 limits on Linux, a 100-page/200,000-character cap, and no remote resource
-access. The gate defaults off and local mode is denied. No extraction,
-confirmation, UI, cloud storage, or real private input is included.
+access. The gate defaults off and local mode is denied. Cloud storage and real
+private input are not included in this candidate.
 
 ### P6.3 — Integrate typed extraction
 
@@ -230,6 +235,15 @@ recovery. Store only validated review candidates and necessary source references
 **Acceptance:** unavailable/malformed/uncertain extraction never creates a
 reservation; replay returns one correlated import; no locks span external work.
 
+**Status:** implemented as a local review candidate. The typed client pins
+upstream source revision `ece8cfc3db044aab3b275709c12e71eb17f2520d`, uses the
+same idempotency key for GET reconciliation
+after an unknown POST, validates bounded candidates and literal source spans,
+and never sends requests from local unauthenticated mode. Durable import claims
+and outcome states preserve recovery across reloads. Upstream deletion is
+retried by the same stable key after local source cleanup; no SQL locks span
+network work.
+
 ### P6.4 — Confirm through reservation services
 
 Add corrected selected-batch validation, timezone conversion, dedupe choices,
@@ -237,6 +251,15 @@ same-trip place/link checks, one-transaction outcome and replay.
 
 **Acceptance:** a late invalid candidate rolls back the whole batch; concurrent
 confirm, response loss and key reuse cannot duplicate or overwrite reservations.
+
+**Status:** implemented as a local review candidate. Confirmation uses the
+existing reservation conflict and trip/import revision rules in one SQL
+transaction. All candidate decisions must be create, link, or skip; creates
+remain tentative, links never overwrite existing reservations, and late
+invalidity rolls back the complete batch. Explicit IANA zones or UTC offsets
+are resolved deterministically to trip-local display time; unknown zones,
+ambiguous DST times, and nonexistent DST times require correction. Duplicate
+suggestions are advisory and require an explicit choice.
 
 ### P6.5 — Deliver review UX and release evidence
 
@@ -246,6 +269,11 @@ release evidence with synthetic vs real-input verification distinctions.
 
 **Acceptance:** a verified owner can review and confirm a synthetic booking,
 reopen it with safe source access, and delete/reject input according to policy.
+
+**Status:** implemented as a local review candidate with an accessible,
+responsive panel for upload/paste, editable uncertainty, source spans, timezone
+resolution, duplicate decisions, retention, recovery, and deletion. The panel
+renders extracted content as inert text and does not follow document links.
 
 ## Failure and verification matrix
 
@@ -266,12 +294,11 @@ is connected merely to verify the phase.
 
 ## Commit sequence and exit gate
 
-1. docs: accept identity/import/storage/extraction ADRs and contract.
-2. feat: add verified ownership and explicit local owner migration.
-3. feat: add secure bounded manual-source storage and lifecycle.
-4. feat: extract typed candidates and confirm reservations atomically.
-5. feat: deliver authenticated review/recovery UI.
-6. docs: record release, security checks and remaining external gates.
+Implementation is complete locally across the identity, source lifecycle,
+upstream contract/capability, typed client, durable import/confirmation, and UI
+stages. See the Phase 6 candidate release record for exact repository commits,
+checks and external gates. Whole-Phase 6 independent review remains the exit
+gate; stop before Phase 7.
 
 Phase 6 completes only after authenticated ownership, bounded private source
 handling, deterministic review/confirmation and replay/recovery are proven.

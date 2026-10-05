@@ -1,13 +1,12 @@
 # Codex handoff
 
-Status: Phases 1–5 delivered and independently reviewed locally; P6.0/P6.1
-identity and P6.2 secure-source lifecycle implemented locally; P6.2 review
-findings repaired; whole-Phase 6 review remains pending; P6.3–P6.5 remain planned
-Date: 2026-10-04
+Status: Phases 1–5 delivered and independently reviewed locally; Phase 6 is a
+combined local candidate; whole-Phase 6 review remains pending
+Date: 2026-10-05
 
-The identity and P6.2 checkpoints record their local implementation evidence and
-external gates. Continue the remaining Phase 6 implementation in one combined
-work stage, then review Phase 6 as a whole and stop before Phase 7 as requested.
+The identity and P6.2 checkpoints record their stage evidence. The combined
+Phase 6 candidate release records extraction, atomic confirmation, review UI,
+checks, and external gates. Review Phase 6 as a whole, then stop before Phase 7.
 
 ## Objective
 
@@ -27,26 +26,27 @@ The Phase 4 consumer uses the accepted `research-v1` API in
 `personal-ai-system`; do not change that API from this repository. P6.0/P6.1
 adds an optional verified Google identity/session boundary and explicit
 local-owner migration. P6.2 adds a default-off, authenticated local source
-lifecycle. Live OAuth/service IAM remains unconfigured. Extraction,
-confirmation, import UI, and cloud deployment remain deferred.
+lifecycle. P6.3–P6.5 implement a separate extraction contract, durable review
+and recovery, atomic reservation confirmation, and import UI. Live OAuth,
+service IAM, provider use, and cloud deployment remain unconfigured.
 Phase 5 proposal generation is implemented and reviewed locally, with gates
-default off. P6.2 remediation introduces no extraction, confirmation, or import UI.
+default off.
 
 The [comprehensive Phase 0–4 audit](reviews/phase-0-4-audit.md) documents current
-fixes and verification. Migration `0011` is the current head; `0005` still
+fixes and verification. Migration `0012` is the current head; `0005` still
 requires online legacy-data inspection/repair and a pre-upgrade backup before
 upgrading an existing database. See local development and ADR 0009 before
 changing concurrency or local HTTP boundaries.
 
 ## Next implementation work
 
-Independent Phase 5 review is closed. The Phase 6 identity and P6.2
-source-lifecycle implementation are local; P6.2 review findings are repaired,
-with whole-Phase 6 review pending. Accepted extraction, booking confirmation
-and review UI remain later work. Their scope and release evidence
-are recorded in the [identity checkpoint](releases/phase-6-identity.md), the
-[P6.2 checkpoint](releases/phase-6-private-sources.md), and the coordinator
-file. The upstream uvloop clock-domain issue was fixed in
+Independent Phase 5 review is closed. P6.0–P6.5, including the upstream
+extraction candidate, atomic confirmation, and accessible review UI, are
+implemented as a local candidate. Review the whole phase before starting Phase
+7. Exact revisions, checks and external gates are recorded in the
+[combined Phase 6 candidate release](releases/phase-6-booking-imports.md), with
+the identity and P6.2 checkpoints kept as historical stage evidence. The
+upstream uvloop clock-domain issue was fixed in
 `personal-ai-system` revision `6045f004fbdc4887c2bb67da9ae19a571314fc27` and
 verified over local HTTP with Uvicorn `auto` and `asyncio`; default-off gates
 remain intentional after local review.
@@ -55,9 +55,9 @@ Detailed [Phase 5](phase-5-implementation-plan.md),
 [Phase 6](phase-6-implementation-plan.md),
 [Phase 7](phase-7-implementation-plan.md),
 [Phase 8](phase-8-implementation-plan.md) and
-[Phase 9](phase-9-implementation-plan.md) plans are now recorded against
-`56c0cbf`. They do not mark any later capability delivered. Phase 5's accepted
-upstream proposal contract and P5.3 durable lifecycle/apply are implemented;
+[Phase 9](phase-9-implementation-plan.md) plans preserve their dependency
+boundaries from baseline `56c0cbf`; current delivery status is recorded in the
+release files. Phase 5's accepted upstream proposal contract and P5.3 durable lifecycle/apply are implemented;
 the independent review and remediation are recorded in
 [`reviews/phase-5-lifecycle-review.md`](reviews/phase-5-lifecycle-review.md).
 Existing writes now accept an optional `X-Expected-Revision`, which the web
@@ -68,8 +68,11 @@ not invent upstream APIs in this repository.
 
 Phase 6's P6.0/P6.1 identity stage establishes verified identity before private
 imports, with explicit local-owner migration. P6.2 implements the off-by-default
-local source/blob lifecycle, without extraction, confirmation, or UI. Continue
-with P6.3–P6.5, record the final release evidence, then stop before Phase 7.
+local source/blob lifecycle. P6.3–P6.5 implement typed extraction, recoverable
+candidate review, atomic confirmation, and the accessible review UI. The
+complete local candidate is pending whole-phase review; read
+[`releases/phase-6-booking-imports.md`](releases/phase-6-booking-imports.md)
+and stop before Phase 7.
 Phase 7 requires category/evidence/rights contracts and consented preference
 projection. Phase 8 adds private document access and explicit static snapshots,
 not offline synchronization. Phase 9 proves auth, quotas, SQL/blob restore and
@@ -141,8 +144,9 @@ Backend:
   Cloud Run service IAM transport credential.
 - migration `0009` identity/session/login-attempt/migration-audit tables and
   explicit backed-up local-owner graph migration tooling.
-- migrations `0010`–`0011` owner-scoped booking-import/private-source metadata
-  and durable import replay records after source deletion.
+- migrations `0010`–`0012` verified identity and owner-scoped source/import
+  records, durable extraction/confirmation recovery, and replay records after
+  source deletion.
 - owner-scoped trip/day research with bounded day context and safe errors.
 - Streamed JSON/SSE byte bounds and whole-operation deadlines; synchronous
   SQL projections run in worker threads and release locks before provider work.
@@ -341,13 +345,12 @@ external verification gaps, and whether a later phase needs an ADR. Keep AI,
 cloud, external imports, and authentication scope explicitly separated from
 the delivered Phase 3 slice.
 
-## Phase 6 identity handoff
+## Phase 6 handoff
 
-P6.0 identity decision, P6.1 verified-owner foundation, and P6.2 secure-source
-lifecycle are implemented locally, pending review. Read ADRs 0011–0012 and the
-[identity](releases/phase-6-identity.md) and
-[P6.2 source](releases/phase-6-private-sources.md) checkpoints for contracts,
-checks, and remaining gates. The private-import flag remains off by default and
-local mode is denied. No extraction, reservation confirmation, or review UI is
-implemented. Do not treat synthetic local verification as live Google OAuth,
-Cloud Run IAM, or an accepted extraction/retention contract.
+P6.0–P6.5 are implemented as a local candidate, pending whole-phase review.
+Read the [candidate release](releases/phase-6-booking-imports.md),
+[identity](releases/phase-6-identity.md), and
+[P6.2 source](releases/phase-6-private-sources.md) records. Private-import and
+upstream extraction gates remain off by default; local mode is denied. Synthetic
+verification does not establish live Google OAuth, Cloud Run IAM, upstream
+service identity, provider data-use approval, or Linux parser-limit behavior.

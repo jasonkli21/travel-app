@@ -20,22 +20,23 @@ proposal lifecycle, accepted typed HTTP integration, immutable previews,
 atomic apply/replay and rejection, and an explicit review/apply UI. Proposal
 gates remain off by default. The accepted upstream revision and exact local
 checks are in [the Phase 5 release record](docs/releases/phase-5-local-proposals.md).
-Phase 5 independent local review is closed. The Phase 6 identity foundation
-and P6.2 secure-source lifecycle are implemented locally, pending review. P6.2
-adds authenticated, owner-scoped text/PDF intake, private opaque local storage,
-source metadata/download/deletion, and bounded cleanup. Its feature gate is
-off by default; local mode cannot access it. Migration `0011` retains durable
-import replay metadata after source bytes are removed. Google OAuth, upstream AI
-identity alignment, and Cloud Run service IAM are not provisioned or
-live-verified.
-Extraction, reservation confirmation, and import UI remain unimplemented, so
-Phase 6 remains incomplete. See the [Phase 6 identity checkpoint](docs/releases/phase-6-identity.md)
-and [P6.2 source checkpoint](docs/releases/phase-6-private-sources.md).
+Phase 5 independent local review is closed. Phase 6 identity, authenticated
+private-source storage, bounded booking extraction, atomic reservation review,
+and the responsive import UI are implemented as a local candidate pending
+whole-phase review. Migration `0012` stores owner-scoped import claims and
+confirmation outcomes after source deletion. Both travel and upstream
+extraction gates default off; private intake remains unavailable in local auth
+mode. Google OAuth, upstream service identity, Cloud Run IAM, and live provider
+data-use settings are not provisioned or verified. See the [Phase 6 candidate
+release record](docs/releases/phase-6-booking-imports.md), the [identity
+checkpoint](docs/releases/phase-6-identity.md), and the [P6.2 source
+checkpoint](docs/releases/phase-6-private-sources.md).
 The upstream monotonic-deadline conversion was fixed and the local fake HTTP
 proposal flow passes under both Uvicorn `auto` (uvloop on this host) and
 `asyncio`. Proposal gates default off and require separate provider configuration. Geoapify features are optional; manual
-planning works without provider keys. Extraction, confirmed booking imports,
-the review UI, and cloud deployment remain planned.
+planning works without provider keys. Live/private booking-import use and
+cloud deployment remain gated on whole-phase review and external
+identity/provider/storage checks.
 
 The [Phase 0–4 audit](docs/reviews/phase-0-4-audit.md) records the architecture
 review, integrity/security/recovery fixes and verification. Migration `0005`
@@ -158,9 +159,10 @@ Start with:
 11. [`docs/10-codex-handoff.md`](docs/10-codex-handoff.md)
 
 Architecture decisions are under [`docs/decisions/`](docs/decisions/).
-Detailed plans for the remaining Phases 5–9 are linked from the
+Detailed plans for Phases 5–9 are linked from the
 [roadmap](docs/09-implementation-plan.md) and [documentation index](docs/README.md).
-They are planned work, not implemented capabilities.
+Phase 5 is independently reviewed; Phase 6 is a local candidate pending
+whole-phase review. Phases 7–9 remain planned work.
 The Phase 4 task plan, consumer decision, and release record are in
 [`docs/phase-4-implementation-plan.md`](docs/phase-4-implementation-plan.md),
 [`docs/decisions/0008-personal-ai-research-context.md`](docs/decisions/0008-personal-ai-research-context.md),

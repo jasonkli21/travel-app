@@ -159,10 +159,10 @@ AI suggestions remain proposals.
 
 ## Phase 6 — Booking/document import
 
-Detailed plan: [Phase 6](phase-6-implementation-plan.md). P6.0/P6.1 identity
-and P6.2 secure-source lifecycle are implemented locally, pending review; the
-phase remains incomplete. Authentication is required before private source
-access. P6.2 adds the minimum gated local source lifecycle; Phase 8 extends it.
+Detailed plan: [Phase 6](phase-6-implementation-plan.md). P6.0–P6.5 are
+implemented as a local candidate; whole-phase review remains pending and the
+travel/upstream gates default off. Authentication is required before private
+source access. Phase 8 extends this minimum gated local source lifecycle.
 
 Prerequisites:
 
@@ -170,7 +170,7 @@ Prerequisites:
 - secure blob handling if uploads exist,
 - explicit connector/provider policy.
 
-Remaining work:
+Delivered local candidate:
 
 - manual email/document import first,
 - extraction through `personal-ai-system`,
@@ -178,6 +178,10 @@ Remaining work:
 - source reference,
 - review/confirm UI,
 - idempotency/deduplication.
+
+See the [combined Phase 6 candidate release](releases/phase-6-booking-imports.md)
+for exact repository revisions, checks, and external gates. Whole-phase review
+is the Phase 6 exit gate; Phase 7 remains planned.
 
 Gmail automation remains outside the first Phase 6 slice and requires a
 separate connector/consent plan after manual import proves the workflow.

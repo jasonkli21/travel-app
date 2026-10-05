@@ -1,16 +1,16 @@
 # Data model
 
-Status: Phase 5 proposal lifecycle and P6.2 secure-source lifecycle implemented locally; whole-Phase 6 review pending, gates off
-Date: 2026-10-04
+Status: Phase 5 independently reviewed; Phase 6 extraction/review lifecycle is a local candidate pending whole-phase review; gates off
+Date: 2026-10-05
 
 The initial migration implements the core itinerary graph. Phase 1 adds
 application services and ordering constraints; Phase 2 adds manual reservations,
 trip-scoped saved-place candidates, richer place metadata, reservation links,
 and retained source attribution for provider-imported places. Phase 4 stores
 manual candidates in these existing tables; AI sessions and evidence remain
-owned by `personal-ai-system` and are not copied into this database. General
-trip/reservation attachments remain planned; P6.2 source records below support
-only the authenticated booking-source lifecycle.
+owned by `personal-ai-system` and are not copied into this database. Migrations
+`0010`–`0012` add the authenticated booking-source and durable extraction/review
+lifecycle; general trip/reservation attachments remain planned.
 
 ## Implemented scaffold tables
 
@@ -210,15 +210,17 @@ exact source-to-target confirmation. It takes a transaction lock, checks all
 constraints before commit, preserves revisions and rolls back on failure.
 There is no first-login claim path and the tool has not been run on user data.
 
-## Implemented Phase 6 private-source lifecycle — migrations `0010`–`0011`
+## Phase 6 private-source and booking-import candidate — migrations `0010`–`0012`
 
 The local source gate defaults off and requires Google OIDC plus an absolute
 private storage directory outside the application tree. Byte objects use
 random opaque keys under a mode-0700 directory, with mode-0600 regular files.
 The database stores hashes and metadata, never raw source text. Sources expire
-after seven days unless explicitly deleted sooner. Deleting a trip sets the
-source trip reference to null so cleanup retains the only metadata needed to
-remove the corresponding bytes.
+after seven days unless explicitly deleted sooner. Extracted text is submitted
+to the configured upstream only after explicit user action. The travel database
+stores validated candidate snapshots and outcome metadata, not raw source text.
+Deleting a trip sets the source trip reference to null so cleanup retains the
+metadata needed to remove the corresponding bytes.
 
 ### `source_attachments`
 
@@ -238,7 +240,11 @@ sanitized display metadata and never participate in file paths.
 id UUID PK, owner_id, trip_id FK -> trips ON DELETE CASCADE
 source_id? unique FK -> source_attachments ON DELETE SET NULL
 request_key, request_fingerprint, source_sha256, source_media_type, source_byte_size
-state: received | extracting | review_ready | applied | rejected | failed
+state: received | extracting | review_ready | applied | rejected | failed | expired
+retention_choice, extraction_key, extraction_claim_token, extraction_claimed_at
+extraction_post_attempted, upstream_delete_pending, upstream_extraction_id
+upstream_revision, upstream_result_expires_at, candidate_snapshot JSON
+confirmation_key, confirmation_fingerprint, confirmation_outcome JSON
 parser_version, review_revision, created_at, updated_at
 ```
 
@@ -251,9 +257,14 @@ key alias. Migration `0011` retains the source media type and size on the import
 and makes the source reference nullable, so confirmed future outcomes and replay
 identity can survive byte deletion. Source expiry blocks download at its
 deadline; metadata reports `expired`, and cleanup later removes bytes while
-retaining the import hash/key metadata. Extraction/candidates and reservation
-confirmation remain future stages. Cleanup uses inspected-record and elapsed
-limits, with printed cursors for paginated source-metadata and orphan-file scans.
+retaining the import hash/key metadata. Extraction uses a durable claim and
+stable key; an uncertain POST outcome is reconciled by GET on the same key,
+never a new key. Confirmation requires one explicit create/link/skip decision
+per candidate and checks both trip and import revisions under the fixed
+trip-then-import lock order. The confirmation fingerprint and saved result
+survive raw-source deletion and support replay without creating a second
+reservation. Cleanup uses inspected-record and elapsed limits, with printed
+cursors for paginated source-metadata and orphan-file scans.
 Because detached imports must retain their outcome metadata, downgrade to
 `0010` is refused once any import has a null source reference; restore a
 pre-`0011` backup to roll back that lifecycle change.

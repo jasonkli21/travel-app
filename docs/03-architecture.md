@@ -272,12 +272,16 @@ verified target identity exists; it never runs during first sign-in.
 `TRAVEL_AUTH_MODE=local` remains the default and keeps local CRUD
 unauthenticated behind configured local host/origin checks. Live Google OAuth,
 upstream user-audience alignment, and Cloud Run service IAM remain separate
-enablement gates. P6.2 adds an off-by-default, Google-session-only local source
-lifecycle with opaque files stored outside the application tree; local mode
-cannot upload or read these sources. Source bytes are not sent to the AI system.
-Typed extraction, reservation confirmation, and general attachments remain
-unimplemented. See [ADR 0011](decisions/0011-phase6-google-identity-and-ai-auth.md)
-and [ADR 0012](decisions/0012-phase6-private-source-storage.md).
+enablement gates. The local candidate adds a Google-session-only, off-by-default
+source lifecycle with opaque files outside the application tree; local mode
+cannot upload or read these sources. With explicit submission, bounded extracted
+text is sent to the separately gated `booking-document-extraction-v1` HTTP
+capability. Validated candidates remain suggestions until the owner corrects
+uncertainties and commits one atomic reservation batch. Source bytes, excerpts,
+and result retention follow explicit deletion/expiry rules. General attachments
+remain unimplemented. See [ADR 0011](decisions/0011-phase6-google-identity-and-ai-auth.md),
+[ADR 0012](decisions/0012-phase6-private-source-storage.md), and
+[ADR 0013](decisions/0013-phase6-booking-document-import.md).
 
 Local API/web host and browser-origin allowlists plus loopback bindings protect
 against unintended browser access in local mode. Local clients without Origin

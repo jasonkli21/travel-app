@@ -74,9 +74,10 @@ filenames never become file paths or response headers.
 - The ignored frontend `tsconfig.tsbuildinfo` was restored to its pre-check
   SHA-256 `8d5a79214ba4d89115df650a7a9beafaff7876271d334df75e26f3a4650ae19b`.
 
-Tests used synthetic source bytes, synthetic identity sessions, and a
-disposable local PostgreSQL database only. No Google OAuth, upstream extraction
-API, Cloud Run IAM, cloud storage, personal inbox, or real private source was
-used. No extraction, reservation confirmation, or import UI is included. The
-feature gate remains off by default, and Phase 6 remains incomplete pending its
-remaining stages and whole-phase review.
+This checkpoint used synthetic source bytes, synthetic identity sessions, and
+a disposable local PostgreSQL database only. No Google OAuth, upstream
+extraction API, Cloud Run IAM, cloud storage, personal inbox, or real private
+source was used. Extraction, reservation confirmation, and import UI were out
+of scope at this checkpoint; those later stages are now recorded in the
+[combined Phase 6 candidate release](phase-6-booking-imports.md). Whole-phase
+review remains pending and the feature gates stay off by default.
