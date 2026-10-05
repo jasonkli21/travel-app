@@ -86,3 +86,40 @@ test("reservation places can center comparisons and duplicate trip places appear
   const places = uniqueComparisonPlaces(trip, savedPlaces, reservations);
   assert.deepEqual(places.map((place) => place.id), ["hotel", "reservation-only"]);
 });
+
+test("blocked sessionStorage access preserves the in-memory retry and logout clears it", async () => {
+  const { browserComparisonStorage, clearComparisonRetries } = await import("../lib/comparison-recovery.mjs");
+  const previousWindow = globalThis.window;
+  globalThis.window = Object.defineProperty({}, "sessionStorage", {
+    get() { throw new Error("storage denied"); },
+  });
+  try {
+    assert.equal(browserComparisonStorage(), null);
+    writeComparisonRetry(browserComparisonStorage(), "blocked-storage-trip", request);
+    assert.deepEqual(readComparisonRetry(null, "blocked-storage-trip"), request);
+    clearComparisonRetries(browserComparisonStorage());
+    assert.equal(readComparisonRetry(null, "blocked-storage-trip"), null);
+  } finally {
+    if (previousWindow === undefined) delete globalThis.window;
+    else globalThis.window = previousWindow;
+  }
+});
+
+test("logout clears persisted comparison queries without deleting unrelated browser state", async () => {
+  const { clearComparisonRetries } = await import("../lib/comparison-recovery.mjs");
+  const values = new Map([
+    [comparisonRetryKey("stored-trip"), JSON.stringify(request)],
+    ["unrelated-setting", "keep"],
+  ]);
+  const storage = {
+    get length() { return values.size; },
+    key: (index) => [...values.keys()][index] ?? null,
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value),
+    removeItem: (key) => values.delete(key),
+  };
+  clearComparisonRetries(storage);
+  assert.equal(values.has(comparisonRetryKey("stored-trip")), false);
+  assert.equal(readComparisonRetry(storage, "stored-trip"), null);
+  assert.equal(values.get("unrelated-setting"), "keep");
+});

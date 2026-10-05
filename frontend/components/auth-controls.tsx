@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { browserComparisonStorage, clearComparisonRetries } from "../lib/comparison-recovery.mjs";
 
 type SessionStatus = { mode: string; authenticated: boolean; email?: string | null };
 
@@ -54,6 +55,7 @@ export default function AuthControls() {
         headers: { "X-CSRF-Token": csrf },
       });
       if (response.status === 204 || response.status === 401) {
+        clearComparisonRetries(browserComparisonStorage());
         router.replace("/sign-in?expired=1");
         return;
       }

@@ -3,6 +3,29 @@ const resultLimits = new Set([4, 6, 8, 10]);
 const listeners = new Map();
 const memorySnapshots = new Map();
 
+export function browserComparisonStorage() {
+  try {
+    return typeof window === "undefined" ? null : window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+export function clearComparisonRetries(storage) {
+  const keys = new Set(memorySnapshots.keys());
+  try {
+    for (let index = 0; index < storage.length; index += 1) {
+      const key = storage.key(index);
+      if (key?.startsWith("travel-comparison-retry:")) keys.add(key);
+    }
+  } catch {
+    // The in-memory requests can still be cleared if storage is unavailable.
+  }
+  for (const key of keys) {
+    writeComparisonRetry(storage, key.slice("travel-comparison-retry:".length), null);
+  }
+}
+
 export function comparisonRetryKey(tripId) {
   return `travel-comparison-retry:${tripId}`;
 }

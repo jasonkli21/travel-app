@@ -18,6 +18,7 @@ import { errorMessage } from "../lib/errors";
 import { safeHttpUrl } from "../lib/urls.mjs";
 import { uniqueComparisonPlaces } from "../lib/comparison-places.mjs";
 import {
+  browserComparisonStorage,
   getComparisonRetrySnapshot,
   parseComparisonRetry,
   shouldKeepComparisonRequest,
@@ -99,7 +100,7 @@ export default function TripComparisonPanel({
   const requestInFlight = useRef(false);
   const retrySnapshot = useSyncExternalStore(
     useCallback((listener) => subscribeComparisonRetry(trip.id, listener), [trip.id]),
-    useCallback(() => getComparisonRetrySnapshot(window.sessionStorage, trip.id), [trip.id]),
+    useCallback(() => getComparisonRetrySnapshot(browserComparisonStorage(), trip.id), [trip.id]),
     () => null,
   );
   const retryRequest = useMemo(() => {
@@ -119,7 +120,7 @@ export default function TripComparisonPanel({
   const [error, setError] = useState<string | null>(null);
 
   const updateRetryRequest = (request: TravelComparisonRequest | null) => {
-    writeComparisonRetry(window.sessionStorage, trip.id, request);
+    writeComparisonRetry(browserComparisonStorage(), trip.id, request);
   };
 
   const contextStale = result !== null && (

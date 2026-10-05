@@ -281,6 +281,24 @@ def test_shared_evidence_merges_different_claim_expiries_to_the_earliest() -> No
     assert candidate.sources[0].expires_at == now + timedelta(minutes=10)
 
 
+@pytest.mark.parametrize("invalid_source", ["expired", "future"])
+def test_every_supporting_observation_must_be_current(invalid_source: str) -> None:
+    now = datetime.now(UTC)
+    row, claims, observations = _row(now, shared_evidence=True)
+    additional = _observation(now, "amenity/cafe")
+    if invalid_source == "expired":
+        additional.expires_at = now - timedelta(seconds=1)
+    else:
+        additional.observed_at = now + timedelta(seconds=1)
+    claims[0].evidence_ids += (additional.evidence_id,)
+    row.cells[0].sources += (_citation(additional),)
+    result = _response(_comparison((row, claims, [*observations, additional])))
+    candidate = result.candidates[0]
+    assert not candidate.eligible
+    assert candidate.constraints[0].outcome == "unknown"
+    assert candidate.constraints[1].outcome == "pass"
+
+
 def test_category_and_radius_are_rechecked_even_when_upstream_marks_row_eligible() -> None:
     now = datetime.now(UTC)
     wrong_category = _row(now, name="Hotel", place_type="amenity/hotel")

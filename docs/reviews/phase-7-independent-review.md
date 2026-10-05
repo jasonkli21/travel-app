@@ -151,3 +151,51 @@ slice. The follow-up does not close the broader Phase 7 exit gate.
   probe was not run.
 - No live provider, Google OAuth, service-IAM, deployment, or private input was
   used. These external gates and the broader Phase 7 exit criteria remain open.
+
+
+## Independent remediation audit — 2026-10-05
+
+Audited `f1c665cb81dedd950d2e17825be7ebdd14f8dedc` against all ten original
+findings. The remediation is substantially correct. Four remaining gaps were
+closed in this audit:
+
+1. **P2 — Multi-source freshness:** `_claim_is_current` used `any`, permitting
+   a claim to pass with an expired or future-dated supporting observation when
+   another was current. Require all referenced observations to be current.
+   Added regression cases with one current and one expired/future observation;
+   the candidate remains ineligible and cannot become a saveable lead.
+2. **P2 — PostgreSQL fixture shape:** the new save fixture represented
+   registration fields as a dictionary, while the accepted contract iterates
+   field objects with `.key`. Fixed the fixture to use the contract's sequence
+   shape. All three separate-session/save tests now execute successfully.
+3. **P2 — Blocked storage:** reading `window.sessionStorage` occurred before
+   the helper's try/catch, so a browser SecurityError could crash the panel
+   instead of using its promised in-memory fallback. Added a safe storage
+   accessor and a test with a throwing browser storage getter.
+4. **P2 — Logout retention:** newly persisted comparison queries/coordinates
+   survived explicit logout in both session storage and the module cache.
+   Successful logout now clears only comparison retry entries, including the
+   memory fallback. Tests verify persisted and in-memory cleanup while retaining
+   unrelated browser state. Natural session expiry still retains the exact key
+   for deliberate same-account reconciliation after sign-in.
+
+Validation: **256 backend tests passed with zero skips** against PostgreSQL
+16.15, real migrations, and disposable schemas in a dedicated audit database;
+**49 frontend tests passed**. Ruff check/format, mypy, frontend lint/types, and
+production build passed. The initial full database run had two failures because
+its database name did not satisfy the existing synthetic identity fixture's
+`test`-name guard; rerunning in a correctly named dedicated database passed the
+entire suite. No application fix to that guard was needed.
+
+A temporary frontend route mounted the actual comparison panel in isolated
+headless Chrome with synthetic intercepted HTTP. Default native form validity,
+one request on submit, new-submission blocking after uncertainty, identical
+request/key after reload and retry, deliberate abandonment, and valid/invalid
+radius choices passed with no page errors. The route and server were removed
+and stopped after verification.
+
+The ten original local remediation findings are closed after these corrections.
+The broader Phase 7 exit remains open for provider policy/live synthetic
+verification and unsupported upstream capabilities; all capability gates remain
+default off. No cloud configuration, provider request, real private input,
+or companion-repository implementation changes were made.

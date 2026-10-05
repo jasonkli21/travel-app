@@ -722,7 +722,7 @@ def _claim_is_current(
 ) -> bool:
     if claim is None or claim.observed_at > now or claim.expires_at <= now:
         return False
-    return any(
+    return all(
         (observation := observations.get(evidence_id)) is not None
         and observation.owner_id == owner_id
         and observation.observed_at <= now

@@ -156,10 +156,10 @@ def _comparison_fixture(
         feature_policy_version="travel-features-v2",
         supported_constraints=("place_type", "location"),
         supported_entity_types=("place",),
-        fields={
-            "place_type": SimpleNamespace(value_kinds=("text",)),
-            "location": SimpleNamespace(value_kinds=("location",)),
-        },
+        fields=(
+            SimpleNamespace(key="place_type", value_kinds=("text",)),
+            SimpleNamespace(key="location", value_kinds=("location",)),
+        ),
         source_adapters=("osm_nominatim", "fake"),
     )
     upstream = SimpleNamespace(

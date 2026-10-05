@@ -61,22 +61,28 @@ accepted preference-retrieval endpoint; this consumer does not invent one.
 
 ## Local verification
 
-- Backend: Ruff check and format passed; mypy passed for all 90 source modules.
-  Focused comparison/client tests passed (50 passed); three migrated PostgreSQL
-  tests were skipped because `TEST_DATABASE_URL` is unavailable.
-- Full backend suite: 128 passed, 122 skipped, and four failed. The failures are
-  Google key-fetch tests whose local HTTP server cannot bind a socket in this
-  sandbox (`PermissionError: Operation not permitted`). PostgreSQL-dependent
-  tests, including separate-session save locking and stale-center cases, remain
-  unverified here. Docker and a PostgreSQL listener are unavailable; local
-  PostgreSQL initialization also failed because this sandbox cannot allocate
-  the shared memory segment Postgres requires.
-- Frontend: ESLint, `next typegen`, TypeScript `--noEmit`, the production build,
-  and all 47 Node tests passed. The radius input now has matching default, min,
-  max, and step values; a rendered browser `checkValidity()` run was unavailable.
+Independent audit of remediation commit `f1c665c` completed on 2026-10-05.
+The audit corrected the PostgreSQL comparison fixture, required every supporting
+observation to be current, made blocked browser storage fall back safely to
+memory, and cleared saved retry queries on explicit logout.
+
+- Full backend suite: **256 passed, zero skips**, using PostgreSQL 16.15 and
+  disposable schemas in a dedicated local audit database. Real Alembic upgrades
+  and schema parity checks ran. The separate-session stale-center/expiry tests
+  and Google-mode comparison/save authentication tests passed, as did the
+  mounted identity deadline tests with Uvicorn `auto` and `asyncio`.
+- Backend Ruff check/format and mypy passed for all 90 source modules.
+- Frontend: **49 Node tests passed**; ESLint, generated route types, TypeScript,
+  and the production build passed.
+- Installed Chrome with an isolated headless profile mounted the actual
+  comparison panel against intercepted synthetic HTTP responses: native form
+  validity, default submission issuing one request, blocked fresh submission
+  after an unknown outcome, exact same-key/payload retry after reload, explicit
+  abandonment, and valid/invalid radius choices passed. No page errors occurred.
+  The temporary fixture was removed after verification.
 - No database migration was needed. No live provider, OAuth, service-IAM,
   deployment, or private input was used. Provider policy verification and the
-  full Phase 7 exit gate remain open.
+  broader Phase 7 exit gate remain open.
 
 The initial independent review findings and their code/test disposition are
 recorded in [`../reviews/phase-7-independent-review.md`](../reviews/phase-7-independent-review.md).
