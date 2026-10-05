@@ -1,12 +1,13 @@
 # Codex handoff
 
 Status: Phases 1–5 delivered and independently reviewed locally; Phase 6 is a
-combined local candidate; whole-Phase 6 review remains pending
+local candidate with remediation and local checks complete; coordinator final
+verification remains pending
 Date: 2026-10-05
 
 The identity and P6.2 checkpoints record their stage evidence. The combined
-Phase 6 candidate release records extraction, atomic confirmation, review UI,
-checks, and external gates. Review Phase 6 as a whole, then stop before Phase 7.
+Phase 6 release and whole-review report record remediation, checks, and
+external gates. Complete coordinator verification, then stop before Phase 7.
 
 ## Objective
 
@@ -33,7 +34,7 @@ Phase 5 proposal generation is implemented and reviewed locally, with gates
 default off.
 
 The [comprehensive Phase 0–4 audit](reviews/phase-0-4-audit.md) documents current
-fixes and verification. Migration `0012` is the current head; `0005` still
+fixes and verification. Migration `0013` is the current head; `0005` still
 requires online legacy-data inspection/repair and a pre-upgrade backup before
 upgrading an existing database. See local development and ADR 0009 before
 changing concurrency or local HTTP boundaries.
@@ -42,9 +43,10 @@ changing concurrency or local HTTP boundaries.
 
 Independent Phase 5 review is closed. P6.0–P6.5, including the upstream
 extraction candidate, atomic confirmation, and accessible review UI, are
-implemented as a local candidate. Review the whole phase before starting Phase
-7. Exact revisions, checks and external gates are recorded in the
-[combined Phase 6 candidate release](releases/phase-6-booking-imports.md), with
+implemented as a local candidate. The fresh remediation pass has completed;
+the coordinator must independently verify the whole phase before starting
+Phase 7. Exact revisions, checks and external gates are recorded in the
+[combined Phase 6 release](releases/phase-6-booking-imports.md), with
 the identity and P6.2 checkpoints kept as historical stage evidence. The
 upstream uvloop clock-domain issue was fixed in
 `personal-ai-system` revision `6045f004fbdc4887c2bb67da9ae19a571314fc27` and
@@ -70,7 +72,8 @@ Phase 6's P6.0/P6.1 identity stage establishes verified identity before private
 imports, with explicit local-owner migration. P6.2 implements the off-by-default
 local source/blob lifecycle. P6.3–P6.5 implement typed extraction, recoverable
 candidate review, atomic confirmation, and the accessible review UI. The
-complete local candidate is pending whole-phase review; read
+complete local candidate has passed its remediation checks; coordinator final
+whole-phase verification remains pending. Read
 [`releases/phase-6-booking-imports.md`](releases/phase-6-booking-imports.md)
 and stop before Phase 7.
 Phase 7 requires category/evidence/rights contracts and consented preference
@@ -144,7 +147,7 @@ Backend:
   Cloud Run service IAM transport credential.
 - migration `0009` identity/session/login-attempt/migration-audit tables and
   explicit backed-up local-owner graph migration tooling.
-- migrations `0010`–`0012` verified identity and owner-scoped source/import
+- migrations `0010`–`0013` verified identity and owner-scoped source/import
   records, durable extraction/confirmation recovery, and replay records after
   source deletion.
 - owner-scoped trip/day research with bounded day context and safe errors.
@@ -347,8 +350,8 @@ the delivered Phase 3 slice.
 
 ## Phase 6 handoff
 
-P6.0–P6.5 are implemented as a local candidate, pending whole-phase review.
-Read the [candidate release](releases/phase-6-booking-imports.md),
+P6.0–P6.5 remediation and local verification are complete; coordinator final
+verification remains pending. Read the [release evidence](releases/phase-6-booking-imports.md),
 [identity](releases/phase-6-identity.md), and
 [P6.2 source](releases/phase-6-private-sources.md) records. Private-import and
 upstream extraction gates remain off by default; local mode is denied. Synthetic

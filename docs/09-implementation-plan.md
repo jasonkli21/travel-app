@@ -1,6 +1,6 @@
 # Phased implementation plan
 
-Status: active roadmap; Phases 1–5 delivered and reviewed locally; Phase 6 next
+Status: active roadmap; Phases 1–5 delivered and reviewed locally; Phase 6 remediation verified locally and awaiting coordinator closeout
 Date: 2026-10-03
 
 Each phase should produce a useful, testable vertical slice.
@@ -160,8 +160,9 @@ AI suggestions remain proposals.
 ## Phase 6 — Booking/document import
 
 Detailed plan: [Phase 6](phase-6-implementation-plan.md). P6.0–P6.5 are
-implemented as a local candidate; whole-phase review remains pending and the
-travel/upstream gates default off. Authentication is required before private
+implemented as a local candidate with remediation and local checks complete;
+coordinator whole-phase verification remains pending and the travel/upstream
+gates default off. Authentication is required before private
 source access. Phase 8 extends this minimum gated local source lifecycle.
 
 Prerequisites:
@@ -179,9 +180,10 @@ Delivered local candidate:
 - review/confirm UI,
 - idempotency/deduplication.
 
-See the [combined Phase 6 candidate release](releases/phase-6-booking-imports.md)
-for exact repository revisions, checks, and external gates. Whole-phase review
-is the Phase 6 exit gate; Phase 7 remains planned.
+See the [combined Phase 6 release](releases/phase-6-booking-imports.md) and
+[whole-review disposition](reviews/phase-6-whole-review.md) for exact
+repository revisions, checks, and external gates. Coordinator verification is
+the Phase 6 exit gate; Phase 7 remains planned.
 
 Gmail automation remains outside the first Phase 6 slice and requires a
 separate connector/consent plan after manual import proves the workflow.

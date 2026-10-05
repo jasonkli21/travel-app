@@ -22,13 +22,14 @@ gates remain off by default. The accepted upstream revision and exact local
 checks are in [the Phase 5 release record](docs/releases/phase-5-local-proposals.md).
 Phase 5 independent local review is closed. Phase 6 identity, authenticated
 private-source storage, bounded booking extraction, atomic reservation review,
-and the responsive import UI are implemented as a local candidate pending
-whole-phase review. Migration `0012` stores owner-scoped import claims and
-confirmation outcomes after source deletion. Both travel and upstream
-extraction gates default off; private intake remains unavailable in local auth
-mode. Google OAuth, upstream service identity, Cloud Run IAM, and live provider
-data-use settings are not provisioned or verified. See the [Phase 6 candidate
-release record](docs/releases/phase-6-booking-imports.md), the [identity
+and the responsive import UI are implemented as a local candidate. The
+whole-phase remediation and local verification are complete; coordinator final
+verification is pending. Migration `0013` stores distinct source and extracted
+text hashes, stable-key recovery metadata, and durable upstream deletion intents
+that survive trip deletion. Both travel and upstream extraction gates default
+off; private intake remains unavailable in local auth mode. Google OAuth,
+upstream service identity, Cloud Run IAM, and live provider data-use settings
+are not provisioned or verified. See the [Phase 6 release record](docs/releases/phase-6-booking-imports.md), the [identity
 checkpoint](docs/releases/phase-6-identity.md), and the [P6.2 source
 checkpoint](docs/releases/phase-6-private-sources.md).
 The upstream monotonic-deadline conversion was fixed and the local fake HTTP
@@ -161,8 +162,8 @@ Start with:
 Architecture decisions are under [`docs/decisions/`](docs/decisions/).
 Detailed plans for Phases 5–9 are linked from the
 [roadmap](docs/09-implementation-plan.md) and [documentation index](docs/README.md).
-Phase 5 is independently reviewed; Phase 6 is a local candidate pending
-whole-phase review. Phases 7–9 remain planned work.
+Phase 5 is independently reviewed; Phase 6 remains a local candidate pending
+coordinator final verification. Phases 7–9 remain planned work.
 The Phase 4 task plan, consumer decision, and release record are in
 [`docs/phase-4-implementation-plan.md`](docs/phase-4-implementation-plan.md),
 [`docs/decisions/0008-personal-ai-research-context.md`](docs/decisions/0008-personal-ai-research-context.md),

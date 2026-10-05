@@ -23,7 +23,8 @@ Phases 1–5 are delivered and independently reviewed locally. Proposal gates
 remain off by default; live provider and deployment readiness are separate
 gates. The Phase 6 identity decision, secure-source lifecycle, booking
 extraction, reservation review/confirmation, and review UI are implemented as
-a local candidate pending whole-phase review. Private source ingress and
+a local candidate. Whole-phase remediation and local verification are complete;
+coordinator final verification remains pending. Private source ingress and
 extraction default off and remain unavailable in local auth mode. Google OAuth
 and Cloud Run IAM remain unprovisioned external gates. Phase 5 closure is recorded in
 [`docs/releases/phase-5-local-proposals.md`](docs/releases/phase-5-local-proposals.md);
@@ -58,7 +59,7 @@ Current delivered capabilities include:
 - Phase 0–4 audit remediation: migration `0005` repairs legacy moved-item dates,
   SQL order/coordinate integrity, local host/origin guards, bounded external
   deadlines, database readiness and migrated disposable-schema test fixtures.
-- Phase 6: migrations `0010`–`0012` add verified identity and owner-scoped
+- Phase 6: migrations `0010`–`0013` add verified identity and owner-scoped
   source/import records. Authenticated streamed text/PDF intake, opaque local
   storage, bounded parsing, safe download/deletion, typed extraction, durable
   recovery, atomic reviewed reservation confirmation, and the review UI are
@@ -76,8 +77,9 @@ opaque sessions, OAuth attempts, and migration audit. Google mode derives each
 domain owner from the server-verified Google issuer and subject; explicit local
 mode remains available and unauthenticated. No domain route trusts browser
 owner headers. Local-to-verified-owner migration is explicit, backed up, and
-never triggered by first login. The Phase 6 extraction, confirmation, and
-review UI are local candidates pending whole-phase review. Live private input,
+never triggered by first login. Phase 6 extraction, confirmation, and review
+UI have passed local remediation checks; coordinator final verification is
+pending. Live private input,
 cloud deployment, and general attachments remain gated or planned.
 
 ## Architectural invariants
@@ -146,6 +148,6 @@ CI must execute them without skips. Migration `0005` requires online inspection
 and a backup before legacy data repair.
 Detailed plans for Phases 5–9 are under
 `docs/phase-5-implementation-plan.md` through `docs/phase-9-implementation-plan.md`.
-Phase 5 is reviewed, Phase 6 is implemented as a review candidate, and Phases
-7–9 remain planned. Start later feature work from its contract/dependency
+Phase 5 is reviewed, Phase 6 is implemented as a review candidate pending
+coordinator verification, and Phases 7–9 remain planned. Start later feature work from its contract/dependency
 gates; documentation alone does not authorize cloud deployment.

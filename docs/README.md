@@ -35,4 +35,4 @@
 | `releases/phase-5-groundwork.md` | P5.0–P5.2 groundwork, verification, and remaining gates |
 | `releases/phase-6-identity.md` | P6.0/P6.1 verified-identity checkpoint |
 | `releases/phase-6-private-sources.md` | P6.2 secure-source implementation and verification checkpoint |
-| `releases/phase-6-booking-imports.md` | Combined Phase 6 candidate scope, repository pins, verification, and external gates |
+| `releases/phase-6-booking-imports.md` | Phase 6 remediation commits, local verification, and external gates |

@@ -1,6 +1,6 @@
 # Data model
 
-Status: Phase 5 independently reviewed; Phase 6 extraction/review lifecycle is a local candidate pending whole-phase review; gates off
+Status: Phase 5 independently reviewed; Phase 6 local remediation is verified and coordinator final verification is pending; gates off
 Date: 2026-10-05
 
 The initial migration implements the core itinerary graph. Phase 1 adds
@@ -9,7 +9,7 @@ trip-scoped saved-place candidates, richer place metadata, reservation links,
 and retained source attribution for provider-imported places. Phase 4 stores
 manual candidates in these existing tables; AI sessions and evidence remain
 owned by `personal-ai-system` and are not copied into this database. Migrations
-`0010`–`0012` add the authenticated booking-source and durable extraction/review
+`0010`–`0013` add the authenticated booking-source and durable extraction/review
 lifecycle; general trip/reservation attachments remain planned.
 
 ## Implemented scaffold tables
@@ -210,7 +210,7 @@ exact source-to-target confirmation. It takes a transaction lock, checks all
 constraints before commit, preserves revisions and rolls back on failure.
 There is no first-login claim path and the tool has not been run on user data.
 
-## Phase 6 private-source and booking-import candidate — migrations `0010`–`0012`
+## Phase 6 private-source and booking-import candidate — migrations `0010`–`0013`
 
 The local source gate defaults off and requires Google OIDC plus an absolute
 private storage directory outside the application tree. Byte objects use
@@ -259,12 +259,20 @@ identity can survive byte deletion. Source expiry blocks download at its
 deadline; metadata reports `expired`, and cleanup later removes bytes while
 retaining the import hash/key metadata. Extraction uses a durable claim and
 stable key; an uncertain POST outcome is reconciled by GET on the same key,
-never a new key. Confirmation requires one explicit create/link/skip decision
-per candidate and checks both trip and import revisions under the fixed
-trip-then-import lock order. The confirmation fingerprint and saved result
-survive raw-source deletion and support replay without creating a second
-reservation. Cleanup uses inspected-record and elapsed limits, with printed
-cursors for paginated source-metadata and orphan-file scans.
+never a new key. The upstream request hash covers extracted UTF-8 text; the
+source attachment keeps its original byte hash. Migration `0013` records the
+extracted-text hash and key creation time. A minimal
+`booking_deletion_intents` row preserves only owner, extraction key, and
+source hash so rejected results can be deleted independently of original-file
+retention and trip cascades cannot lose cleanup identity. Authorized
+owner-scoped retries are bounded by count and elapsed time. Confirmation
+requires one explicit create/link/skip decision and a traveler-selected
+tentative/confirmed status for each created reservation; it checks trip and
+import revisions under the fixed trip-then-import lock order. The confirmation
+fingerprint and saved result survive raw-source deletion and support replay
+without creating a second reservation. Cleanup uses inspected-record and
+elapsed limits, with printed cursors for paginated source-metadata and
+orphan-file scans.
 Because detached imports must retain their outcome metadata, downgrade to
 `0010` is refused once any import has a null source reference; restore a
 pre-`0011` backup to roll back that lifecycle change.

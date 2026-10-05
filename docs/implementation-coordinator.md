@@ -1,6 +1,6 @@
 # Sequential implementation coordinator
 
-Updated: 2026-10-04 (America/Los_Angeles)
+Updated: 2026-10-05 (America/Los_Angeles)
 
 ## User mandate
 
@@ -394,3 +394,80 @@ retention), then deliver typed extraction, atomic reviewed reservation
 confirmation, and accessible frontend/security checks. Review the whole Phase 6
 result at the end. No Gmail, cloud deployment, real private input, or Phase 7
 work is authorized.
+
+## Combined remaining Phase 6 implementation loop
+
+Latest user instruction: complete the active P6.2 remediation, then assess and
+implement **all remaining Phase 6 together**, with a fresh Luna Extra High
+agent. Only after that whole implementation finishes does the coordinator
+review Phase 6, delegate substantive fixes to another fresh Luna Extra High
+agent, verify/lightly repair/commit, and stop before Phase 7. No per-sub-stage
+reviews or extra feature loops. This supersedes the prior stage-by-stage plan.
+
+P6.2 remediation commit `cf6696b` is complete with 205 migrated PostgreSQL
+backend tests/zero skips, Ruff/format/mypy, frontend 36 tests/lint/types/build.
+It will be included in the final whole-phase review. Storage source deletion
+preserves import replay metadata, new-key same-hash uploads conflict instead
+of accepting an unbound alias, and cleanup uses explicit stable cursors.
+
+Remaining combined scope:
+1. In sibling personal-ai-system, implement a separate default-off versioned
+   booking-document extraction HTTP capability with verified owner boundary,
+   bounded data-only inference through existing LLM/context abstractions,
+   durable owner/key/fingerprint/state/detail replay/fencing, validated source
+   spans and at most ten uncertain candidates, explicit ephemeral raw-input
+   and bounded result retention/delete rules. No memory/search/tools/link fetch.
+   Implement persisted and fake repository adapters, tests, contract/ADR/docs.
+   Record the candidate revision; acceptance awaits final whole-phase review.
+2. Travel: typed client/contract pin and capability/privacy gates; durable
+   extract claims, correlation, immutable validated review result, expiry and
+   same-key outcome reconciliation. No SQL lock spans parse/network waits.
+3. Travel: atomic selected corrected-batch confirmation through reservation
+   rules, trip/import revisions, endpoint timezone conversion and explicit
+   unknown resolution, same-trip places/items, advisory cross-document match
+   choices, durable source-candidate outcomes, confirmation replay/fingerprint,
+   rejection and explicit retention/deletion. Source loss never loses outcomes.
+4. Travel: authenticated upload/paste and accessible editable review UI, source
+   spans and original/trip-local schedules, skipped/duplicate choices, consent,
+   source download/delete, durable reopen/list and recovery after uncertain
+   extract/confirm or saved-but-refresh-failed responses. Inert content only.
+5. Synthetic integration/concurrency/security/parser/proxy and mounted UI
+   tests, package/lint/type/build checks, precise release/handoff docs. Update
+   stale identity/status text consistently. Default gates off; live Google,
+   service IAM, model data-use/provider quality and Linux/container parser
+   verification remain explicit external gates. No cloud/private inbox input.
+
+Logical commits should isolate upstream contract/capability, travel lifecycle
+schema/client, confirmation/recovery, UI, and release evidence as appropriate.
+No Phase 7, Gmail, general attachment/export or cloud deployment work.
+
+## Phase 6 whole-review remediation handoff — 2026-10-05
+
+The resumed whole-phase remediation pass is committed and locally verified.
+The upstream contract/service fix was committed first as
+`ebd00a8e2fb2d8b59a5fb5fa3aa44268e5e79b63`; travel pins that exact revision.
+The travel lifecycle, confirmation, UI, and regression fixes are in
+`320201b485d35644a727a529910398e8e0d693be`. The full finding-by-finding
+disposition is in `docs/reviews/phase-6-whole-review.md`, and verification
+evidence and limitations are in `docs/releases/phase-6-booking-imports.md`.
+
+Travel verification after the final upstream pin: PostgreSQL/API suite
+230 passed with no skips; Ruff check passed and format check reported 114
+formatted files; mypy passed 87 source files. Frontend lint, typecheck, and
+production build passed, with 42 Node tests passing. The mounted synthetic
+production Next proxy/API/Postgres/upstream flow covered plaintext and an
+actual generated PDF file with synthetic content through extraction, review,
+confirmation, replay and source deletion. Upstream verification on the exact pin: 561 backend tests
+passed, 12 skipped; Ruff check and formatter checks passed for all eight
+changed Python files. Its deadline regression deliberately shifts the loop
+clock and verifies monotonic-to-relative timeout conversion.
+The mounted run preceded that final timeout-adapter correction; it was not
+rerun after this clock-only change.
+
+The pre-existing tracked upstream `frontend/tsconfig.tsbuildinfo` modification
+was preserved at SHA-256
+`32aacb3de552bd4178722b010bc2270233802a02d2719f6fa8aa52e783a251b2` and was
+not staged. No real private input, Google OAuth, Cloud Run IAM, Gemini,
+Firestore TTL, Linux parser enforcement, or cloud storage was used. Travel and
+upstream extraction/provider gates remain off. Coordinator final verification
+is the remaining Phase 6 action; stop before Phase 7.

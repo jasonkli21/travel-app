@@ -1,99 +1,112 @@
-# Phase 6 — booking document import candidate
+# Phase 6 — booking document import local candidate
 
-**Status:** implementation complete as a local candidate; whole-Phase 6 review pending
+**Status:** remediation and local verification complete; coordinator final verification pending
 **Date:** 2026-10-05
-**Travel implementation:** `d596b1aa1847bf74e0e317eddb9b7fdc52f793fd`
-**Upstream capability:** `ece8cfc3db044aab3b275709c12e71eb17f2520d`
-**Starting revisions:** travel `cf6696b`; upstream `96cf73b`
+**Travel remediation commit:** `320201b485d35644a727a529910398e8e0d693be`
+**Upstream remediation commit:** `ebd00a8e2fb2d8b59a5fb5fa3aa44268e5e79b63`
+**Starting revisions:** travel `c036a5b`; upstream `ece8cfc`
 
-Phase 6 now spans verified owner identity and local source lifecycle, a separate
-bounded extraction contract, durable candidate review, atomic reservation
-confirmation, and the responsive review panel. The travel client pins the exact
-upstream candidate revision above and records it on each extraction and saved
-confirmation. Both repositories keep their extraction gates off by default.
-This release record is evidence for whole-phase review; it does not accept the
-contract for real private-input use or establish hosted readiness.
+Phase 6 covers verified owner identity and local source lifecycle, bounded
+booking extraction, durable candidate review and recovery, atomic reservation
+confirmation, and the accessible review panel. Travel pins the upstream commit
+above and records it with extraction and confirmation outcomes. The local
+remediation pass is complete, but coordinator final verification remains
+pending. Travel and upstream feature gates remain off by default; this record
+does not authorize real private-input use or establish hosted readiness.
 
-## Delivered behavior
+## Remediated behavior
 
 The upstream `booking-document-extraction-v1` endpoint derives ownership from
-its authenticated principal and requires explicit submit consent, a matching
-source hash, a stable UUID idempotency key, and at most 200,000 characters of
-UTF-8 text. Its special authenticated request limit is 1,300,000 bytes. It
-returns at most ten strict typed candidates with literal, server-validated
-source spans and excerpts no longer than 240 characters. Document content is
-data only: the capability does not access memory, search, tools, travel state,
-URLs, or fetched links. Raw text is request/service memory only. The durable
-store retains results for seven days, supports same-key replay and detail
-recovery, and uses deletion tombstones to fence delayed POSTs. Fake generation
-requires an explicit synthetic-fixture marker.
+its verified principal and requires explicit submit consent, a matching hash,
+a stable UUID idempotency key, and at most 200,000 characters of UTF-8 text.
+The authenticated route caps the body at 1,300,000 bytes and applies one
+monotonic deadline across body receipt, claim, inference, and terminal
+persistence. Real Gemini inference requires Google OIDC even in local app
+mode. Fake generation is restricted to local/test with an explicit synthetic
+fixture marker. Results enforce typed uncertainty, literal field evidence,
+unique candidate IDs and source spans, safe terminal states, and expiry within
+seven days. Raw text remains in request/service memory only; same-key replay,
+detail recovery, and deletion tombstones preserve one owner-scoped identity.
 
-Travel migration `0012` adds durable extraction claims, the pinned upstream
-revision, result expiry, confirmation key/fingerprint, and replay outcome.
-Extraction POSTs run outside SQL locks; an uncertain result is recovered with
-GET on the same key. Candidate snapshots are validated against the submitted
-source hash and literal source spans. A source-content duplicate under another
-request key returns 409 with instructions to use the original key; no alias is
-created. Source deletion goes through the existing source lifecycle and
-upstream delete-by-key path, with a durable retry flag if upstream cleanup is
-unavailable.
+Travel migration `0013` separates the original file digest from the extracted
+text digest used by the upstream contract. Recovery preserves the same key
+across a pre-dispatch interruption, reconciles unknown results by GET, and
+terminates conclusive pre-acceptance client errors. Confirm, reject, source
+delete, and cleanup calls carry the verified user and service context on the
+allowlisted routes. Minimal owner/key/hash deletion intents survive rejection
+regardless of original-source retention and survive trip deletion; the
+owner-scoped retry endpoint bounds work by count and elapsed time. Local-to-
+verified-owner migration refuses before any transfer when private source,
+import, or deletion-intent records exist.
 
-The panel supports text paste and PDF upload, explicit boundary/retention
-disclosure, source downloads/deletion, editable candidates, uncertainty and
-timezone context, advisory duplicate choices, and saved-state recovery. The
-owner must choose create, link, or skip for every candidate. Confirmation checks
-trip and import revisions, uses a fixed trip-then-import lock order, applies the
-entire selected batch through existing reservation rules in one transaction,
-and stores candidate-specific outcomes. New reservations are tentative. A
-replay with the same key/fingerprint returns the prior outcome. Raw source and
-candidate excerpts are deleted by default after confirmation or rejection;
-saved reservation outcomes remain.
+The review result provides an empty `duplicate_suggestions` list when there
+are no candidates. Candidate values carry bounded evidence, strict uncertainty,
+and schedule-pair checks. Corrected fields, including explicit null clears,
+drive trip-local schedule projection while original evidence remains intact.
+Created reservations require a traveler-selected tentative or confirmed
+status, included in the confirmation fingerprint. Duplicate itinerary-item
+assignments are rejected before batch writes. Confirmation stays atomic under
+the trip-then-import lock order, and the booking confirmation logic now lives
+in a focused service module.
 
-## Verification performed
+The panel pins uncertain uploads but lets the user discard/reset after a
+definitive client rejection. It blocks incomplete confirmation, requires
+explicit uncertainty acknowledgement, normalizes travel reservation types,
+and preserves recovery when a saved outcome cannot be refreshed immediately.
+Panel and proxy regressions cover those flows.
 
-- Travel PostgreSQL/API suite: **218 passed**, 26 dependency deprecation
-  warnings. The suite uses migrated disposable schemas and includes owner,
-  idempotency, deletion/recovery, timezone/DST, rollback, and concurrent/replayed
-  confirmation cases.
-- Travel Ruff check and format check: **111 source/test files passed**.
-- Travel mypy: **84 source files passed**.
-- Frontend ESLint and TypeScript checks passed; **36 frontend tests passed**.
-- Next production build passed with
-  `NEXT_PUBLIC_PRIVATE_IMPORTS_ENABLED=true` for the candidate review build.
-- The extended `frontend/scripts/mounted-identity-smoke.mjs` passed through the
-  production Next proxy, synthetic verified-identity fixture, real travel API,
-  migrated PostgreSQL schema, and local upstream fake adapter. It completed
-  sign-in, upload, extraction, source-aware review, reservation creation,
-  same-key confirmation replay, source/result deletion, and trip cleanup.
-- Upstream suite: **553 passed, 12 skipped**, with one Starlette deprecation
-  warning. Ruff check passed and all **12 changed Python files** pass the
-  formatter check.
-- `git diff --check` passed in both repositories.
+## Verification
 
-The upstream full-repository formatter check still reports 78 unrelated,
-pre-existing unformatted files; every changed upstream Python file is formatted.
-The upstream virtual environment does not include mypy, so no upstream mypy
-result is claimed. The frontend build regenerated the travel repository's
-ignored `tsconfig.tsbuildinfo` cache; its pre-run bytes were not recorded, so it
-was left as a disposable ignored cache. The pre-existing tracked modification
-to `personal-ai-system/frontend/tsconfig.tsbuildinfo` was preserved and not
-staged or changed.
+- Travel migrated PostgreSQL/API suite: **230 passed**, no skips, 39 warnings.
+- Travel Ruff check: all source and test files passed; Ruff format check:
+  **114 files already formatted**; mypy: **87 source files passed**.
+- Frontend ESLint and TypeScript checks passed; Node tests: **42 passed**;
+  the Next production build passed with
+  `NEXT_PUBLIC_PRIVATE_IMPORTS_ENABLED=true`.
+- Mounted synthetic flow passed through the production Next standalone
+  server, authenticated proxy, Travel API, migrated PostgreSQL, and local
+  upstream fake API. It exercised synthetic plaintext and an actual generated
+  PDF file with synthetic content, review, confirmation and replay, source
+  deletion, typed CRUD, CSRF rejection, logout, and private-page protection.
+- The mounted run preceded the final upstream timeout-adapter correction.
+  That final correction converts the same monotonic budget to the event-loop
+  relative timeout; the shifted-loop regression and complete upstream suite
+  were rerun on the final pin. The mounted PDF/text flow itself was not rerun
+  after that timeout-only adjustment.
+- Upstream backend suite: **561 passed, 12 skipped**, one Starlette warning.
+  Ruff check and formatter check passed for all eight changed Python files.
+- The upstream deadline regression deliberately offsets the event-loop clock
+  while verifying that the service converts its shared monotonic deadline to a
+  relative asyncio timeout. The earlier identity checkpoint records HTTP
+  timing checks under Uvicorn `auto` and `asyncio`.
+- `git diff --check` passed in both repositories before the documentation
+  checkpoint commit.
 
-## Gates and remaining evidence
+The mounted document data was synthetic; no personal email or private booking
+input was used. The PostgreSQL server was an existing local PostgreSQL 16 test
+instance. The mounted fake API verifies local contract wiring and SQL effects,
+not a live provider or cloud identity boundary.
 
-Travel private intake and extraction, the upstream extraction capability and
-provider call all default off. Private intake is unavailable in local auth
-mode. No live Google OAuth, Cloud Run service IAM, production user/service
-identity, model provider, cloud project, or real private document was used.
-Provider data-use/retention approval, Firestore TTL configuration, deployed
-identity and service-audience alignment, Linux parser memory enforcement, and
-cloud storage/deployment checks remain unverified. The synthetic mounted flow
-proves local contract wiring and travel SQL effects only; it does not establish
-live or private-input readiness.
+The upstream full-repository formatter check has 78 unrelated pre-existing
+unformatted files; every changed upstream Python file is formatted. The
+upstream environment does not include mypy, so no upstream mypy result is
+claimed. The pre-existing tracked upstream `frontend/tsconfig.tsbuildinfo`
+modification was preserved byte-for-byte at SHA-256
+`32aacb3de552bd4178722b010bc2270233802a02d2719f6fa8aa52e783a251b2` and was
+not staged.
+
+## Gates still open
+
+Travel intake and extraction, upstream extraction, and provider calls remain
+disabled by default. No live Google OAuth, Cloud Run IAM, production user or
+service identity, Gemini request, cloud project, or real private document was
+used. Provider data-use/retention approval, Firestore TTL configuration,
+deployed service-audience alignment, Linux parser memory enforcement, and
+cloud storage/deployment checks remain unverified. No Phase 7 work was started.
 
 Read [ADR 0013](../decisions/0013-phase6-booking-document-import.md), the
 [implementation plan](../phase-6-implementation-plan.md), the
 [upstream contract](../../../personal-ai-system/docs/booking-document-extraction-contract.md),
 and the historical [identity](phase-6-identity.md) and
-[source-lifecycle](phase-6-private-sources.md) checkpoints. The next step is
-independent whole-Phase 6 review; stop before Phase 7.
+[source-lifecycle](phase-6-private-sources.md) checkpoints. The next action is
+coordinator verification of the whole-phase review findings; stop before Phase 7.

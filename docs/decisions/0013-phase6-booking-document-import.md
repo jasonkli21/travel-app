@@ -1,6 +1,6 @@
 # ADR 0013 — Versioned booking-document extraction and explicit confirmation
 
-- **Status:** local implementation candidate; whole-Phase 6 review pending
+- **Status:** local implementation candidate; coordinator final verification pending
 - **Date:** 2026-10-05
 - **Scope:** P6.3–P6.5 travel integration
 
@@ -16,7 +16,7 @@ not directly mutate travel state.
 
 Use a separate `booking-document-extraction-v1` HTTP capability with a typed
 travel client. The travel client pins upstream source commit
-`ece8cfc3db044aab3b275709c12e71eb17f2520d`. A verified travel owner submits
+`ebd00a8e2fb2d8b59a5fb5fa3aa44268e5e79b63`. A verified travel owner submits
 bounded extracted text only after an explicit action. The upstream receives a
 source hash and stable idempotency key, treats the text as data, and returns at
 most ten validated candidates with literal source spans and explicit
@@ -25,16 +25,22 @@ following, or URL fetching. The travel database retains the pinned upstream
 revision with the import and saved confirmation outcome.
 
 Travel keeps durable upload/extraction claims outside SQL-bound network waits.
-An uncertain POST is reconciled with GET on its original key; it never invents
-a replacement key. Owner, trip, source hash, and import identity are checked
-before saving candidates. Source deletion uses the existing source lifecycle
-service and sends delete-by-key so a tombstone can fence a delayed POST.
+The original source-byte digest remains distinct from the extracted UTF-8 text
+digest required by the upstream contract. An uncertain POST is reconciled with
+GET on its original key; a pre-dispatch interruption can safely retry the same
+key, and no replacement key is invented. Owner, trip, both digests, and import
+identity are checked before saving candidates. Source deletion uses the
+existing source lifecycle service and sends delete-by-key so a tombstone can
+fence a delayed POST. Migration `0013` keeps minimal owner/key/hash deletion
+intents across trip deletion and rejected-result cleanup, independently of the
+original-file retention choice.
 
 The owner reviews source excerpts, uncertainty, dates, timezone context and
 advisory duplicate matches. Confirmation requires an explicit create/link/skip
 choice for every candidate, checks expected trip/import revisions, and commits
 the selected batch under the existing reservation rules in one transaction.
-New reservations are tentative. Replays return the saved candidate-specific
+The traveler chooses tentative or confirmed for each new reservation; this
+status is included in the confirmation fingerprint. Replays return the saved candidate-specific
 outcomes without creating another reservation. Source retention defaults to
 delete after confirmation or rejection; raw bytes, excerpts and upstream
 results have explicit deletion/expiry behavior, while the confirmation outcome
@@ -42,9 +48,9 @@ survives source cleanup.
 
 Travel intake/extraction and upstream extraction/provider gates default off.
 The local fake generator is restricted to explicit synthetic test fixtures.
-The whole-Phase 6 review and external identity, provider data-use, service IAM,
-Firestore TTL, and deployment checks remain prerequisites to sensitive
-production use.
+The coordinator's final whole-Phase 6 verification and external identity,
+provider data-use, service IAM, Firestore TTL, and deployment checks remain
+prerequisites to sensitive production use.
 
 ## Consequences
 
