@@ -24,9 +24,11 @@ Phase 5 independent local review is closed. The Phase 6 identity foundation
 and P6.2 secure-source lifecycle are implemented locally, pending review. P6.2
 adds authenticated, owner-scoped text/PDF intake, private opaque local storage,
 source metadata/download/deletion, and bounded cleanup. Its feature gate is
-off by default; local mode cannot access it. Google OAuth, upstream AI identity
-alignment, and Cloud Run service IAM are not provisioned or live-verified. No
-extraction, reservation confirmation, or import UI is implemented yet, so
+off by default; local mode cannot access it. Migration `0011` retains durable
+import replay metadata after source bytes are removed. Google OAuth, upstream AI
+identity alignment, and Cloud Run service IAM are not provisioned or
+live-verified.
+Extraction, reservation confirmation, and import UI remain unimplemented, so
 Phase 6 remains incomplete. See the [Phase 6 identity checkpoint](docs/releases/phase-6-identity.md)
 and [P6.2 source checkpoint](docs/releases/phase-6-private-sources.md).
 The upstream monotonic-deadline conversion was fixed and the local fake HTTP

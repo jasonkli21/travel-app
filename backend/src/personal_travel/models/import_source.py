@@ -53,12 +53,14 @@ class BookingImport(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     trip_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("trips.id", ondelete="CASCADE"), nullable=False
     )
-    source_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("source_attachments.id", ondelete="RESTRICT"), nullable=False
+    source_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("source_attachments.id", ondelete="SET NULL"), nullable=True
     )
     request_key: Mapped[str] = mapped_column(String(128), nullable=False)
     request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     source_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_media_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_byte_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
     state: Mapped[str] = mapped_column(String(16), nullable=False, default="received")
     parser_version: Mapped[str] = mapped_column(String(32), nullable=False, default="source-v1")
     review_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -68,6 +70,11 @@ class BookingImport(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         UniqueConstraint("source_id", name="uq_import_source"),
         CheckConstraint("length(request_fingerprint) = 64", name="request_fingerprint_length"),
         CheckConstraint("length(source_sha256) = 64", name="source_hash_length"),
+        CheckConstraint(
+            "(source_media_type = 'text/plain' AND source_byte_size <= 1048576) "
+            "OR (source_media_type = 'application/pdf' AND source_byte_size <= 10485760)",
+            name="source_media_size",
+        ),
         CheckConstraint("review_revision >= 0", name="import_review_revision_nonnegative"),
         CheckConstraint(
             "state IN ('received','extracting','review_ready','applied','rejected','failed')",

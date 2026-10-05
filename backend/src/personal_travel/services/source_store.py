@@ -133,15 +133,24 @@ class LocalSourceStore:
             return True
 
     def entry_stats(self) -> Iterator[tuple[str, os.stat_result]]:
-        """Iterate entries without following links, for the bounded cleanup sweep."""
+        """Iterate sorted entries without following links for operator pagination."""
+        for name in self.entry_names():
+            try:
+                info = os.stat(name, dir_fd=self.dirfd, follow_symlinks=False)
+            except FileNotFoundError:
+                continue
+            yield name, info
+
+    def entry_names(self) -> list[str]:
+        """Return stable lexical names so bounded passes can carry a file cursor."""
         with os.scandir(self.dirfd) as entries:
-            for entry in entries:
-                name = entry.name
-                try:
-                    info = os.stat(name, dir_fd=self.dirfd, follow_symlinks=False)
-                except FileNotFoundError:
-                    continue
-                yield name, info
+            return sorted(entry.name for entry in entries)
+
+    def entry_stat(self, name: str) -> os.stat_result | None:
+        try:
+            return os.stat(name, dir_fd=self.dirfd, follow_symlinks=False)
+        except FileNotFoundError:
+            return None
 
     def delete(self, key: str, *, temp: bool = False) -> None:
         name = self.validate_key(key) + (".tmp" if temp else "")

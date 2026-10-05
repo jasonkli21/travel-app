@@ -1,16 +1,13 @@
 # Codex handoff
 
 Status: Phases 1–5 delivered and independently reviewed locally; P6.0/P6.1
-identity and P6.2 secure-source lifecycle implemented locally, review pending;
-P6.3–P6.5 remain planned
+identity and P6.2 secure-source lifecycle implemented locally; P6.2 review
+findings repaired; whole-Phase 6 review remains pending; P6.3–P6.5 remain planned
 Date: 2026-10-04
 
-The six identity review findings have a local remediation change set awaiting
-independent coordinator re-review. See the identity release checkpoint for the
-185-test PostgreSQL result, mounted synthetic sign-in/typed CRUD/logout and
-Uvicorn `auto`/`asyncio` deadline checks, frontend checks and exact remaining
-external gates. Complete the rest of
-Phase 6 after the identity review gate, then stop before Phase 7 as requested.
+The identity and P6.2 checkpoints record their local implementation evidence and
+external gates. Continue the remaining Phase 6 implementation in one combined
+work stage, then review Phase 6 as a whole and stop before Phase 7 as requested.
 
 ## Objective
 
@@ -33,10 +30,10 @@ local-owner migration. P6.2 adds a default-off, authenticated local source
 lifecycle. Live OAuth/service IAM remains unconfigured. Extraction,
 confirmation, import UI, and cloud deployment remain deferred.
 Phase 5 proposal generation is implemented and reviewed locally, with gates
-default off.
+default off. P6.2 remediation introduces no extraction, confirmation, or import UI.
 
 The [comprehensive Phase 0–4 audit](reviews/phase-0-4-audit.md) documents current
-fixes and verification. Migration `0010` is the current head; `0005` still
+fixes and verification. Migration `0011` is the current head; `0005` still
 requires online legacy-data inspection/repair and a pre-upgrade backup before
 upgrading an existing database. See local development and ADR 0009 before
 changing concurrency or local HTTP boundaries.
@@ -44,8 +41,9 @@ changing concurrency or local HTTP boundaries.
 ## Next implementation work
 
 Independent Phase 5 review is closed. The Phase 6 identity and P6.2
-source-lifecycle implementation are in review; accepted extraction, booking
-confirmation and review UI remain later work. Their scope and release evidence
+source-lifecycle implementation are local; P6.2 review findings are repaired,
+with whole-Phase 6 review pending. Accepted extraction, booking confirmation
+and review UI remain later work. Their scope and release evidence
 are recorded in the [identity checkpoint](releases/phase-6-identity.md), the
 [P6.2 checkpoint](releases/phase-6-private-sources.md), and the coordinator
 file. The upstream uvloop clock-domain issue was fixed in
@@ -143,8 +141,8 @@ Backend:
   Cloud Run service IAM transport credential.
 - migration `0009` identity/session/login-attempt/migration-audit tables and
   explicit backed-up local-owner graph migration tooling.
-- migration `0010` owner-scoped booking-import and private-source metadata,
-  with opaque local files handled by the P6.2 lifecycle.
+- migrations `0010`–`0011` owner-scoped booking-import/private-source metadata
+  and durable import replay records after source deletion.
 - owner-scoped trip/day research with bounded day context and safe errors.
 - Streamed JSON/SSE byte bounds and whole-operation deadlines; synchronous
   SQL projections run in worker threads and release locks before provider work.

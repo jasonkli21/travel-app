@@ -9,6 +9,7 @@ import resource
 import socket
 import sys
 import time
+from collections.abc import Callable
 from multiprocessing.connection import Connection
 from pathlib import Path
 from typing import Final
@@ -161,13 +162,18 @@ def _worker(path: str, connection: Connection) -> None:
         connection.close()
 
 
-def parse_pdf(path: Path, *, wall_time_seconds: float = PARSER_SECONDS) -> str:
+def parse_pdf(
+    path: Path,
+    *,
+    wall_time_seconds: float = PARSER_SECONDS,
+    worker: Callable[[str, Connection], None] | None = None,
+) -> str:
     """Extract text, killing the child if its wall clock or process limits fail."""
     if wall_time_seconds <= 0 or wall_time_seconds > PARSER_SECONDS:
         raise ValueError("The parser deadline must be between zero and eight seconds.")
     context = mp.get_context("spawn")
     parent, child = context.Pipe(duplex=False)
-    process = context.Process(target=_worker, args=(str(path), child))
+    process = context.Process(target=worker or _worker, args=(str(path), child))
     started = time.monotonic()
     child_closed = False
     try:

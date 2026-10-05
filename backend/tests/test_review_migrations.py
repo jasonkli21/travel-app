@@ -68,7 +68,7 @@ def test_invalid_dst_repair_aborts_and_can_be_recovered(database_engine: Engine)
         seed_moved_item(connection, date="2026-03-08", time="2026-03-07T07:30:00Z")
         command.upgrade(config, "head")
     with database_engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0010"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0011"
         assert connection.scalar(text("SELECT count(*) FROM itinerary_items")) == 0
 
 
@@ -78,6 +78,61 @@ def test_clean_full_migration_round_trip(database_engine: Engine) -> None:
         command.downgrade(config, "base")
         command.upgrade(config, "head")
         command.check(config)
+
+
+def test_source_lifecycle_downgrade_preserves_detached_import_outcomes(
+    database_engine: Engine,
+) -> None:
+    trip_id, source_id, import_id = [str(uuid4()) for _ in range(3)]
+    with database_engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO trips (id,owner_id,title,start_date,end_date,timezone) "
+                "VALUES (:id,'local','Source lifecycle','2026-10-04','2026-10-04','UTC')"
+            ),
+            {"id": trip_id},
+        )
+        connection.execute(
+            text(
+                "INSERT INTO source_attachments "
+                "(id,owner_id,trip_id,object_key,sha256,media_type,byte_size,state,expires_at) "
+                "VALUES (:id,'local',:trip,:key,:hash,'text/plain',1,'ready',"
+                "now() + interval '1 day')"
+            ),
+            {"id": source_id, "trip": trip_id, "key": "a" * 32, "hash": "1" * 64},
+        )
+        connection.execute(
+            text(
+                "INSERT INTO booking_imports "
+                "(id,owner_id,trip_id,source_id,request_key,request_fingerprint,source_sha256,"
+                "source_media_type,source_byte_size,state,parser_version,review_revision) "
+                "VALUES (:id,'local',:trip,:source,'request_001',:fingerprint,:hash,"
+                "'text/plain',1,'received','source-v1',0)"
+            ),
+            {
+                "id": import_id,
+                "trip": trip_id,
+                "source": source_id,
+                "fingerprint": "2" * 64,
+                "hash": "1" * 64,
+            },
+        )
+        connection.execute(text("DELETE FROM source_attachments WHERE id=:id"), {"id": source_id})
+        config = config_for(connection)
+        with pytest.raises(RuntimeError, match="imports are detached from deleted sources"):
+            command.downgrade(config, "0010")
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0011"
+        row = connection.execute(
+            text(
+                "SELECT source_id,request_key,source_sha256,source_media_type,source_byte_size "
+                "FROM booking_imports WHERE id=:id"
+            ),
+            {"id": import_id},
+        ).one()
+        assert row.source_id is None
+        assert row.request_key == "request_001"
+        assert row.source_sha256 == "1" * 64
+        assert row.source_media_type == "text/plain" and row.source_byte_size == 1
 
 
 def test_revision_migration_initializes_populated_legacy_rows(database_engine: Engine) -> None:

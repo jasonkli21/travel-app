@@ -1,6 +1,6 @@
 # Data model
 
-Status: Phase 5 proposal lifecycle and P6.2 secure-source lifecycle implemented locally; review pending, gates off
+Status: Phase 5 proposal lifecycle and P6.2 secure-source lifecycle implemented locally; whole-Phase 6 review pending, gates off
 Date: 2026-10-04
 
 The initial migration implements the core itinerary graph. Phase 1 adds
@@ -210,7 +210,7 @@ exact source-to-target confirmation. It takes a transaction lock, checks all
 constraints before commit, preserves revisions and rolls back on failure.
 There is no first-login claim path and the tool has not been run on user data.
 
-## Implemented Phase 6 private-source lifecycle — migration `0010`
+## Implemented Phase 6 private-source lifecycle — migrations `0010`–`0011`
 
 The local source gate defaults off and requires Google OIDC plus an absolute
 private storage directory outside the application tree. Byte objects use
@@ -236,17 +236,27 @@ sanitized display metadata and never participate in file paths.
 
 ```text
 id UUID PK, owner_id, trip_id FK -> trips ON DELETE CASCADE
-source_id unique FK -> source_attachments ON DELETE RESTRICT
-request_key, request_fingerprint, source_sha256
+source_id? unique FK -> source_attachments ON DELETE SET NULL
+request_key, request_fingerprint, source_sha256, source_media_type, source_byte_size
 state: received | extracting | review_ready | applied | rejected | failed
 parser_version, review_revision, created_at, updated_at
 ```
 
-Owner/trip/request-key and owner/trip/source-hash uniqueness make retries
-idempotent. Same-key content changes conflict; identical content in one trip
-returns its existing import. Extraction/candidates and reservation confirmation
-remain future stages. Cleanup is bounded and rerunnable; it never removes an
-object still referenced by another owner's metadata.
+Owner/trip/request-key and owner/trip/source-hash SQL uniqueness arbitrate
+concurrent retries. Reusing a request key with changed content conflicts. A
+same-key retry replays its durable import metadata even after source bytes are
+deleted. A new key for a hash already bound to another import receives a 409
+and must retry with the original key; it does not silently create an unrecorded
+key alias. Migration `0011` retains the source media type and size on the import
+and makes the source reference nullable, so confirmed future outcomes and replay
+identity can survive byte deletion. Source expiry blocks download at its
+deadline; metadata reports `expired`, and cleanup later removes bytes while
+retaining the import hash/key metadata. Extraction/candidates and reservation
+confirmation remain future stages. Cleanup uses inspected-record and elapsed
+limits, with printed cursors for paginated source-metadata and orphan-file scans.
+Because detached imports must retain their outcome metadata, downgrade to
+`0010` is refused once any import has a null source reference; restore a
+pre-`0011` backup to roll back that lifecycle change.
 
 ## Planned general attachments, not implemented
 

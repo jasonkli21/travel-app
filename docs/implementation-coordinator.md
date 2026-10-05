@@ -378,18 +378,19 @@ backend only. Real HTTP header/body trickles, blocked auth flush rollback, and
 Uvicorn auto/asyncio callback tests pass. Network DNS/connect limitations are
 explicit in the release record. No live Google or Cloud Run provisioning.
 
-Next P6.2 scope: ADR for opaque local storage and isolated bounded PDF parser;
-SQL import/source metadata with trip-deletion tombstones; authenticated gated
-bounded raw text/PDF upload, scoped metadata/source reads and deletion;
-request-key/source-hash dedupe, durable received record, compensating promotion
-and idempotent reconciliation/retention cleanup. Ordinary JSON stays 64KiB.
-Gate remains default off, unavailable in local auth mode; tests synthetic.
-Commit logical schema/storage, parser/upload lifecycle, and tests/docs slices.
-No extraction or confirmation in this stage. Then independently review.
+P6.2's source review findings are repaired in the current checkpoint. Its
+default-off local lifecycle now has durable import replay after byte deletion,
+expiry enforcement, explicit request-key recovery, conditional transitions,
+worker-owned SQL, fair bounded cleanup cursors, and bounded frontend source
+downloads. Local PostgreSQL and frontend verification is recorded in the source
+release checkpoint. Continue with the remaining Phase 6 features in one
+combined implementation loop; review the whole phase at the end. Keep the
+private source gate off and stop before Phase 7.
 
-After P6.2: implement/review the missing upstream versioned private booking
-extraction contract (bounded input/output, isolated data-only inference,
-owner-key durable replay/detail/delete and explicit retention), accept/pin it,
-then implement P6.3–P6.4 typed extraction and atomic reviewed reservation
-confirmation, followed by P6.5 accessible frontend/security release checks.
-No Gmail, cloud deployment, real private input or Phase 7 work is authorized.
+The combined remaining Phase 6 implementation must first define and accept the
+versioned private-booking extraction contract (bounded input/output, isolated
+data-only inference, owner-key durable replay/detail/delete, and explicit
+retention), then deliver typed extraction, atomic reviewed reservation
+confirmation, and accessible frontend/security checks. Review the whole Phase 6
+result at the end. No Gmail, cloud deployment, real private input, or Phase 7
+work is authorized.

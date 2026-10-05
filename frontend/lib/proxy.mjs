@@ -2,6 +2,7 @@ import { readProxyBody } from "./proxy-response.mjs";
 
 const MAX_REQUEST_BYTES = 64 * 1024;
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const MAX_SOURCE_RESPONSE_BYTES = 10 * 1024 * 1024;
 const SESSION_COOKIE = "__Host-travel_session";
 const CSRF_COOKIE = "__Host-travel_csrf";
 const OAUTH_FLOW_COOKIE = "__Host-travel_oauth_flow";
@@ -102,6 +103,66 @@ function streamedUpload(request, maxBytes, abortController, onTooLarge) {
   });
 }
 
+function streamedSourceResponse(response, abortController, timeout, onFinish) {
+  const reader = response.body?.getReader();
+  if (!reader) {
+    onFinish();
+    return null;
+  }
+  let total = 0;
+  let finished = false;
+  let abortReason = null;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    clearTimeout(timeout);
+    abortController.signal.removeEventListener("abort", onAbort);
+    try { reader.releaseLock(); } catch { /* best effort after cancellation */ }
+    onFinish();
+  };
+  const cancelReader = async (reason) => {
+    try { await reader.cancel(reason); } catch { /* already closed or aborted */ }
+    finish();
+  };
+  const onAbort = () => {
+    abortReason = abortController.signal.reason ?? new DOMException("Source stream aborted.", "AbortError");
+    void cancelReader(abortReason);
+  };
+  abortController.signal.addEventListener("abort", onAbort, { once: true });
+  return new ReadableStream({
+    async pull(streamController) {
+      try {
+        const { value, done } = await reader.read();
+        if (abortController.signal.aborted) {
+          finish();
+          streamController.error(abortReason ?? new DOMException("Source stream aborted.", "AbortError"));
+          return;
+        }
+        if (done) {
+          finish();
+          streamController.close();
+          return;
+        }
+        total += value.byteLength;
+        if (total > MAX_SOURCE_RESPONSE_BYTES) {
+          abortController.abort("source response exceeds byte limit");
+          await cancelReader("source response exceeds byte limit");
+          streamController.error(new RangeError("source_response_too_large"));
+          return;
+        }
+        streamController.enqueue(value);
+      } catch (error) {
+        finish();
+        streamController.error(error);
+      }
+    },
+    async cancel(reason) {
+      abortController.abort(reason);
+      await cancelReader(reason);
+    },
+  });
+}
+
 async function readRequestBody(request) {
   const reader = request.body?.getReader();
   if (!reader) return undefined;
@@ -134,6 +195,7 @@ export async function proxyRequest(request, path, {
   backendBaseUrl = "http://localhost:8000",
   allowedHosts = ["localhost", "127.0.0.1", "[::1]"],
   fetchImpl = fetch,
+  sourceResponseTimeoutMs = 30_000,
 } = {}) {
   const url = new URL(request.url);
   const origin = request.headers.get("origin");
@@ -162,6 +224,9 @@ export async function proxyRequest(request, path, {
   }
   const headers = new Headers();
   const upload = isImportUpload(path, request.method.toUpperCase());
+  const isSource = request.method === "GET" && path.length === 5 && path[0] === "trips"
+    && /^[0-9a-fA-F-]{36}$/.test(path[1]) && path[2] === "imports"
+    && /^[0-9a-fA-F-]{36}$/.test(path[3]) && path[4] === "source";
   const contentType = request.headers.get("content-type");
   if (contentType) headers.set("content-type", contentType);
   if (upload) {
@@ -200,10 +265,14 @@ export async function proxyRequest(request, path, {
   const controller = new AbortController();
   let uploadTooLarge = false;
   let uploadTimedOut = false;
+  let sourceTimedOut = false;
+  let sourceStreamOwnsTimeout = false;
+  const timeoutMs = upload ? 30_000 : isSource ? sourceResponseTimeoutMs : 60_000;
   const timeout = setTimeout(() => {
     if (upload) uploadTimedOut = true;
+    if (isSource) sourceTimedOut = true;
     controller.abort();
-  }, upload ? 30_000 : 60_000);
+  }, timeoutMs);
   try {
     const response = await fetchImpl(
       `${backendBaseUrl.trim().replace(/\/+$/, "")}/v1/${path.join("/")}${url.search}`,
@@ -232,14 +301,26 @@ export async function proxyRequest(request, path, {
       if (value) responseHeaders.set(name, value);
     }
     for (const cookie of safeSetCookies(response)) responseHeaders.append("set-cookie", cookie);
-    const isSource = request.method === "GET" && path.length === 5 && path[0] === "trips"
-      && /^[0-9a-fA-F-]{36}$/.test(path[1]) && path[2] === "imports"
-      && /^[0-9a-fA-F-]{36}$/.test(path[3]) && path[4] === "source";
     if (isSource) {
       for (const name of ["content-disposition", "x-content-type-options"]) {
         const value = response.headers.get(name);
         if (value) responseHeaders.set(name, value);
       }
+      const declaredSize = response.headers.get("content-length");
+      if (declaredSize && /^\d+$/.test(declaredSize)
+          && Number(declaredSize) > MAX_SOURCE_RESPONSE_BYTES) {
+        controller.abort("source response exceeds byte limit");
+        try { await response.body?.cancel("source response exceeds byte limit"); } catch { /* closed */ }
+        return errorResponse(502, "source_response_too_large", "The source response exceeds its size limit.");
+      }
+      const body = streamedSourceResponse(response, controller, timeout, () => {
+        sourceStreamOwnsTimeout = false;
+      });
+      sourceStreamOwnsTimeout = body !== null;
+      return new Response(body, {
+        status: response.status,
+        headers: responseHeaders,
+      });
     }
     return new Response(isSource ? response.body : await readProxyBody(response), {
       status: response.status,
@@ -252,9 +333,14 @@ export async function proxyRequest(request, path, {
     if (uploadTimedOut) {
       return errorResponse(408, "upload_timeout", "The upload took too long.");
     }
+    if (sourceTimedOut) {
+      return errorResponse(408, "source_download_timeout", "The source download took too long.");
+    }
     if (error instanceof RangeError) {
       return errorResponse(413, "request_too_large", "The request body exceeds 64 KiB.");
     }
     return errorResponse(503, "travel_api_unavailable", "The travel API is unavailable. Try again.");
-  } finally { clearTimeout(timeout); }
+  } finally {
+    if (!sourceStreamOwnsTimeout) clearTimeout(timeout);
+  }
 }

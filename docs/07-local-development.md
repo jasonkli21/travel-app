@@ -1,6 +1,6 @@
 # Local development
 
-Status: Phases 1–5 plus review-pending Phase 6 identity and P6.2 source lifecycle
+Status: Phases 1–5 plus locally implemented Phase 6 identity and P6.2 source lifecycle; whole-Phase 6 review pending
 Date: 2026-10-04
 
 ## Prerequisites
@@ -293,7 +293,22 @@ uv run --locked alembic upgrade head
 Then run `uv run --locked alembic check` to verify ORM/migration parity.
 Migration `0005` requires an online connection; offline SQL can be generated
 through `0004`, but is not a complete upgrade to head. Migration `0010` adds
-private source/import metadata and is the current head.
+private source/import metadata; migration `0011` retains import replay metadata
+after source deletion and is the current head.
+
+The private-source cleanup command is bounded to 1–1000 inspected records and
+0.1–60 seconds per pass (defaults: 100 records and 5 seconds). When a cursor is
+printed, pass it to the next invocation to continue through healthy source rows
+and orphan files instead of rescanning only the first page:
+
+```bash
+cd backend
+uv run --locked python -m personal_travel.services.source_cleanup --limit 100 --seconds 5
+# Continue with --after-source-id <printed UUID> and/or --after-entry <printed filename>.
+```
+
+Configure the local private source directory and database as for the API. Use
+synthetic source files only; the intake gate remains off by default.
 
 ## Backup and migration recovery
 

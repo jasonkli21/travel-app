@@ -1,7 +1,7 @@
 # Phase 6 implementation plan — authenticated booking and document import
 
 **Status:** P6.0/P6.1 identity and P6.2 secure-source lifecycle implemented
-locally (review pending); extraction, confirmation, and UI remain planned
+locally; whole-Phase 6 review pending; extraction, confirmation, and UI remain planned
 **Date:** 2026-10-03
 **Baseline:** reviewed Phase 0–4 commit `56c0cbf`; Phase 5 version/replay slice required
 **Roadmap:** [phased implementation plan](09-implementation-plan.md)
@@ -117,12 +117,14 @@ Do not cascade-delete the last blob reference. Final metadata removal follows
 confirmed byte deletion; imported source links may cascade with their import.
 
 Use SQL uniqueness for owner/trip/request key and confirmed import outcome.
-Identical keys with different input/confirmation content conflict. The same
-source hash within a trip returns the existing import/review instead of making
-duplicates; allow explicit new-source correction only through a documented
-workflow. A document may contain multiple candidates: confirmation applies one
-selected batch, records skipped candidates, and terminates that import. Later
-additions require explicit new review, not replay of already applied candidates.
+Identical keys with different input/confirmation content conflict. A same-key
+retry for a known source hash recovers the existing import/review instead of
+making duplicates. A new key for a hash already bound to an import receives a
+conflict and must recover with the original key; explicit corrections require
+a documented workflow. A document may contain multiple candidates:
+confirmation applies one selected batch, records skipped candidates, and
+terminates that import. Later additions require explicit new review, not replay
+of already applied candidates.
 
 Cross-document booking duplicates are advisory matches using normalized
 provider/reference/schedule. Confirmation offers “link existing” or explicitly

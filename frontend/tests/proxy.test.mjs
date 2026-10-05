@@ -258,3 +258,66 @@ test("private source download preserves binary bytes and inert response headers"
   assert.equal(response.headers.get("content-disposition"), "attachment; filename=source");
   assert.equal(response.headers.get("x-content-type-options"), "nosniff");
 });
+
+test("private source download bounds bytes and cancels an oversized upstream stream", async () => {
+  let upstreamCancelled = false;
+  let upstreamSignal;
+  const request = new Request("http://localhost:3000/api/v1/trips/source");
+  const response = await proxyRequest(request, [
+    "trips", "00000000-0000-4000-8000-000000000001", "imports",
+    "00000000-0000-4000-8000-000000000002", "source",
+  ], {
+    fetchImpl: async (_url, options) => {
+      upstreamSignal = options.signal;
+      return new Response(new ReadableStream({
+        pull(controller) {
+          controller.enqueue(new Uint8Array(10 * 1024 * 1024 + 1));
+        },
+        cancel() { upstreamCancelled = true; },
+      }));
+    },
+  });
+  const reader = response.body.getReader();
+  await assert.rejects(reader.read(), /source_response_too_large/);
+  assert.equal(upstreamSignal.aborted, true);
+  assert.equal(upstreamCancelled, true);
+});
+
+test("private source download deadline covers stream consumption", async () => {
+  let upstreamCancelled = false;
+  const request = new Request("http://localhost:3000/api/v1/trips/source");
+  const response = await proxyRequest(request, [
+    "trips", "00000000-0000-4000-8000-000000000001", "imports",
+    "00000000-0000-4000-8000-000000000002", "source",
+  ], {
+    sourceResponseTimeoutMs: 20,
+    fetchImpl: async () => new Response(new ReadableStream({
+      pull() { return new Promise(() => {}); },
+      cancel() { upstreamCancelled = true; },
+    })),
+  });
+  const reader = response.body.getReader();
+  await assert.rejects(reader.read());
+  assert.equal(upstreamCancelled, true);
+});
+
+test("downstream cancellation aborts the private source download", async () => {
+  let upstreamCancelled = false;
+  let upstreamSignal;
+  const request = new Request("http://localhost:3000/api/v1/trips/source");
+  const response = await proxyRequest(request, [
+    "trips", "00000000-0000-4000-8000-000000000001", "imports",
+    "00000000-0000-4000-8000-000000000002", "source",
+  ], {
+    fetchImpl: async (_url, options) => {
+      upstreamSignal = options.signal;
+      return new Response(new ReadableStream({
+        pull() { return new Promise(() => {}); },
+        cancel() { upstreamCancelled = true; },
+      }));
+    },
+  });
+  await response.body.cancel("downstream disconnected");
+  assert.equal(upstreamSignal.aborted, true);
+  assert.equal(upstreamCancelled, true);
+});

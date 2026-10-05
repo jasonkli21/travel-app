@@ -1,6 +1,6 @@
 # ADR 0012 — P6.2 local private-source storage and ingress
 
-**Status:** accepted for the local P6.2 implementation; independent review pending
+**Status:** accepted for the local P6.2 implementation; whole-Phase 6 review pending
 **Date:** 2026-10-04
 **Scope:** private source intake, storage, authorized access, and cleanup only
 
@@ -51,23 +51,34 @@ URL, and the proxy streams only the exact import upload and source-download
 routes.
 
 Each upload has an owner/trip request key and source SHA-256. Reusing a request
-key with different content conflicts; a same-trip identical source hash
-returns the existing import. The SQL import row is committed in `received`
-state with a pending source before atomic blob promotion. A second short SQL
-commit marks the source ready. Failed promotion is compensated where possible;
-bounded cleanup repairs a valid pending promotion or deletes incomplete
-metadata/bytes. Parsing and provider work do not run under SQL locks.
+key with different content conflicts. A same-trip hash submitted under a new
+key returns 409 with instructions to retry using the original key; SQL uniqueness
+arbitrates concurrent retries, and no unpersisted key alias is accepted. A
+same-key retry replays its import metadata even after source deletion. The SQL
+import row is committed in `received` state with a pending source before atomic
+blob promotion. A second short SQL transaction conditionally marks the source
+ready only if it remains pending and unexpired. A post-promotion SQL failure
+leaves a recoverable pending row and bytes; bounded cleanup can promote a
+verified object or remove incomplete/expired bytes while preserving the import.
+Parsing, filesystem work, and provider work do not run under SQL locks. Synchronous
+SQL and filesystem work initiated by async upload handling runs in worker
+threads, each lifecycle call owning and closing its own short-lived Session.
 
 An import belongs to its trip and cascades when that trip is deleted. The
-source's nullable trip foreign key uses `ON DELETE SET NULL`; its metadata
-remains as a deletion tombstone until cleanup confirms byte deletion. Sources
-expire after seven days. Authorized downloads verify the stored hash and return
-an attachment with `nosniff` and `no-store`. Explicit deletion marks the source
-deleting before removing bytes; cleanup finalizes metadata. Missing or corrupt
-bytes fail closed and never appear ready. Operator cleanup is bounded,
-rerunnable, and checks every owner's metadata before deleting an orphan, so an
-owner-scoped pass or another owner's active object cannot be removed by an
-unrelated cleanup.
+source's nullable trip foreign key uses `ON DELETE SET NULL`. Migration `0011`
+also makes the import's source foreign key nullable with `ON DELETE SET NULL`,
+and retains source hash, media type, size, request key, and request fingerprint
+on the import after source bytes and metadata are deleted. Sources expire after
+seven days; metadata reports `expired`, while byte downloads return 410 at the
+expiry deadline even before cleanup runs. Authorized downloads verify the
+stored hash and return an attachment with `nosniff` and `no-store`. Explicit
+deletion marks the source deleting before removing bytes; cleanup finalizes
+source metadata but does not erase import replay/outcome data. Conditional state
+transitions serialize promotion and deletion without holding SQL locks during
+file operations. Missing or corrupt bytes fail closed and never appear ready.
+Operator cleanup caps inspected records and elapsed time, prints stable cursors
+for all source metadata and sorted orphan-file scans, and checks every owner's
+metadata before deleting an orphan.
 
 Request logs contain only request IDs, methods, route templates, status,
 duration, and exception types. They never contain source bytes, parsed text,
@@ -84,4 +95,6 @@ raw document content into application logs.
   confirm bookings, or add a review UI. Those are later Phase 6 stages and
   require their own accepted extraction/retention contract.
 - Parser and lifecycle tests use synthetic inputs and a disposable local
-  PostgreSQL database only.
+  PostgreSQL database only. The memory-limit test page-touches allocations in
+  an isolated child process on macOS and observes the production RSS watchdog;
+  Linux process-limit behavior was not run in this verification.
