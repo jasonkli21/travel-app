@@ -198,3 +198,14 @@ tests pass 561 with 12 skips; frontend tests pass 42. Both upstream and travel
 feature/provider gates remain off. This remediation has not configured Google
 OAuth, Cloud Run IAM, Gemini, Firestore TTL, Linux parser enforcement, cloud
 storage, or any real private input.
+
+## Coordinator final verification and acceptance
+
+2026-10-05: re-reviewed the remediation and accepted upstream code revision
+`ebd00a8e2fb2d8b59a5fb5fa3aa44268e5e79b63` for the local Phase 6 integration.
+Final residual fix: source cleanup now enqueues remote-deletion intents before
+removing the source reference, with an idempotent expiry regression. Final
+coordinator checks: 231 PostgreSQL tests/zero skips, Ruff check/format (129
+files), mypy (87 files), 42 frontend tests, upstream 561 tests/12 opt-in skips.
+Local whole-phase review is closed. External gates stay closed. Stop before
+Phase 7; no later implementation was performed.

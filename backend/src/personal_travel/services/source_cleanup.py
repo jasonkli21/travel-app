@@ -19,6 +19,7 @@ from personal_travel.config import get_settings
 from personal_travel.db.session import SessionFactory
 from personal_travel.models.import_source import BookingImport, SourceAttachment
 from personal_travel.models.trip import Trip
+from personal_travel.services.private_deletion import enqueue_in_session
 from personal_travel.services.source_store import KEY, LocalSourceStore
 
 SessionFactoryLike = Callable[[], Session]
@@ -268,6 +269,12 @@ def _claim_ready_for_deletion(
             item.source_id = None
             item.candidate_snapshot = None
             if item.extraction_key is not None and item.extraction_post_attempted:
+                enqueue_in_session(
+                    session,
+                    owner_id=item.owner_id,
+                    extraction_key=item.extraction_key,
+                    source_sha256=item.extraction_text_sha256 or item.source_sha256,
+                )
                 item.upstream_delete_pending = True
             item.extraction_claim_token = None
             item.extraction_claimed_at = None
@@ -306,6 +313,12 @@ def _finish_deletion(
             item.source_id = None
             item.candidate_snapshot = None
             if item.extraction_key is not None and item.extraction_post_attempted:
+                enqueue_in_session(
+                    session,
+                    owner_id=item.owner_id,
+                    extraction_key=item.extraction_key,
+                    source_sha256=item.extraction_text_sha256 or item.source_sha256,
+                )
                 item.upstream_delete_pending = True
             item.extraction_claim_token = None
             item.extraction_claimed_at = None

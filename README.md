@@ -22,9 +22,8 @@ gates remain off by default. The accepted upstream revision and exact local
 checks are in [the Phase 5 release record](docs/releases/phase-5-local-proposals.md).
 Phase 5 independent local review is closed. Phase 6 identity, authenticated
 private-source storage, bounded booking extraction, atomic reservation review,
-and the responsive import UI are implemented as a local candidate. The
-whole-phase remediation and local verification are complete; coordinator final
-verification is pending. Migration `0013` stores distinct source and extracted
+and the responsive import UI are implemented and independently reviewed locally. The whole-phase review and
+coordinator verification are closed. Migration `0013` stores distinct source and extracted
 text hashes, stable-key recovery metadata, and durable upstream deletion intents
 that survive trip deletion. Both travel and upstream extraction gates default
 off; private intake remains unavailable in local auth mode. Google OAuth,
@@ -162,8 +161,8 @@ Start with:
 Architecture decisions are under [`docs/decisions/`](docs/decisions/).
 Detailed plans for Phases 5–9 are linked from the
 [roadmap](docs/09-implementation-plan.md) and [documentation index](docs/README.md).
-Phase 5 is independently reviewed; Phase 6 remains a local candidate pending
-coordinator final verification. Phases 7–9 remain planned work.
+Phase 5 and Phase 6 are independently reviewed locally. External enablement
+gates remain closed. Phases 7–9 remain planned work.
 The Phase 4 task plan, consumer decision, and release record are in
 [`docs/phase-4-implementation-plan.md`](docs/phase-4-implementation-plan.md),
 [`docs/decisions/0008-personal-ai-research-context.md`](docs/decisions/0008-personal-ai-research-context.md),

@@ -1,13 +1,12 @@
 # Codex handoff
 
 Status: Phases 1–5 delivered and independently reviewed locally; Phase 6 is a
-local candidate with remediation and local checks complete; coordinator final
-verification remains pending
+locally reviewed implementation with coordinator verification closed
 Date: 2026-10-05
 
 The identity and P6.2 checkpoints record their stage evidence. The combined
 Phase 6 release and whole-review report record remediation, checks, and
-external gates. Complete coordinator verification, then stop before Phase 7.
+external gates. Coordinator verification is closed. Stop before Phase 7; no further phase work is authorized.
 
 ## Objective
 
@@ -43,9 +42,8 @@ changing concurrency or local HTTP boundaries.
 
 Independent Phase 5 review is closed. P6.0–P6.5, including the upstream
 extraction candidate, atomic confirmation, and accessible review UI, are
-implemented as a local candidate. The fresh remediation pass has completed;
-the coordinator must independently verify the whole phase before starting
-Phase 7. Exact revisions, checks and external gates are recorded in the
+implemented and independently reviewed locally. Coordinator verification is
+closed; stop before Phase 7 unless the user explicitly resumes later work. Exact revisions, checks and external gates are recorded in the
 [combined Phase 6 release](releases/phase-6-booking-imports.md), with
 the identity and P6.2 checkpoints kept as historical stage evidence. The
 upstream uvloop clock-domain issue was fixed in
@@ -72,8 +70,8 @@ Phase 6's P6.0/P6.1 identity stage establishes verified identity before private
 imports, with explicit local-owner migration. P6.2 implements the off-by-default
 local source/blob lifecycle. P6.3–P6.5 implement typed extraction, recoverable
 candidate review, atomic confirmation, and the accessible review UI. The
-complete local candidate has passed its remediation checks; coordinator final
-whole-phase verification remains pending. Read
+local implementation has passed remediation and independent coordinator
+verification. Read
 [`releases/phase-6-booking-imports.md`](releases/phase-6-booking-imports.md)
 and stop before Phase 7.
 Phase 7 requires category/evidence/rights contracts and consented preference
@@ -350,8 +348,7 @@ the delivered Phase 3 slice.
 
 ## Phase 6 handoff
 
-P6.0–P6.5 remediation and local verification are complete; coordinator final
-verification remains pending. Read the [release evidence](releases/phase-6-booking-imports.md),
+P6.0–P6.5 are implemented, independently reviewed, and verified locally. Read the [release evidence](releases/phase-6-booking-imports.md),
 [identity](releases/phase-6-identity.md), and
 [P6.2 source](releases/phase-6-private-sources.md) records. Private-import and
 upstream extraction gates remain off by default; local mode is denied. Synthetic

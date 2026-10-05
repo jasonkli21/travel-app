@@ -1,6 +1,6 @@
-# Phase 6 — booking document import local candidate
+# Phase 6 — locally reviewed booking document import
 
-**Status:** remediation and local verification complete; coordinator final verification pending
+**Status:** implemented and independently reviewed locally; external gates remain closed
 **Date:** 2026-10-05
 **Travel remediation commit:** `320201b485d35644a727a529910398e8e0d693be`
 **Upstream remediation commit:** `ebd00a8e2fb2d8b59a5fb5fa3aa44268e5e79b63`
@@ -9,9 +9,8 @@
 Phase 6 covers verified owner identity and local source lifecycle, bounded
 booking extraction, durable candidate review and recovery, atomic reservation
 confirmation, and the accessible review panel. Travel pins the upstream commit
-above and records it with extraction and confirmation outcomes. The local
-remediation pass is complete, but coordinator final verification remains
-pending. Travel and upstream feature gates remain off by default; this record
+above and records it with extraction and confirmation outcomes. The local remediation pass and independent coordinator verification are
+closed. Travel and upstream feature gates remain off by default; this record
 does not authorize real private-input use or establish hosted readiness.
 
 ## Remediated behavior
@@ -110,3 +109,26 @@ Read [ADR 0013](../decisions/0013-phase6-booking-document-import.md), the
 and the historical [identity](phase-6-identity.md) and
 [source-lifecycle](phase-6-private-sources.md) checkpoints. The next action is
 coordinator verification of the whole-phase review findings; stop before Phase 7.
+
+## Independent coordinator closure — 2026-10-05
+
+The coordinator reviewed the whole phase against its written plan and the
+system's ownership, privacy, replay, deterministic confirmation and UI intent.
+All eleven findings were remediated in upstream `ebd00a8` and travel `320201b`.
+The exact upstream code pin is accepted for the local implementation.
+
+The final light pass additionally fixed source-expiry cleanup to enqueue the
+minimal durable upstream-deletion intent in the same transaction that detaches
+its source. Authorized operator retry can now find that intent without the
+owner reopening each expired import. A PostgreSQL regression proves repeated
+cleanup retains one intent with the extracted-text hash and preserves import
+outcomes. One migration received a formatting-only correction.
+
+Coordinator verification: **231 migrated PostgreSQL tests, zero skips**;
+Ruff check and format check across **129 files**, mypy **87 source files**;
+frontend **42 tests**; upstream **561 tests, 12 opt-in skips**. Previous lint,
+typecheck, production build and mounted plaintext/PDF evidence above remains
+valid; final mounted timing limits are stated precisely above. No outstanding
+substantive local review finding remains. All live identity/service/provider,
+retention-policy/Firestore, Linux parser and cloud gates remain as documented.
+Work stops here before Phase 7 by explicit user instruction.

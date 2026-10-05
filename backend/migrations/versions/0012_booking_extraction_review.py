@@ -53,9 +53,7 @@ def upgrade() -> None:
         "booking_imports",
         sa.Column("upstream_extraction_id", postgresql.UUID(as_uuid=True), nullable=True),
     )
-    op.add_column(
-        "booking_imports", sa.Column("upstream_revision", sa.String(40), nullable=True)
-    )
+    op.add_column("booking_imports", sa.Column("upstream_revision", sa.String(40), nullable=True))
     op.add_column(
         "booking_imports",
         sa.Column("upstream_result_expires_at", sa.DateTime(timezone=True), nullable=True),

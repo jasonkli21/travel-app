@@ -471,3 +471,23 @@ not staged. No real private input, Google OAuth, Cloud Run IAM, Gemini,
 Firestore TTL, Linux parser enforcement, or cloud storage was used. Travel and
 upstream extraction/provider gates remain off. Coordinator final verification
 is the remaining Phase 6 action; stop before Phase 7.
+
+## Phase 6 coordinator closure — stop boundary
+
+2026-10-05: ALL P6.0–P6.5 are implemented and independently reviewed locally.
+Final remediation: travel `320201b`, documentation `d526eeb`; accepted upstream
+code pin `ebd00a8e2fb2d8b59a5fb5fa3aa44268e5e79b63`. The coordinator's final
+small fix connects expiry cleanup to durable remote-deletion intents, preserving
+one keyed intent across repeated passes; migration 0012 formatting corrected.
+Coordinator verification passed 231 migrated PostgreSQL tests/zero skips,
+Ruff lint/format (129 files), mypy (87 files), frontend 42 tests, upstream 561
+passed/12 opt-in skips. Agent lint/type/build and mounted synthetic plaintext/
+PDF evidence and final-clock-amend timing caveat are in the release record.
+
+**STOP: do not implement Phase 7 or later.** The latest user request is fully
+handled within the reviewed local implementation scope. All private-input,
+Google/IAM/provider-retention/Firestore/Linux/cloud gates remain explicit and
+off/unverified. No real private document, inbox, provider or cloud deployment
+was used. Travel tree should be clean after closure commit; preserve upstream's
+pre-existing tracked frontend/tsconfig.tsbuildinfo modification. Future work
+requires a new user request; no automatic next phase or additional restart.

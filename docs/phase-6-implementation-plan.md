@@ -1,6 +1,6 @@
 # Phase 6 implementation plan — authenticated booking and document import
 
-**Status:** P6.0–P6.5 remediation and local verification complete; coordinator final verification pending
+**Status:** P6.0–P6.5 implemented and independently reviewed locally; external gates remain closed
 **Date:** 2026-10-05
 **Baseline:** travel `cf6696b`; upstream `96cf73b`; Phase 5 version/replay slice present
 **Roadmap:** [phased implementation plan](09-implementation-plan.md)
@@ -10,7 +10,7 @@
 
 Phase 6 delivers authenticated local source intake, storage, scoped reads and
 deletion, typed extraction, candidate review, and explicit atomic reservation
-confirmation. The implementation remains a local review candidate documented in
+confirmation. The independently reviewed local implementation is documented in
 [`releases/phase-6-booking-imports.md`](releases/phase-6-booking-imports.md).
 Travel and upstream gates stay off by default. No real private input, live
 provider, Google OAuth, or hosted IAM boundary has been used.
@@ -41,7 +41,7 @@ only the secure storage lifecycle required for its documents.
 | Web session | Use secure HttpOnly sessions, appropriate SameSite/CSRF protection and logout/expiry. The proxy propagates only verified server credentials. API routes all use request-derived identity; service-to-AI credentials are audience-bound and independent of browser identity. |
 | Local mode | Existing unauthenticated local CRUD may remain behind explicit local mode. Private import/upload routes remain disabled there; tests use a verified identity override and synthetic inputs. No silent fallback to local when token verification fails. |
 | Existing owner data | Provide an explicit backed-up local-to-verified-owner migration, with dry run, counts and collision detection. Never auto-claim all local records on first login or derive owners from mutable email addresses. |
-| Extraction contract | Pin the separate versioned `booking-document-extraction-v1` candidate in personal-ai-system, including privacy/retention, bounded input/output, idempotency and durable outcome recovery. Travel pins upstream commit `ebd00a8e2fb2d8b59a5fb5fa3aa44268e5e79b63`; coordinator final verification remains required before acceptance. Phase 4 research-v1 is not an extraction API. |
+| Extraction contract | Pin the separate versioned `booking-document-extraction-v1` candidate in personal-ai-system, including privacy/retention, bounded input/output, idempotency and durable outcome recovery. Travel pins upstream commit `ebd00a8e2fb2d8b59a5fb5fa3aa44268e5e79b63`; the coordinator accepts this exact revision for local implementation; external enablement remains gated. Phase 4 research-v1 is not an extraction API. |
 | Input | Pasted email/plaintext first, then text-bearing PDF. Initial limits: 1 MiB text, 10 MiB PDF, 100 pages and 200,000 extracted characters; finalize against measured parsing and accepted downstream limits. Reject encrypted/unsupported/scanned-only documents clearly. |
 | Output | At most ten typed reservation candidates. Missing or uncertain dates/timezones/provider/confirmation fields remain explicit uncertainties, not guessed facts. Confirmation applies a selected corrected batch atomically. |
 | Storage | Opaque application-generated object keys, outside source/web roots, restrictive local permissions, byte/hash/MIME validation and short-lived authorized reads. Original filenames are display metadata only. P6.2 uses local storage only and stays off by default. |
@@ -186,12 +186,11 @@ boundary. Upstream ADR 0020 and the separate
 `booking-document-extraction-v1` contract define the extraction candidate;
 the travel client pins upstream commit
 `ebd00a8e2fb2d8b59a5fb5fa3aa44268e5e79b63`. The exact pin records the
-implemented contract, while whole-Phase 6 review still gates acceptance and
-external private-input use.
+locally accepted contract; external private-input use remains gated.
 
-**Status:** identity decision accepted locally; extraction contract and privacy
-boundary implemented as candidates. Private imports remain disabled pending
-whole-phase review and external gates.
+**Status:** identity, extraction contract, and privacy boundary accepted for
+local implementation after independent review. Private imports remain disabled
+pending external gates.
 
 ### P6.1 — Implement identity and migrate local ownership
 
@@ -206,8 +205,7 @@ owner records. Upload authentication must run before body parsing/byte access.
 SQL/provider/blob access. Dry-run migration detects collisions and preserves
 FKs, revisions, provider-place uniqueness and counts.
 
-**Status:** implemented locally; coordinator review and final verification are
-pending. Current evidence is in the identity release checkpoint.
+**Status:** implemented and independently reviewed locally. Current evidence is in the identity release checkpoint.
 
 ### P6.2 — Build the minimal private blob lifecycle
 
@@ -218,7 +216,7 @@ limits and reconciliation cleanup. Add SQL metadata/migrations.
 counts, parser failure, interrupted promotion and missing blobs fail safely;
 cleanup is idempotent and cannot delete another owner's objects.
 
-**Status:** implemented locally, review pending. The earlier P6.2 checkpoint
+**Status:** implemented and independently reviewed locally. The earlier P6.2 checkpoint
 records the source lifecycle before extraction and UI were added. The exact
 upload route streams after authentication with separate 1 MiB text/10 MiB PDF
 and 30-second limits;
@@ -236,7 +234,7 @@ recovery. Store only validated review candidates and necessary source references
 **Acceptance:** unavailable/malformed/uncertain extraction never creates a
 reservation; replay returns one correlated import; no locks span external work.
 
-**Status:** implemented as a local review candidate. The typed client pins
+**Status:** implemented and independently reviewed locally. The typed client pins
 upstream source revision `ebd00a8e2fb2d8b59a5fb5fa3aa44268e5e79b63`, uses the
 same idempotency key for GET reconciliation
 after an unknown POST, validates bounded candidates and literal source spans,
@@ -257,7 +255,7 @@ same-trip place/link checks, one-transaction outcome and replay.
 **Acceptance:** a late invalid candidate rolls back the whole batch; concurrent
 confirm, response loss and key reuse cannot duplicate or overwrite reservations.
 
-**Status:** implemented as a local review candidate. Confirmation uses the
+**Status:** implemented and independently reviewed locally. Confirmation uses the
 existing reservation conflict and trip/import revision rules in one SQL
 transaction. All candidate decisions must be create, link, or skip; created
 reservations use the traveler's explicit tentative/confirmed choice, links
@@ -276,7 +274,7 @@ release evidence with synthetic vs real-input verification distinctions.
 **Acceptance:** a verified owner can review and confirm a synthetic booking,
 reopen it with safe source access, and delete/reject input according to policy.
 
-**Status:** implemented as a local review candidate with an accessible,
+**Status:** implemented and independently reviewed locally with an accessible,
 responsive panel for upload/paste, editable uncertainty, source spans, timezone
 resolution, duplicate decisions, retention, recovery, and deletion. The panel
 renders extracted content as inert text and does not follow document links.

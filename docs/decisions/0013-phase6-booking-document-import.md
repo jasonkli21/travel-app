@@ -1,6 +1,6 @@
 # ADR 0013 — Versioned booking-document extraction and explicit confirmation
 
-- **Status:** local implementation candidate; coordinator final verification pending
+- **Status:** accepted for the reviewed local implementation; external private-input gates remain closed
 - **Date:** 2026-10-05
 - **Scope:** P6.3–P6.5 travel integration
 

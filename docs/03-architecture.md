@@ -272,7 +272,7 @@ verified target identity exists; it never runs during first sign-in.
 `TRAVEL_AUTH_MODE=local` remains the default and keeps local CRUD
 unauthenticated behind configured local host/origin checks. Live Google OAuth,
 upstream user-audience alignment, and Cloud Run service IAM remain separate
-enablement gates. The local candidate adds a Google-session-only, off-by-default
+enablement gates. The locally reviewed implementation adds a Google-session-only, off-by-default
 source lifecycle with opaque files outside the application tree; local mode
 cannot upload or read these sources. With explicit submission, bounded extracted
 text is sent to the separately gated `booking-document-extraction-v1` HTTP

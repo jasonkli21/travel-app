@@ -891,3 +891,37 @@ async def test_confirmation_requires_an_explicit_choice_for_every_candidate(priv
     with Session(engine) as session:
         imported = session.get(BookingImport, UUID(uploaded["id"]))
         assert imported is not None and imported.confirmation_key is None
+
+
+@pytest.mark.anyio
+async def test_expired_source_cleanup_enqueues_remote_deletion_without_reopening_import(
+    private_import_client,
+):
+    from personal_travel.services.source_cleanup import cleanup
+
+    _, engine, root, owner, trip_id, uploaded, text = _import_from_upload(private_import_client)
+    import_id = UUID(uploaded["id"])
+    await _service(engine, root, FakeExtractionClient()).extract(owner, trip_id, import_id)
+    with Session(engine) as session, session.begin():
+        item = session.get(BookingImport, import_id)
+        assert item is not None
+        key = item.extraction_key
+        source = session.get(SourceAttachment, item.source_id)
+        assert source is not None
+        source.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    store = LocalSourceStore(root)
+    try:
+        cleanup(factory, store, owner_id=owner)
+        cleanup(factory, store, owner_id=owner)
+    finally:
+        store.close()
+    with Session(engine) as session:
+        item = session.get(BookingImport, import_id)
+        assert item is not None and item.source_id is None
+        assert item.upstream_delete_pending is True
+        intents = session.scalars(select(BookingDeletionIntent)).all()
+        assert len(intents) == 1
+        assert intents[0].owner_id == owner and intents[0].extraction_key == key
+        assert intents[0].source_sha256 == hashlib.sha256(text.encode()).hexdigest()

@@ -23,8 +23,8 @@ Phases 1–5 are delivered and independently reviewed locally. Proposal gates
 remain off by default; live provider and deployment readiness are separate
 gates. The Phase 6 identity decision, secure-source lifecycle, booking
 extraction, reservation review/confirmation, and review UI are implemented as
-a local candidate. Whole-phase remediation and local verification are complete;
-coordinator final verification remains pending. Private source ingress and
+a locally reviewed implementation. Whole-phase review and coordinator
+verification are closed. Private source ingress and
 extraction default off and remain unavailable in local auth mode. Google OAuth
 and Cloud Run IAM remain unprovisioned external gates. Phase 5 closure is recorded in
 [`docs/releases/phase-5-local-proposals.md`](docs/releases/phase-5-local-proposals.md);
@@ -78,8 +78,7 @@ domain owner from the server-verified Google issuer and subject; explicit local
 mode remains available and unauthenticated. No domain route trusts browser
 owner headers. Local-to-verified-owner migration is explicit, backed up, and
 never triggered by first login. Phase 6 extraction, confirmation, and review
-UI have passed local remediation checks; coordinator final verification is
-pending. Live private input,
+UI are independently reviewed and verified locally. Live private input,
 cloud deployment, and general attachments remain gated or planned.
 
 ## Architectural invariants
@@ -148,6 +147,7 @@ CI must execute them without skips. Migration `0005` requires online inspection
 and a backup before legacy data repair.
 Detailed plans for Phases 5–9 are under
 `docs/phase-5-implementation-plan.md` through `docs/phase-9-implementation-plan.md`.
-Phase 5 is reviewed, Phase 6 is implemented as a review candidate pending
-coordinator verification, and Phases 7–9 remain planned. Start later feature work from its contract/dependency
-gates; documentation alone does not authorize cloud deployment.
+Phase 5 and Phase 6 are independently reviewed locally. External enablement
+gates remain closed, and Phases 7–9 remain planned. Stop before Phase 7 unless
+the user explicitly requests later work. Start that work from its contract and
+dependency gates; documentation alone does not authorize cloud deployment.

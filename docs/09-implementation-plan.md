@@ -142,7 +142,7 @@ storage and atomic apply/replay, gated generation, and the explicit review UI.
 The first removal operation requires an explicit user-selected removable-item
 allowlist; status alone does not establish optionality. The upstream Uvicorn
 clock-domain deadline issue is fixed and fake HTTP verification passes with
-both `auto` and `asyncio`; independent Phase 5 review remains pending.
+both `auto` and `asyncio`; independent Phase 5 local review is closed.
 
 Build:
 
@@ -160,8 +160,8 @@ AI suggestions remain proposals.
 ## Phase 6 — Booking/document import
 
 Detailed plan: [Phase 6](phase-6-implementation-plan.md). P6.0–P6.5 are
-implemented as a local candidate with remediation and local checks complete;
-coordinator whole-phase verification remains pending and the travel/upstream
+implemented and independently reviewed locally; coordinator verification is
+closed and the travel/upstream
 gates default off. Authentication is required before private
 source access. Phase 8 extends this minimum gated local source lifecycle.
 
@@ -171,7 +171,7 @@ Prerequisites:
 - secure blob handling if uploads exist,
 - explicit connector/provider policy.
 
-Delivered local candidate:
+Delivered and independently reviewed locally:
 
 - manual email/document import first,
 - extraction through `personal-ai-system`,
