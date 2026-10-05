@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -105,6 +106,11 @@ class SavedPlaceService:
         provider_place_id: str,
         *,
         expected_revision: int | None = None,
+        reference_place_id: UUID,
+        reference_place_revision: int,
+        reference_latitude: float,
+        reference_longitude: float,
+        evidence_expires_at: datetime,
     ) -> SavedPlace:
         """Persist one explicitly reviewed, source-verified comparison candidate."""
         if source.provider_place_id != provider_place_id:
@@ -129,6 +135,43 @@ class SavedPlaceService:
                     return existing_saved
                 require_expected_revision(trip.revision, expected_revision, aggregate="trip")
 
+                reference_place = self._session.scalar(
+                    select(Place)
+                    .where(
+                        Place.owner_id == self._owner_id,
+                        Place.id == reference_place_id,
+                    )
+                    .with_for_update()
+                    .execution_options(populate_existing=True)
+                )
+                trip_place_ids = (
+                    {
+                        item.place.id
+                        for day in trip.days
+                        for item in day.items
+                        if item.place is not None
+                    }
+                    | {saved.place.id for saved in trip.saved_places if saved.place is not None}
+                    | {
+                        reservation.place.id
+                        for reservation in trip.reservations
+                        if reservation.status != "cancelled" and reservation.place is not None
+                    }
+                )
+                if (
+                    reference_place is None
+                    or reference_place_id not in trip_place_ids
+                    or reference_place.revision != reference_place_revision
+                    or reference_place.latitude is None
+                    or reference_place.longitude is None
+                    or float(reference_place.latitude) != reference_latitude
+                    or float(reference_place.longitude) != reference_longitude
+                ):
+                    raise DomainError(
+                        "comparison_context_stale",
+                        "The comparison center changed. Run a new comparison before saving.",
+                        status_code=409,
+                    )
                 place = self._session.scalar(
                     select(Place).where(
                         Place.owner_id == self._owner_id,
@@ -136,6 +179,13 @@ class SavedPlaceService:
                         Place.provider_place_id == provider_place_id,
                     )
                 )
+                if evidence_expires_at <= datetime.now(UTC):
+                    raise DomainError(
+                        "comparison_evidence_expired",
+                        "The comparison evidence expired before it could be saved. "
+                        "Run a new comparison.",
+                        status_code=409,
+                    )
                 if place is None:
                     place = Place(
                         owner_id=self._owner_id,

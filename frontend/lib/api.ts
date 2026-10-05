@@ -204,6 +204,10 @@ export interface TravelComparisonRequest {
   category: TravelComparisonCategory;
   query: string;
   reference_place_id: string;
+  reference_place_revision: number;
+  reference_latitude: number;
+  reference_longitude: number;
+  trip_revision: number;
   radius_km: number;
   max_results: number;
   idempotency_key: string;

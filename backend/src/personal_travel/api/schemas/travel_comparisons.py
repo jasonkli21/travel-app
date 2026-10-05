@@ -24,6 +24,10 @@ class TravelComparisonRequest(BaseModel):
     category: TravelComparisonCategory
     query: str = Field(min_length=1, max_length=180)
     reference_place_id: UUID
+    reference_place_revision: int = Field(ge=0)
+    reference_latitude: float = Field(ge=-90, le=90)
+    reference_longitude: float = Field(ge=-180, le=180)
+    trip_revision: int = Field(ge=0)
     radius_km: float = Field(default=5, gt=0, le=20)
     max_results: int = Field(default=8, ge=1, le=10)
     idempotency_key: UUID
@@ -122,8 +126,6 @@ class TravelComparisonResponse(BaseModel):
 
     @model_validator(mode="after")
     def bounded_comparison(self) -> Self:
-        if self.expires_at is not None and self.expires_at <= self.generated_at:
-            raise ValueError("comparison expiry must follow generation")
         if len({candidate.candidate_id for candidate in self.candidates}) != len(self.candidates):
             raise ValueError("comparison candidates must be unique")
         if any(candidate.category != self.category for candidate in self.candidates):

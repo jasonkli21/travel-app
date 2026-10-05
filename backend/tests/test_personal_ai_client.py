@@ -10,6 +10,8 @@ import personal_travel.clients.personal_ai as personal_ai
 from personal_travel.auth.contracts import PersonalAIAuthContext
 from personal_travel.clients.personal_ai import (
     PersonalAIClient,
+    PersonalAIComparisonError,
+    PersonalAIComparisonUnknown,
     PersonalAIError,
     PersonalAIExtractionUnknown,
     PersonalAIHealth,
@@ -118,6 +120,122 @@ def test_personal_ai_health_reports_invalid_json(monkeypatch: pytest.MonkeyPatch
 
     with pytest.raises(PersonalAIError, match="invalid health JSON"):
         asyncio.run(client.health())
+
+
+@pytest.mark.parametrize("token_result", ["raises", "empty", "oversized"])
+def test_comparison_identity_failures_are_safe_and_happen_before_dispatch(
+    monkeypatch: pytest.MonkeyPatch, token_result: str
+) -> None:
+    secret = "synthetic-service-token-secret"
+    dispatched = 0
+
+    def fetch_service_token(_audience: str, _service_account: str) -> str:
+        if token_result == "raises":
+            raise RuntimeError(secret)
+        if token_result == "empty":
+            return ""
+        return "x" * 8193
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal dispatched
+        dispatched += 1
+        return httpx.Response(503, request=request)
+
+    monkeypatch.setattr(
+        "personal_travel.clients.personal_ai.get_settings",
+        lambda: Settings(personal_ai_base_url="https://travel-ai.test"),
+    )
+    client = PersonalAIClient(
+        auth_context=PersonalAIAuthContext(
+            user_id_token="synthetic-user-token",
+            service_audience="https://travel-ai.test",
+            service_account="travel-ai@project.iam.gserviceaccount.com",
+        ),
+        service_token_fetcher=fetch_service_token,
+        transport=httpx.MockTransport(handler),
+    )
+
+    async def check_methods() -> None:
+        with pytest.raises(PersonalAIComparisonError) as lookup_error:
+            await client.lookup_travel_comparison(payload={})
+        with pytest.raises(PersonalAIComparisonError) as detail_error:
+            await client.get_travel_comparison(uuid4())
+        assert secret not in str(lookup_error.value)
+        assert secret not in str(detail_error.value)
+
+    asyncio.run(check_methods())
+    assert dispatched == 0
+
+
+def test_comparison_rejects_malformed_and_oversized_responses_within_byte_bound(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class CountedStream(httpx.AsyncByteStream):
+        def __init__(self) -> None:
+            self.consumed = 0
+
+        async def __aiter__(self):
+            for _ in range(personal_ai.MAX_COMPARISON_RESPONSE_BYTES // 8192 + 2):
+                chunk = b"x" * 8192
+                self.consumed += len(chunk)
+                yield chunk
+
+    malformed_client = _client_with_transport(
+        monkeypatch,
+        httpx.MockTransport(lambda request: httpx.Response(200, json={}, request=request)),
+    )
+    with pytest.raises(PersonalAIComparisonUnknown):
+        asyncio.run(malformed_client.lookup_travel_comparison(payload={}))
+
+    stream = CountedStream()
+    oversized_client = _client_with_transport(
+        monkeypatch,
+        httpx.MockTransport(lambda request: httpx.Response(200, stream=stream, request=request)),
+    )
+    with pytest.raises(PersonalAIComparisonUnknown):
+        asyncio.run(oversized_client.lookup_travel_comparison(payload={}))
+    assert stream.consumed <= personal_ai.MAX_COMPARISON_RESPONSE_BYTES + 8192
+
+
+def test_comparison_rejects_unsafe_source_urls_and_times_out_the_full_lookup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    unsafe_result = type(
+        "UnsafeComparison",
+        (),
+        {
+            "provider_observations": (
+                type("Observation", (), {"url": "http://127.0.0.1", "policy_url": None})(),
+            ),
+            "comparison": type("Comparison", (), {"rows": ()})(),
+        },
+    )()
+    monkeypatch.setattr(
+        personal_ai,
+        "UpstreamTravelComparison",
+        type("Parser", (), {"model_validate": staticmethod(lambda _raw: unsafe_result)}),
+    )
+    unsafe_client = _client_with_transport(
+        monkeypatch,
+        httpx.MockTransport(lambda request: httpx.Response(200, json={}, request=request)),
+    )
+    with pytest.raises(PersonalAIComparisonUnknown):
+        asyncio.run(unsafe_client.lookup_travel_comparison(payload={}))
+
+    class SlowStream(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            await asyncio.sleep(0.2)
+            yield b"{}"
+
+    timeout_client = PersonalAIClient(
+        base_url="http://personal-ai.test",
+        timeout_seconds=0.05,
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, stream=SlowStream(), request=request)
+        ),
+    )
+    with pytest.raises(PersonalAIComparisonUnknown):
+        asyncio.run(timeout_client.lookup_travel_comparison(payload={}))
 
 
 @pytest.mark.parametrize(

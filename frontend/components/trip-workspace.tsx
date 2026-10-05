@@ -713,6 +713,7 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
           key={`${editorGeneration}-${trip.id}`}
           trip={trip}
           savedPlaces={savedPlaces}
+          reservations={reservations}
           pending={(pending !== null || stale)}
           onSaveCandidate={saveComparedCandidate}
           onArrangeCandidate={arrangeComparedCandidate}

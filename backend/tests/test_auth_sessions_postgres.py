@@ -502,13 +502,18 @@ def test_ai_user_token_must_be_valid_and_match_current_session_before_body_parse
         personal_ai_service_iam_audience="https://travel-ai.test",
         personal_ai_service_account="travel-ai@project.iam.gserviceaccount.com",
         personal_ai_research_enabled=True,
+        personal_ai_comparisons_enabled=True,
     )
     use_settings(api_client, settings)
     raw_session, csrf = make_identity_and_session(database_engine)
     trip_id = uuid4()
     import_id = uuid4()
+    comparison_id = uuid4()
+    candidate_id = uuid4()
     paths = [
         f"/v1/trips/{trip_id}/research",
+        f"/v1/trips/{trip_id}/research/compare",
+        f"/v1/trips/{trip_id}/research/comparisons/{comparison_id}/candidates/{candidate_id}/save",
         f"/v1/trips/{trip_id}/imports/{import_id}/confirm",
         f"/v1/trips/{trip_id}/imports/{import_id}/reject",
         f"/v1/trips/{trip_id}/imports/{import_id}/source",
@@ -561,6 +566,65 @@ def test_ai_user_token_must_be_valid_and_match_current_session_before_body_parse
     )
     assert missing_user_token.status_code == 401
     assert missing_user_token.json()["error"]["code"] == "ai_identity_required"
+
+
+def test_comparison_routes_use_the_comparison_gate_independently_of_research(
+    api_client: TestClient,
+    database_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trip_id, comparison_id, candidate_id = (uuid4() for _ in range(3))
+    paths = [
+        f"/v1/trips/{trip_id}/research/compare",
+        f"/v1/trips/{trip_id}/research/comparisons/{comparison_id}/candidates/{candidate_id}/save",
+    ]
+    raw_session, csrf = make_identity_and_session(database_engine)
+    cookies = {
+        "__Host-travel_session": raw_session,
+        "__Host-travel_csrf": csrf,
+    }
+    headers = {"origin": "http://localhost:3000", "x-csrf-token": csrf}
+    user_token, certificate, _subject = signed_token(
+        "comparison-gate-probe", subject="synthetic-subject"
+    )
+    set_google_key_fixture(monkeypatch, certificate)
+
+    comparison_only = google_settings(
+        personal_ai_auth_mode="google_cloud_run_iam",
+        personal_ai_user_id_token_audience="travel-client.apps.googleusercontent.com",
+        personal_ai_service_iam_audience="https://travel-ai.test",
+        personal_ai_service_account="travel-ai@project.iam.gserviceaccount.com",
+        personal_ai_comparisons_enabled=True,
+        personal_ai_research_enabled=False,
+    )
+    use_settings(api_client, comparison_only)
+    for path in paths:
+        response = api_client.post(
+            path,
+            cookies=cookies,
+            headers={**headers, "x-user-id-token": user_token},
+            content=b"not-json",
+        )
+        assert response.status_code == 422, response.text
+
+    research_only = google_settings(
+        personal_ai_auth_mode="google_cloud_run_iam",
+        personal_ai_user_id_token_audience="travel-client.apps.googleusercontent.com",
+        personal_ai_service_iam_audience="https://travel-ai.test",
+        personal_ai_service_account="travel-ai@project.iam.gserviceaccount.com",
+        personal_ai_comparisons_enabled=False,
+        personal_ai_research_enabled=True,
+    )
+    use_settings(api_client, research_only)
+    for path in paths:
+        response = api_client.post(
+            path,
+            cookies=cookies,
+            headers={**headers, "x-user-id-token": user_token},
+            content=b"not-json",
+        )
+        assert response.status_code == 400
+        assert response.json()["error"]["code"] == "invalid_identity_header"
 
 
 def test_ai_requires_verified_user_token_matching_session_before_domain_access(

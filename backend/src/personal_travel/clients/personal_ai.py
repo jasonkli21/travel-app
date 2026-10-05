@@ -264,6 +264,19 @@ class PersonalAIClient:
             ) from None
         except PersonalAIComparisonError:
             raise
+        except PersonalAIError:
+            raise PersonalAIComparisonError(
+                "personal-ai-system comparison authentication is unavailable"
+            ) from None
+        except httpx.HTTPStatusError as error:
+            if error.response.status_code >= 500:
+                raise PersonalAIComparisonUnknown(
+                    "personal-ai-system comparison outcome is unknown; "
+                    "retry with the same request key"
+                ) from None
+            raise PersonalAIComparisonError(
+                "personal-ai-system rejected the comparison request"
+            ) from None
         except (
             httpx.HTTPError,
             InvalidUpstreamResponse,
@@ -272,8 +285,9 @@ class PersonalAIClient:
             TypeError,
             RecursionError,
         ):
-            raise PersonalAIComparisonError(
-                "personal-ai-system comparison returned an unavailable or invalid response"
+            raise PersonalAIComparisonUnknown(
+                "personal-ai-system comparison outcome could not be confirmed; "
+                "retry with the same request key"
             ) from None
 
     async def get_travel_comparison(self, comparison_id: UUID) -> UpstreamTravelComparison:
@@ -296,6 +310,10 @@ class PersonalAIClient:
                 return result
         except PersonalAIComparisonError:
             raise
+        except PersonalAIError:
+            raise PersonalAIComparisonError(
+                "personal-ai-system comparison authentication is unavailable"
+            ) from None
         except (
             httpx.HTTPError,
             TimeoutError,

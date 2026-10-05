@@ -1,10 +1,10 @@
 "use client";
 
 import type { FormEvent } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import type {
-  PlaceSummary,
+  Reservation,
   SavedPlace,
   SaveTravelComparisonCandidateInput,
   TravelComparisonCandidate,
@@ -16,6 +16,14 @@ import type {
 import { travelApi } from "../lib/api";
 import { errorMessage } from "../lib/errors";
 import { safeHttpUrl } from "../lib/urls.mjs";
+import { uniqueComparisonPlaces } from "../lib/comparison-places.mjs";
+import {
+  getComparisonRetrySnapshot,
+  parseComparisonRetry,
+  shouldKeepComparisonRequest,
+  subscribeComparisonRetry,
+  writeComparisonRetry,
+} from "../lib/comparison-recovery.mjs";
 
 const comparisonsEnabled = process.env.NEXT_PUBLIC_TRAVEL_COMPARISONS_ENABLED === "true";
 
@@ -33,24 +41,6 @@ type CandidateDraft = {
   category: string;
   note: string;
 };
-
-function uniqueTripPlaces(trip: TripDetail, savedPlaces: SavedPlace[]): PlaceSummary[] {
-  const places = new Map<string, PlaceSummary>();
-  for (const day of trip.days) {
-    for (const item of day.items) {
-      if (item.place?.latitude !== null && item.place?.latitude !== undefined
-        && item.place?.longitude !== null && item.place?.longitude !== undefined) {
-        places.set(item.place.id, item.place);
-      }
-    }
-  }
-  for (const saved of savedPlaces) {
-    if (saved.place.latitude !== null && saved.place.longitude !== null) {
-      places.set(saved.place.id, saved.place);
-    }
-  }
-  return [...places.values()].sort((left, right) => left.name.localeCompare(right.name));
-}
 
 function timestamp(value: string): string {
   const date = new Date(value);
@@ -78,12 +68,14 @@ function openMapUrl(candidate: TravelComparisonCandidate): string | null {
 export default function TripComparisonPanel({
   trip,
   savedPlaces,
+  reservations,
   pending,
   onSaveCandidate,
   onArrangeCandidate,
 }: {
   trip: TripDetail;
   savedPlaces: SavedPlace[];
+  reservations: Reservation[];
   pending: boolean;
   onSaveCandidate: (
     comparisonId: string,
@@ -92,7 +84,10 @@ export default function TripComparisonPanel({
   ) => Promise<boolean>;
   onArrangeCandidate: (name: string) => void;
 }) {
-  const referencePlaces = useMemo(() => uniqueTripPlaces(trip, savedPlaces), [trip, savedPlaces]);
+  const referencePlaces = useMemo(
+    () => uniqueComparisonPlaces(trip, savedPlaces, reservations),
+    [trip, savedPlaces, reservations],
+  );
   const [category, setCategory] = useState<TravelComparisonCategory>("food");
   const [query, setQuery] = useState("");
   const [referencePlaceId, setReferencePlaceId] = useState(referencePlaces[0]?.id ?? "");
@@ -102,7 +97,19 @@ export default function TripComparisonPanel({
   const [maxResults, setMaxResults] = useState("8");
   const [requestPending, setRequestPending] = useState(false);
   const requestInFlight = useRef(false);
-  const [retryRequest, setRetryRequest] = useState<TravelComparisonRequest | null>(null);
+  const retrySnapshot = useSyncExternalStore(
+    useCallback((listener) => subscribeComparisonRetry(trip.id, listener), [trip.id]),
+    useCallback(() => getComparisonRetrySnapshot(window.sessionStorage, trip.id), [trip.id]),
+    () => null,
+  );
+  const retryRequest = useMemo(() => {
+    if (retrySnapshot === null) return null;
+    try {
+      return parseComparisonRetry(JSON.parse(retrySnapshot));
+    } catch {
+      return null;
+    }
+  }, [retrySnapshot]);
   const [result, setResult] = useState<TravelComparisonResult | null>(null);
   const [candidateDraft, setCandidateDraft] = useState<CandidateDraft | null>(null);
   const [savedCandidateName, setSavedCandidateName] = useState<string | null>(null);
@@ -110,6 +117,10 @@ export default function TripComparisonPanel({
   const [savedCandidateIds, setSavedCandidateIds] = useState<string[]>([]);
   const [now, setNow] = useState(() => Date.now());
   const [error, setError] = useState<string | null>(null);
+
+  const updateRetryRequest = (request: TravelComparisonRequest | null) => {
+    writeComparisonRetry(window.sessionStorage, trip.id, request);
+  };
 
   const contextStale = result !== null && (
     trip.revision !== result.trip_revision
@@ -128,7 +139,6 @@ export default function TripComparisonPanel({
 
   const resetResult = () => {
     setResult(null);
-    setRetryRequest(null);
     setSavedCandidateIds([]);
     setCandidateDraft(null);
     setError(null);
@@ -136,18 +146,22 @@ export default function TripComparisonPanel({
 
   const runComparison = async (request: TravelComparisonRequest) => {
     if (requestInFlight.current || pending) return;
+    const reconcilingUnknownOutcome = retryRequest?.idempotency_key === request.idempotency_key;
     requestInFlight.current = true;
     setRequestPending(true);
     setError(null);
-    setRetryRequest(request);
+    updateRetryRequest(request);
     setResult(null);
     try {
       const nextResult = await travelApi.compareTripPlaces(trip.id, request);
       setNow(Date.now());
       setResult(nextResult);
-      setRetryRequest(null);
+      updateRetryRequest(null);
     } catch (nextError) {
       setError(errorMessage(nextError));
+      if (!shouldKeepComparisonRequest(nextError, reconcilingUnknownOutcome)) {
+        updateRetryRequest(null);
+      }
     } finally {
       requestInFlight.current = false;
       setRequestPending(false);
@@ -161,6 +175,10 @@ export default function TripComparisonPanel({
       category,
       query: query.trim(),
       reference_place_id: selectedReference.id,
+      reference_place_revision: selectedReference.revision,
+      reference_latitude: selectedReference.latitude as number,
+      reference_longitude: selectedReference.longitude as number,
+      trip_revision: trip.revision,
       radius_km: Number(radius),
       max_results: Number(maxResults),
       idempotency_key: crypto.randomUUID(),
@@ -224,7 +242,7 @@ export default function TripComparisonPanel({
         <p className="emptyText">Add a place with coordinates to this trip before comparing a distance-scoped category.</p>
       ) : (
         <form className="comparisonForm" onSubmit={submitComparison}>
-          <fieldset disabled={requestPending || pending || savingCandidate}>
+          <fieldset disabled={Boolean(retryRequest) || requestPending || pending || savingCandidate}>
             <div className="formGrid">
               <label>
                 Category
@@ -248,7 +266,7 @@ export default function TripComparisonPanel({
               </label>
               <label>
                 Maximum distance (km)
-                <input type="number" value={radius} onChange={(event) => { setRadius(event.target.value); resetResult(); }} min="0.1" max="20" step="0.5" required />
+                <input type="number" value={radius} onChange={(event) => { setRadius(event.target.value); resetResult(); }} min="0.5" max="20" step="0.5" required />
               </label>
             </div>
             <label className="comparisonLimit">
@@ -258,15 +276,25 @@ export default function TripComparisonPanel({
               </select>
             </label>
             <div className="formActions">
-              <button className="primary" type="submit" disabled={!selectedReference || !query.trim()}>
+              <button className="primary" type="submit" disabled={Boolean(retryRequest) || !selectedReference || !query.trim()}>
                 {requestPending ? "Comparing…" : "Compare places"}
               </button>
               {requestPending ? <span role="status">Checking bounded place evidence…</span> : null}
-              {retryRequest ? <button className="secondary" type="button" onClick={() => void runComparison(retryRequest)} disabled={pending || requestPending}>Retry same comparison</button> : null}
             </div>
           </fieldset>
         </form>
       )}
+
+      {retryRequest ? (
+        <div className="comparisonState" role="status">
+          <p>The request outcome is unknown. Retry this exact comparison to reconcile its existing key. The search, center coordinates, and revisions are held fixed.</p>
+          <div className="formActions">
+            <button className="secondary" type="button" onClick={() => void runComparison(retryRequest)} disabled={pending || requestPending}>Retry same comparison</button>
+            <button className="secondary" type="button" onClick={() => { updateRetryRequest(null); resetResult(); }} disabled={pending || requestPending}>Abandon and start a new comparison</button>
+          </div>
+          <p className="formHint">Abandoning permits a new provider request. The earlier request may already have completed.</p>
+        </div>
+      ) : null}
 
       {error ? <p className="formError locationError" role="alert">{error}</p> : null}
       {result && contextStale ? <p className="comparisonState" role="status">Trip or reference-place details changed. Run a new comparison to refresh the result.</p> : null}

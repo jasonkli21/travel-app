@@ -23,6 +23,7 @@ from personal_travel.auth.contracts import PersonalAIAuthContext
 from personal_travel.clients.personal_ai import (
     PersonalAIClient,
     PersonalAIComparisonError,
+    PersonalAIComparisonUnknown,
 )
 from personal_travel.config import Settings
 from personal_travel.domain.upstream_comparisons import (
@@ -95,6 +96,17 @@ class TravelComparisonService:
                 "Shorten the search text for this comparison.",
                 status_code=422,
             )
+        if (
+            snapshot.trip_revision != request.trip_revision
+            or snapshot.reference_place_revision != request.reference_place_revision
+            or snapshot.latitude != request.reference_latitude
+            or snapshot.longitude != request.reference_longitude
+        ):
+            raise DomainError(
+                "comparison_context_stale",
+                "The trip or comparison center changed. Start a new comparison.",
+                status_code=409,
+            )
         constraints = [
             {
                 "id": str(uuid5(request.idempotency_key, "category")),
@@ -148,11 +160,18 @@ class TravelComparisonService:
                 radius_km=request.radius_km,
                 max_results=request.max_results,
             )
+        except PersonalAIComparisonUnknown as error:
+            raise DomainError(
+                "research_comparison_unknown",
+                "The comparison could not be confirmed. Retry the same request to check "
+                "its existing key.",
+                status_code=503,
+            ) from error
         except PersonalAIComparisonError as error:
             raise DomainError(
                 "research_comparison_unavailable",
-                "The comparison could not be confirmed. Retry the same request to check "
-                "its existing key.",
+                "The comparison service could not complete this request. Check the service "
+                "configuration before starting another comparison.",
                 status_code=503,
             ) from error
         except ValueError as error:
@@ -241,6 +260,11 @@ class TravelComparisonService:
                 validated.place_source,
                 validated.provider_place_id,
                 expected_revision=snapshot.trip_revision,
+                reference_place_id=snapshot.reference_place_id,
+                reference_place_revision=snapshot.reference_place_revision,
+                reference_latitude=snapshot.latitude,
+                reference_longitude=snapshot.longitude,
+                evidence_expires_at=min(source.expires_at for source in validated.response.sources),
             )
         except PersonalAIComparisonError as error:
             raise DomainError(
@@ -319,6 +343,9 @@ class TravelComparisonService:
             or location_constraint.missing_policy != "fail_closed"
             or location_constraint.source != "user"
             or upstream.comparison.preferences
+            or category_constraint.id != uuid5(request.idempotency_key, "category")
+            or location_constraint.id != uuid5(request.idempotency_key, "distance")
+            or category_constraint.id == location_constraint.id
         ):
             raise ValueError("travel comparison does not match the submitted footprint")
 
@@ -332,6 +359,13 @@ def _find_trip_place(trip: Trip, place_id: UUID, owner_id: str) -> Place:
     }
     places.update(
         {saved.place.id: saved.place for saved in trip.saved_places if saved.place is not None}
+    )
+    places.update(
+        {
+            reservation.place.id: reservation.place
+            for reservation in trip.reservations
+            if reservation.status != "cancelled" and reservation.place is not None
+        }
     )
     place = places.get(place_id)
     if place is None or place.owner_id != owner_id:
@@ -394,7 +428,7 @@ def _comparison_response(
     max_results: int,
 ) -> TravelComparisonResponse:
     now = datetime.now(UTC)
-    candidates = [
+    validated = [
         _validated_candidate(
             upstream,
             owner_id=owner_id,
@@ -403,9 +437,10 @@ def _comparison_response(
             radius_km=radius_km,
             row_id=row.candidate_id,
             now=now,
-        ).response
+        )
         for row in upstream.comparison.rows[:max_results]
     ]
+    candidates = [item.response for item in validated]
     candidates.sort(
         key=lambda item: (
             not item.eligible,
@@ -415,13 +450,22 @@ def _comparison_response(
             item.name.casefold(),
         )
     )
-    expiries = [source.expires_at for candidate in candidates for source in candidate.sources]
-    expires_at = min(expiries) if expiries else None
+    current_expiries = [
+        source.expires_at
+        for item in validated
+        for source in item.response.sources
+        if source.expires_at > now
+    ]
+    all_expiries = [source.expires_at for item in validated for source in item.response.sources]
+    expires_at = (
+        min(current_expiries) if current_expiries else (min(all_expiries) if all_expiries else None)
+    )
     state: TravelComparisonState = upstream.comparison.state
-    if expires_at is not None and expires_at <= now:
+    if not current_expiries and all_expiries and min(all_expiries) <= now:
         state = "expired"
-        candidates = []
     elif not candidates and state not in {"no_verified_match", "research_needed"}:
+        state = "insufficient"
+    elif candidates and not any(candidate.eligible for candidate in candidates):
         state = "insufficient"
     return TravelComparisonResponse(
         comparison_id=upstream.comparison.id,
@@ -454,106 +498,171 @@ def _validated_candidate(
         raise ValueError("comparison candidate is not in the source comparison")
     claims = {claim.claim_id: claim for claim in upstream.domain_claims}
     observations_by_evidence = {item.evidence_id: item for item in upstream.provider_observations}
+    if len(claims) != len(upstream.domain_claims):
+        raise ValueError("comparison contains duplicate claim IDs")
+    if len(observations_by_evidence) != len(upstream.provider_observations):
+        raise ValueError("comparison contains duplicate evidence IDs")
+    if len({cell.field for cell in row.cells}) != len(row.cells):
+        raise ValueError("comparison candidate has duplicate field cells")
     cells = {cell.field: cell for cell in row.cells}
     type_cell = cells.get("place_type")
     location_cell = cells.get("location")
-    place_type_claim = _current_claim(type_cell, claims, "place_type", now)
-    location_claim = _current_claim(location_cell, claims, "location", now)
+    place_type_claim = _display_claim(type_cell, claims, "place_type")
+    location_claim = _display_claim(location_cell, claims, "location")
     place_type_value = place_type_claim.typed_value if place_type_claim is not None else None
     location_value = location_claim.typed_value if location_claim is not None else None
-    if (
-        place_type_claim is None
-        or not isinstance(place_type_value, _TextValue)
-        or location_claim is None
-        or not isinstance(location_value, _LocationValue)
-    ):
-        raise ValueError("comparison candidate lacks current typed place evidence")
-
-    place_type = place_type_value.value.strip().casefold()
-    latitude = location_value.latitude
-    longitude = location_value.longitude
-    distance = _distance_km(center, (latitude, longitude))
-    category_ok = place_type in spec.allowed_place_types
-    distance_ok = distance <= radius_km
-    if type_cell is None or location_cell is None:
-        raise ValueError("comparison candidate is missing typed field cells")
-    evidence_ids = set(place_type_claim.evidence_ids) | set(location_claim.evidence_ids)
+    if place_type_claim is not None and not isinstance(place_type_value, _TextValue):
+        raise ValueError("place type claim has the wrong typed value")
+    if location_claim is not None and not isinstance(location_value, _LocationValue):
+        raise ValueError("location claim has the wrong typed value")
+    place_type = (
+        place_type_value.value.strip().casefold()
+        if isinstance(place_type_value, _TextValue)
+        else None
+    )
+    latitude = location_value.latitude if isinstance(location_value, _LocationValue) else None
+    longitude = location_value.longitude if isinstance(location_value, _LocationValue) else None
+    distance = (
+        _distance_km(center, (latitude, longitude))
+        if latitude is not None and longitude is not None
+        else None
+    )
+    type_is_current = _claim_is_current(place_type_claim, observations_by_evidence, owner_id, now)
+    location_is_current = _claim_is_current(location_claim, observations_by_evidence, owner_id, now)
+    category_ok = (
+        place_type in spec.allowed_place_types
+        if place_type is not None and type_is_current
+        else None
+    )
+    distance_ok = distance <= radius_km if distance is not None and location_is_current else None
+    field_claims = ((type_cell, "place_type"), (location_cell, "location"))
+    for cell, attribute in field_claims:
+        if cell is None:
+            continue
+        for claim_id in cell.claim_ids:
+            claim = claims.get(claim_id)
+            if (
+                claim is None
+                or claim.domain_id != "travel"
+                or claim.attribute != attribute
+                or not claim.evidence_ids
+            ):
+                raise ValueError("comparison cell references a missing or mismatched claim")
     sources: dict[UUID, TravelComparisonSourceResponse] = {}
     place_source: VerifiedPlaceSource | None = None
     provider_place_id: str | None = None
-    only_osm_sources = True
+    only_osm_sources = bool(
+        type_cell and type_cell.claim_ids and location_cell and location_cell.claim_ids
+    )
     osm_place_ids: set[str] = set()
-    for cell, claim in ((type_cell, place_type_claim), (location_cell, location_claim)):
-        for evidence_id in claim.evidence_ids:
-            observation = observations_by_evidence.get(evidence_id)
-            citation = next(
-                (item for item in cell.sources if item.evidence_id == evidence_id), None
-            )
-            if (
-                observation is None
-                or observation.owner_id != owner_id
-                or citation is None
-                or citation.source_observation_id != observation.source_observation_id
-                or citation.url != observation.url
-                or citation.observed_at != observation.observed_at
-                or citation.expires_at != observation.expires_at
-                or citation.attribution != observation.attribution
-                or citation.policy_url != observation.policy_url
-            ):
-                raise ValueError("candidate claim and source citation do not correlate")
-            if observation.observed_at > now or observation.expires_at <= now:
-                raise ValueError("comparison source is not current")
-            current_source = TravelComparisonSourceResponse(
-                evidence_id=evidence_id,
-                source_observation_id=observation.source_observation_id,
-                provider=observation.provider,
-                url=observation.url,
-                title=observation.title,
-                attribution=observation.attribution,
-                policy_url=observation.policy_url,
-                observed_at=observation.observed_at,
-                expires_at=min(observation.expires_at, claim.expires_at),
-            )
-            previous = sources.get(evidence_id)
-            if previous is not None and previous != current_source:
-                raise ValueError("duplicate candidate evidence is inconsistent")
-            sources[evidence_id] = current_source
-            if observation.provider == "osm_nominatim":
-                place_source, provider_place_id = _verified_osm_source(observation, place_type)
-                osm_place_ids.add(provider_place_id)
-            else:
-                only_osm_sources = False
-
-    if not sources:
-        raise ValueError("comparison candidate has no source")
-    eligible = bool(row.eligible and category_ok and distance_ok)
+    for cell, _attribute in field_claims:
+        if cell is None:
+            continue
+        if len({source.evidence_id for source in cell.sources}) != len(cell.sources):
+            raise ValueError("comparison cell contains duplicate source citations")
+        referenced_evidence = {
+            evidence_id
+            for claim_id in cell.claim_ids
+            for evidence_id in claims[claim_id].evidence_ids
+        }
+        if any(source.evidence_id not in referenced_evidence for source in cell.sources):
+            raise ValueError("comparison cell contains an unrelated citation")
+        for claim_id in cell.claim_ids:
+            claim = claims[claim_id]
+            for evidence_id in claim.evidence_ids:
+                observation = observations_by_evidence.get(evidence_id)
+                citation = next(
+                    (item for item in cell.sources if item.evidence_id == evidence_id), None
+                )
+                if (
+                    observation is None
+                    or observation.owner_id != owner_id
+                    or citation is None
+                    or citation.source_observation_id != observation.source_observation_id
+                    or citation.url != observation.url
+                    or citation.title != observation.title
+                    or citation.observed_at != observation.observed_at
+                    or citation.expires_at != observation.expires_at
+                    or citation.attribution != observation.attribution
+                    or citation.policy_url != observation.policy_url
+                ):
+                    raise ValueError("candidate claim and source citation do not correlate")
+                effective_expiry = min(observation.expires_at, claim.expires_at)
+                if effective_expiry <= observation.observed_at:
+                    raise ValueError("claim expires before its supporting source was observed")
+                current_source = TravelComparisonSourceResponse(
+                    evidence_id=evidence_id,
+                    source_observation_id=observation.source_observation_id,
+                    provider=observation.provider,
+                    url=observation.url,
+                    title=observation.title,
+                    attribution=observation.attribution,
+                    policy_url=observation.policy_url,
+                    observed_at=observation.observed_at,
+                    expires_at=effective_expiry,
+                )
+                previous = sources.get(evidence_id)
+                if previous is not None:
+                    if (
+                        previous.model_copy(update={"expires_at": current_source.expires_at})
+                        != current_source
+                    ):
+                        raise ValueError("duplicate candidate evidence is inconsistent")
+                    current_source = previous.model_copy(
+                        update={"expires_at": min(previous.expires_at, current_source.expires_at)}
+                    )
+                sources[evidence_id] = current_source
+                if observation.provider == "osm_nominatim":
+                    if place_type is not None:
+                        place_source, provider_place_id = _verified_osm_source(
+                            observation, place_type
+                        )
+                        osm_place_ids.add(provider_place_id)
+                else:
+                    only_osm_sources = False
+    has_current_claims = type_is_current and location_is_current
+    eligible = bool(
+        row.eligible and has_current_claims and category_ok is True and distance_ok is True
+    )
     exclusions = list(row.exclusion_reasons)
-    if not category_ok:
+    if category_ok is False:
         exclusions.append("The source place type does not match this category.")
-    if not distance_ok:
+    elif category_ok is None:
+        exclusions.append("Current verified place type evidence is unavailable.")
+    if distance_ok is False:
         exclusions.append("The candidate is outside the selected distance limit.")
+    elif distance_ok is None:
+        exclusions.append("Current verified location evidence is unavailable.")
     if not row.eligible and not exclusions:
         exclusions.append("The upstream hard-constraint check did not pass.")
     constraints = (
         TravelComparisonConstraintResponse(
             name="category",
             label="Place category",
-            outcome="pass" if category_ok else "fail",
+            outcome="unknown" if category_ok is None else ("pass" if category_ok else "fail"),
             detail=(
-                f"Source type: {place_type}."
-                if category_ok
-                else f"Source type {place_type!r} is outside the selected category."
+                "No single current verified place type was available."
+                if category_ok is None
+                else (
+                    f"Source type: {place_type}."
+                    if category_ok
+                    else f"Source type {place_type!r} is outside the selected category."
+                )
             ),
         ),
         TravelComparisonConstraintResponse(
             name="distance",
             label=f"Within {radius_km:g} km",
-            outcome="pass" if distance_ok else "fail",
-            detail=f"{distance:.1f} km from {radius_km:g} km limit.",
+            outcome="unknown" if distance_ok is None else ("pass" if distance_ok else "fail"),
+            detail=(
+                "No single current verified location was available."
+                if distance_ok is None
+                else f"{distance:.1f} km from {radius_km:g} km limit."
+            ),
         ),
     )
     address = next(
-        (sources[evidence_id].title for evidence_id in evidence_ids if sources[evidence_id].title),
+        (source.title for source in sources.values() if source.title),
         None,
     )
     response = TravelComparisonCandidateResponse(
@@ -585,30 +694,41 @@ def _validated_candidate(
     )
 
 
-def _current_claim(
+def _display_claim(
     cell: _ComparisonCell | None,
     claims: dict[UUID, _DomainClaim],
     attribute: str,
-    now: datetime,
 ) -> _DomainClaim | None:
-    if cell is None or cell.status != "verified" or not cell.claim_ids:
+    if cell is None or cell.status != "verified" or len(cell.claim_ids) != 1:
         return None
     matching = [
         claims[claim_id]
         for claim_id in cell.claim_ids
         if claim_id in claims and claims[claim_id].attribute == attribute
     ]
-    current = [
-        claim
-        for claim in matching
-        if claim.domain_id == "travel"
-        and claim.observed_at <= now
-        and claim.expires_at > now
-        and set(claim.evidence_ids)
-    ]
-    if len(current) != 1:
+    if len(matching) != 1:
         return None
-    return current[0]
+    claim = matching[0]
+    if claim.domain_id != "travel" or not claim.evidence_ids:
+        raise ValueError("comparison claim metadata is invalid")
+    return claim
+
+
+def _claim_is_current(
+    claim: _DomainClaim | None,
+    observations: dict[UUID, _ProviderObservation],
+    owner_id: str,
+    now: datetime,
+) -> bool:
+    if claim is None or claim.observed_at > now or claim.expires_at <= now:
+        return False
+    return any(
+        (observation := observations.get(evidence_id)) is not None
+        and observation.owner_id == owner_id
+        and observation.observed_at <= now
+        and min(observation.expires_at, claim.expires_at) > now
+        for evidence_id in claim.evidence_ids
+    )
 
 
 def _verified_osm_source(

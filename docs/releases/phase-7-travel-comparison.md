@@ -61,9 +61,22 @@ accepted preference-retrieval endpoint; this consumer does not invent one.
 
 ## Local verification
 
-- Backend: Ruff passed; mypy passed for all 90 source modules.
-- Frontend: ESLint passed across the project; `next typegen` and TypeScript
-  `--noEmit` passed.
-- Backend and frontend test suites were not run. Category fixture coverage and
-  provider policy verification remain required for the Phase 7 exit gate.
-- No database migration was needed.
+- Backend: Ruff check and format passed; mypy passed for all 90 source modules.
+  Focused comparison/client tests passed (50 passed); three migrated PostgreSQL
+  tests were skipped because `TEST_DATABASE_URL` is unavailable.
+- Full backend suite: 128 passed, 122 skipped, and four failed. The failures are
+  Google key-fetch tests whose local HTTP server cannot bind a socket in this
+  sandbox (`PermissionError: Operation not permitted`). PostgreSQL-dependent
+  tests, including separate-session save locking and stale-center cases, remain
+  unverified here. Docker and a PostgreSQL listener are unavailable; local
+  PostgreSQL initialization also failed because this sandbox cannot allocate
+  the shared memory segment Postgres requires.
+- Frontend: ESLint, `next typegen`, TypeScript `--noEmit`, the production build,
+  and all 47 Node tests passed. The radius input now has matching default, min,
+  max, and step values; a rendered browser `checkValidity()` run was unavailable.
+- No database migration was needed. No live provider, OAuth, service-IAM,
+  deployment, or private input was used. Provider policy verification and the
+  full Phase 7 exit gate remain open.
+
+The initial independent review findings and their code/test disposition are
+recorded in [`../reviews/phase-7-independent-review.md`](../reviews/phase-7-independent-review.md).

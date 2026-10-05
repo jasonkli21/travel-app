@@ -31,6 +31,9 @@ MAX_REQUEST_BYTES = 64 * 1024
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 UPLOAD_PATH = re.compile(r"^/v1/trips/[0-9a-fA-F-]{36}/imports$")
 EXTRACTION_PATH = re.compile(r"^/v1/trips/[0-9a-fA-F-]{36}/imports/[0-9a-fA-F-]{36}/extract$")
+COMPARISON_PATH = re.compile(
+    r"^/v1/trips/[0-9a-fA-F-]{36}/research/(?:compare|comparisons/[0-9a-fA-F-]{36}/candidates/[0-9a-fA-F-]{36}/save)$"
+)
 UPLOAD_SECONDS = 30
 
 
@@ -219,9 +222,7 @@ class LocalBoundaryMiddleware:
                         await reject(403, "csrf_rejected", "The request could not be verified.")
                         return
 
-                is_research_comparison_operation = (
-                    path.startswith("/v1/trips/") and "/research/compare" in path
-                )
+                is_research_comparison_operation = COMPARISON_PATH.fullmatch(path) is not None
                 is_research_operation = (
                     path.startswith("/v1/trips/")
                     and "/research" in path

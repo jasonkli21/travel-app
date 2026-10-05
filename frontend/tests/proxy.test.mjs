@@ -108,6 +108,27 @@ test("proxy forwards only session cookies and derives the AI user token from its
   assert.equal(forwarded.get("x-owner-id"), null);
   assert.equal(forwarded.get("origin"), "http://localhost:3000");
   assert.equal(forwarded.get("x-csrf-token"), "csrf-proof");
+
+  const tripId = "00000000-0000-4000-8000-000000000001";
+  const comparisonId = "00000000-0000-4000-8000-000000000002";
+  const candidateId = "00000000-0000-4000-8000-000000000003";
+  for (const path of [
+    ["trips", tripId, "research", "compare"],
+    ["trips", tripId, "research", "comparisons", comparisonId, "candidates", candidateId, "save"],
+  ]) {
+    const nextRequest = new Request(`http://localhost:3000/api/v1/${path.join("/")}`, {
+      method: "POST",
+      headers: {
+        host: "localhost:3000",
+        origin: "http://localhost:3000",
+        cookie: "__Host-travel_ai_token=signed-google-user-token",
+        "x-csrf-token": "csrf-proof",
+      },
+      body: "{}",
+    });
+    await proxyRequest(nextRequest, path, { fetchImpl });
+    assert.equal(forwarded.get("x-user-id-token"), "signed-google-user-token");
+  }
 });
 
 test("proxy forwards only session cookies returned by the backend", async () => {
