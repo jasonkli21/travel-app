@@ -16,6 +16,7 @@ import {
   type PlaceSearchResult,
   type Reservation,
   type SavedPlace,
+  type SaveTravelComparisonCandidateInput,
   type TripDetail,
   type UpdatePlaceInput,
   type UpdateReservationInput,
@@ -23,6 +24,7 @@ import {
 } from "../lib/api";
 import TripMap, { type TripMapMarker, type TripMapRoute } from "./trip-map";
 import TripResearchPanel from "./trip-research-panel";
+import TripComparisonPanel from "./trip-comparison-panel";
 import ProposalPanel from "./trip-workspace/proposal-panel";
 import BookingImportPanel from "./trip-workspace/booking-import-panel";
 import { errorMessage } from "../lib/errors";
@@ -72,6 +74,15 @@ function formatAvailableGap(seconds: number): string {
 }
 
 function PlaceAttribution({ place }: { place: PlaceSummary | null }) {
+  if (place?.provider === "osm_nominatim") {
+    return (
+      <span className="providerAttribution">
+        {place.provider_source_attribution ?? "© OpenStreetMap contributors"}
+        {place.provider_source_license ? ` · ${place.provider_source_license}` : " · ODbL 1.0"}
+        {safeHttpUrl(place.provider_source_url) ? <> · <a href={safeHttpUrl(place.provider_source_url)!} target="_blank" rel="noreferrer">OpenStreetMap source</a></> : null}
+      </span>
+    );
+  }
   if (place?.provider !== "geoapify") return null;
   return (
     <span className="providerAttribution">
@@ -116,6 +127,7 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
   const [logistics, setLogistics] = useState<LogisticsEstimate | null>(null);
   const [logisticsPending, setLogisticsPending] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [proposalSuggestion, setProposalSuggestion] = useState<{ key: string; instruction: string } | null>(null);
 
   const refresh = useCallback(async (
     { resetDrafts = false }: { resetDrafts?: boolean } = {},
@@ -479,6 +491,26 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
     return saved;
   };
 
+  const saveComparedCandidate = async (
+    comparisonId: string,
+    candidateId: string,
+    input: SaveTravelComparisonCandidateInput,
+  ) => run("comparison-candidate", async () => {
+    await travelApi.saveTravelComparisonCandidate(
+      trip.id,
+      comparisonId,
+      candidateId,
+      input,
+      trip.revision,
+    );
+  });
+
+  const arrangeComparedCandidate = (name: string) => {
+    const instruction = `Add ${name} as an itinerary item on a suitable free day. Keep confirmed or booked anchors in place.`;
+    setProposalSuggestion({ key: crypto.randomUUID(), instruction });
+    document.getElementById("proposals")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   const workspacePlaceFootprint = places
     .map((place) => `${place.id}:${place.revision}`)
     .sort()
@@ -498,6 +530,7 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
           <a className="active" href="#itinerary">Itinerary</a>
           <a href="#map">Map</a>
           <a href="#research">Research</a>
+          <a href="#compare">Compare places</a>
           <a href="#proposals">Proposals</a>
           <a href="#reservations">Reservations</a>
           <a href="#saved-places">Saved places</a>
@@ -676,6 +709,15 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
           onSaveCandidate={saveResearchCandidate}
         />
 
+        <TripComparisonPanel
+          key={`${editorGeneration}-${trip.id}`}
+          trip={trip}
+          savedPlaces={savedPlaces}
+          pending={(pending !== null || stale)}
+          onSaveCandidate={saveComparedCandidate}
+          onArrangeCandidate={arrangeComparedCandidate}
+        />
+
         <ProposalPanel
           trip={trip}
           workspacePlaceFootprint={workspacePlaceFootprint}
@@ -683,6 +725,7 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
           disabled={stale}
           onPendingChange={setProposalPending}
           onCommitted={() => refresh({ resetDrafts: true })}
+          suggestedInstruction={proposalSuggestion}
         />
 
         <BookingImportPanel

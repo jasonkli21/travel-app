@@ -190,6 +190,86 @@ export interface TripResearchResult {
   citations: ResearchCitation[];
 }
 
+export type TravelComparisonCategory = "food" | "activity" | "neighborhood" | "day_trip";
+export type TravelComparisonOutcome = "pass" | "fail" | "unknown";
+export type TravelComparisonState =
+  | "recommended"
+  | "eligible_unranked"
+  | "research_needed"
+  | "no_verified_match"
+  | "insufficient"
+  | "expired";
+
+export interface TravelComparisonRequest {
+  category: TravelComparisonCategory;
+  query: string;
+  reference_place_id: string;
+  radius_km: number;
+  max_results: number;
+  idempotency_key: string;
+}
+
+export interface TravelComparisonSource {
+  evidence_id: string;
+  source_observation_id: string;
+  provider: string;
+  url: string;
+  title: string | null;
+  attribution: string;
+  policy_url: string | null;
+  observed_at: string;
+  expires_at: string;
+}
+
+export interface TravelComparisonConstraint {
+  name: "category" | "distance";
+  label: string;
+  outcome: TravelComparisonOutcome;
+  detail: string;
+}
+
+export interface TravelComparisonCandidate {
+  candidate_id: string;
+  name: string;
+  category: TravelComparisonCategory;
+  address: string | null;
+  place_type: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  distance_km: number | null;
+  eligible: boolean;
+  rank: number | null;
+  score: number | null;
+  exclusion_reasons: string[];
+  constraints: TravelComparisonConstraint[];
+  sources: TravelComparisonSource[];
+}
+
+export interface TravelComparisonResult {
+  schema_version: "travel-research-comparison-v1";
+  comparison_id: string;
+  category: TravelComparisonCategory;
+  state: TravelComparisonState;
+  trip_revision: number;
+  reference_place_id: string;
+  reference_place_revision: number;
+  reference_place_name: string;
+  radius_km: number;
+  generated_at: string;
+  expires_at: string | null;
+  candidates: TravelComparisonCandidate[];
+}
+
+export interface SaveTravelComparisonCandidateInput {
+  name: string;
+  address: string | null;
+  category: string | null;
+  note: string | null;
+  trip_revision: number;
+  reference_place_id: string;
+  reference_place_revision: number;
+}
+
 export type ProposalState =
   | "generating"
   | "outcome_unknown"
@@ -460,6 +540,25 @@ export const travelApi = {
     method: "POST",
     body: JSON.stringify(input),
   }),
+  compareTripPlaces: (tripId: string, input: TravelComparisonRequest) =>
+    request<TravelComparisonResult>(`/trips/${tripId}/research/compare`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  saveTravelComparisonCandidate: (
+    tripId: string,
+    comparisonId: string,
+    candidateId: string,
+    input: SaveTravelComparisonCandidateInput,
+    revision: number,
+  ) => request<SavedPlace>(
+    `/trips/${tripId}/research/comparisons/${comparisonId}/candidates/${candidateId}/save`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+      headers: expectedRevision(revision),
+    },
+  ),
   createProposal: (tripId: string, input: CreateProposalInput, revision: number) =>
     request<ProposalDetail>(`/trips/${tripId}/proposals`, {
       method: "POST",

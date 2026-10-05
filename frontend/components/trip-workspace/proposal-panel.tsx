@@ -102,6 +102,7 @@ export default function ProposalPanel({
   disabled,
   onCommitted,
   onPendingChange,
+  suggestedInstruction,
 }: {
   trip: TripDetail;
   workspacePlaceFootprint: string;
@@ -109,6 +110,7 @@ export default function ProposalPanel({
   disabled: boolean;
   onCommitted: () => Promise<boolean>;
   onPendingChange: (pending: boolean) => void;
+  suggestedInstruction?: { key: string; instruction: string } | null;
 }) {
   const [instruction, setInstruction] = useState("");
   const [selectedRemovals, setSelectedRemovals] = useState<string[]>([]);
@@ -119,6 +121,7 @@ export default function ProposalPanel({
   const [clockNow, setClockNow] = useState(() => Date.now());
   const requestInFlight = useRef(false);
   const proposalRef = useRef(proposal);
+  const seenSuggestion = useRef<string | null>(null);
   const eligibleItems = useMemo(() => removableItems(trip), [trip]);
   const setTaskPending = (next: "generate" | "status" | "apply" | "reject" | null) => {
     setPending(next);
@@ -156,6 +159,23 @@ export default function ProposalPanel({
     setInstruction("");
     setSelectedRemovals([]);
   };
+
+  useEffect(() => {
+    if (!suggestedInstruction || seenSuggestion.current === suggestedInstruction.key) return;
+    seenSuggestion.current = suggestedInstruction.key;
+    const current = proposalRef.current;
+    if (current && !proposalIsTerminal(current, trip.revision)) {
+      setRequestMessage("Review or finish the current proposal before starting another itinerary change.");
+      return;
+    }
+    if (current) {
+      setProposal(null);
+      setIdempotencyKey(null);
+      setSelectedRemovals([]);
+    }
+    setInstruction(suggestedInstruction.instruction);
+    setRequestMessage("Review this instruction, then choose Generate proposal to see the full itinerary diff. Saving a place did not change the itinerary.");
+  }, [suggestedInstruction, trip.revision]);
 
   const checkRequest = async () => {
     if (!idempotencyKey || requestInFlight.current) return;

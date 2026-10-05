@@ -80,6 +80,36 @@ h3 { margin: 3px 0 0; }
 .researchSourceTimes { color: var(--muted); font-size: 11px; line-height: 1.4; }
 .researchCandidateForm { margin-top: 4px; }
 .researchCandidateForm .formHint { margin: 0; }
+.comparisonSection { display: grid; gap: 14px; margin-top: 38px; scroll-margin-top: 20px; }
+.comparisonSection > .sectionHeading { margin-bottom: 0; }
+.comparisonDisclosure { border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 0 8px 8px 0; color: #34483a; font-size: 13px; line-height: 1.5; margin: 0; padding: 11px 13px; }
+.comparisonForm, .comparisonSaveForm { display: grid; gap: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 16px; }
+.comparisonForm fieldset, .comparisonSaveForm fieldset { display: grid; gap: 12px; border: 0; margin: 0; min-width: 0; padding: 0; }
+.comparisonLimit { max-width: 240px; }
+.comparisonResults { display: grid; gap: 9px; }
+.comparisonState { border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font-size: 13px; line-height: 1.45; margin: 0; padding: 10px 12px; }
+.comparisonMeta { color: var(--muted); font-size: 12px; margin: 0; }
+.comparisonCandidateList { display: grid; gap: 12px; list-style: none; margin: 0; padding: 0; }
+.comparisonCandidate { display: grid; gap: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 15px; }
+.comparisonCandidateHeading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.comparisonCandidateHeading .eyebrow { margin-bottom: 5px; }
+.comparisonCandidateHeading h3 { font-size: 18px; margin: 0; overflow-wrap: anywhere; }
+.comparisonCandidateHeading .muted { font-size: 12px; margin: 5px 0 0; }
+.comparisonPill { flex: 0 0 auto; border: 1px solid #c6d9ca; border-radius: 999px; background: #f1f7f1; color: #37573f; font-size: 11px; font-weight: 750; padding: 5px 9px; }
+.comparisonPill-warning { border-color: #e2b9b1; background: #fff8f5; color: var(--danger); }
+.comparisonChecks, .comparisonReasons { display: grid; gap: 5px; margin: 0; padding-left: 18px; }
+.comparisonChecks li, .comparisonReasons li { font-size: 12px; line-height: 1.45; }
+.comparisonChecks li[data-outcome="fail"] { color: var(--danger); }
+.comparisonChecks li[data-outcome="unknown"] { color: #745a1f; }
+.comparisonSources { display: grid; gap: 7px; list-style: none; margin: 0; padding: 0; }
+.comparisonSources li { border: 1px solid var(--line); border-radius: 8px; background: var(--bg); padding: 9px 11px; }
+.comparisonSources li > div { display: grid; gap: 4px; }
+.comparisonSources a, .comparisonMapLink { color: var(--accent); font-size: 12px; font-weight: 700; overflow-wrap: anywhere; }
+.comparisonSources span, .comparisonSources small { color: var(--muted); font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
+.comparisonSavedActions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; color: var(--accent); font-size: 12px; font-weight: 700; }
+.comparisonSaveForm { gap: 10px; padding: 13px; }
+.comparisonSaveForm h4 { font-size: 14px; margin: 0; }
+.comparisonSaveForm .formHint { margin: 0; }
 .proposalPanel { display: grid; gap: 16px; margin-top: 38px; scroll-margin-top: 20px; }
 .proposalPanel > h2 { margin-bottom: 0; }
 .proposalForm, .proposalReview { display: grid; gap: 14px; border: 1px solid var(--line); border-radius: 13px; background: var(--panel); box-shadow: var(--shadow); padding: 18px; }
@@ -319,6 +349,10 @@ input:focus, select:focus, textarea:focus, button:focus-visible, a:focus-visible
   .itemActions { grid-column: 1 / -1; justify-content: flex-start; }
   .formGrid { grid-template-columns: 1fr; }
   .researchForm, .researchCandidateForm { padding: 12px; }
+  .comparisonForm { padding: 12px; }
+  .comparisonCandidate { padding: 12px; }
+  .comparisonCandidateHeading { flex-direction: column; }
+  .comparisonPill { align-self: flex-start; }
   .inlineForm { align-items: stretch; flex-direction: column; }
   .inlineForm button { width: 100%; }
   .reservationHeader { flex-direction: column; }
