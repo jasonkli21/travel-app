@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     CheckConstraint,
     DateTime,
@@ -64,9 +66,29 @@ class BookingImport(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     state: Mapped[str] = mapped_column(String(16), nullable=False, default="received")
     parser_version: Mapped[str] = mapped_column(String(32), nullable=False, default="source-v1")
     review_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    retention_choice: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="delete_after_confirmation"
+    )
+    extraction_key: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    extraction_claim_token: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+    extraction_claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    extraction_post_attempted: Mapped[bool] = mapped_column(nullable=False, default=False)
+    upstream_delete_pending: Mapped[bool] = mapped_column(nullable=False, default=False)
+    upstream_extraction_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    upstream_revision: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    upstream_result_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    candidate_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    confirmation_key: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    confirmation_fingerprint: Mapped[str | None] = mapped_column(String(64))
+    confirmation_outcome: Mapped[dict[str, object] | None] = mapped_column(JSON)
     __table_args__ = (
         UniqueConstraint("owner_id", "trip_id", "request_key", name="uq_import_request_key"),
         UniqueConstraint("owner_id", "trip_id", "source_sha256", name="uq_import_source_hash"),
+        UniqueConstraint(
+            "owner_id", "trip_id", "extraction_key", name="uq_booking_import_extraction_key"
+        ),
         UniqueConstraint("source_id", name="uq_import_source"),
         CheckConstraint("length(request_fingerprint) = 64", name="request_fingerprint_length"),
         CheckConstraint("length(source_sha256) = 64", name="source_hash_length"),
@@ -77,7 +99,16 @@ class BookingImport(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ),
         CheckConstraint("review_revision >= 0", name="import_review_revision_nonnegative"),
         CheckConstraint(
-            "state IN ('received','extracting','review_ready','applied','rejected','failed')",
+            "retention_choice IN ('delete_after_confirmation','keep_until_expiry')",
+            name="booking_import_retention_choice",
+        ),
+        CheckConstraint(
+            "confirmation_fingerprint IS NULL OR length(confirmation_fingerprint) = 64",
+            name="booking_import_confirmation_fingerprint_length",
+        ),
+        CheckConstraint(
+            "state IN ('received','extracting','review_ready','applied','rejected','failed',"
+            "'expired')",
             name="booking_import_state",
         ),
     )

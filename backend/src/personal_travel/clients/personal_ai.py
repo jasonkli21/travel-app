@@ -19,6 +19,7 @@ from personal_travel.auth.google_oidc import cloud_run_service_id_token
 from personal_travel.clients.http import InvalidUpstreamResponse, read_json, sse_lines
 from personal_travel.config import get_settings
 from personal_travel.domain.types import ResearchState
+from personal_travel.domain.upstream_extractions import UpstreamBookingExtractionResult
 from personal_travel.domain.upstream_proposals import UpstreamProposalResult
 from personal_travel.domain.urls import validate_http_url
 
@@ -29,6 +30,7 @@ MAX_RESEARCH_STREAM_BYTES = 128 * 1024
 MAX_RESEARCH_EVENTS = 128
 MAX_RESEARCH_RESPONSE_BYTES = 1_000_000
 MAX_PROPOSAL_RESPONSE_BYTES = 128 * 1024
+MAX_EXTRACTION_RESPONSE_BYTES = 64 * 1024
 
 
 class PersonalAIError(RuntimeError):
@@ -100,6 +102,14 @@ class PersonalAIProposalError(RuntimeError):
 
 class PersonalAIProposalUnknown(PersonalAIProposalError):
     """The POST outcome is ambiguous and can only be reconciled by its stable key."""
+
+
+class PersonalAIExtractionError(RuntimeError):
+    """Safe booking extraction client failure."""
+
+
+class PersonalAIExtractionUnknown(PersonalAIExtractionError):
+    """The POST outcome is ambiguous; recovery must use the existing key."""
 
 
 class PersonalAIClient:
@@ -272,6 +282,187 @@ class PersonalAIClient:
             f"/v1/travel/itinerary-proposals/{proposal_id}", missing_is_none=False
         )
         assert result is not None
+        return result
+
+    async def create_booking_extraction(
+        self,
+        *,
+        payload: dict[str, object],
+        idempotency_key: UUID,
+        source_sha256: str,
+    ) -> UpstreamBookingExtractionResult:
+        """POST exactly once, then recover only through the same idempotency key."""
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self._timeout
+        try:
+            async with asyncio.timeout_at(deadline):
+                headers = await self._outbound_headers()
+                async with httpx.AsyncClient(
+                    timeout=self._timeout, transport=self._transport
+                ) as client:
+                    try:
+                        result = await self._extraction_request(
+                            client,
+                            "POST",
+                            "/v1/travel/booking-extractions",
+                            payload,
+                            deadline=deadline,
+                            headers=headers,
+                        )
+                    except (
+                        httpx.HTTPError,
+                        TimeoutError,
+                        InvalidUpstreamResponse,
+                        ValidationError,
+                    ):
+                        result = None
+                    if result is not None and result.state not in {"running"}:
+                        return self._check_extraction_identity(
+                            result, idempotency_key, source_sha256
+                        )
+                    reconciled = await self._extraction_request(
+                        client,
+                        "GET",
+                        f"/v1/travel/booking-extractions/by-key/{idempotency_key}",
+                        None,
+                        deadline=deadline,
+                        missing_is_none=True,
+                        headers=headers,
+                    )
+                    if reconciled is not None:
+                        return self._check_extraction_identity(
+                            reconciled, idempotency_key, source_sha256
+                        )
+                    raise PersonalAIExtractionUnknown("booking extraction outcome is unknown")
+        except PersonalAIExtractionUnknown:
+            raise
+        except (PersonalAIError, TimeoutError, httpx.HTTPError, ValueError, ValidationError):
+            raise PersonalAIExtractionUnknown("booking extraction outcome is unknown") from None
+
+    async def get_booking_extraction_by_key(
+        self, idempotency_key: UUID, source_sha256: str
+    ) -> UpstreamBookingExtractionResult | None:
+        result = await self._get_booking_extraction(
+            f"/v1/travel/booking-extractions/by-key/{idempotency_key}", missing_is_none=True
+        )
+        if result is not None:
+            return self._check_extraction_identity(result, idempotency_key, source_sha256)
+        return None
+
+    async def get_booking_extraction(
+        self, extraction_id: UUID, idempotency_key: UUID, source_sha256: str
+    ) -> UpstreamBookingExtractionResult:
+        result = await self._get_booking_extraction(
+            f"/v1/travel/booking-extractions/{extraction_id}", missing_is_none=False
+        )
+        assert result is not None
+        return self._check_extraction_identity(result, idempotency_key, source_sha256)
+
+    async def delete_booking_extraction(
+        self, extraction_id: UUID, idempotency_key: UUID, source_sha256: str
+    ) -> UpstreamBookingExtractionResult:
+        return await self._booking_extraction_call(
+            "DELETE",
+            f"/v1/travel/booking-extractions/{extraction_id}",
+            None,
+            idempotency_key,
+            source_sha256,
+        )
+
+    async def delete_booking_extraction_by_key(
+        self, idempotency_key: UUID, source_sha256: str
+    ) -> UpstreamBookingExtractionResult:
+        """Tombstone the owner/key even if its POST has not reached storage yet."""
+        return await self._booking_extraction_call(
+            "DELETE",
+            f"/v1/travel/booking-extractions/by-key/{idempotency_key}",
+            {"source_sha256": source_sha256},
+            idempotency_key,
+            source_sha256,
+        )
+
+    async def _get_booking_extraction(
+        self, path: str, *, missing_is_none: bool
+    ) -> UpstreamBookingExtractionResult | None:
+        try:
+            async with asyncio.timeout(self._timeout):
+                headers = await self._outbound_headers()
+                async with httpx.AsyncClient(
+                    timeout=self._timeout, transport=self._transport
+                ) as client:
+                    return await self._extraction_request(
+                        client,
+                        "GET",
+                        path,
+                        None,
+                        deadline=asyncio.get_running_loop().time() + self._timeout,
+                        missing_is_none=missing_is_none,
+                        headers=headers,
+                    )
+        except (PersonalAIError, TimeoutError, httpx.HTTPError, ValueError, ValidationError):
+            raise PersonalAIExtractionError("booking extraction service is unavailable") from None
+
+    async def _booking_extraction_call(
+        self,
+        method: Literal["GET", "POST", "DELETE"],
+        path: str,
+        payload: dict[str, object] | None,
+        idempotency_key: UUID,
+        source_sha256: str,
+    ) -> UpstreamBookingExtractionResult:
+        try:
+            async with asyncio.timeout(self._timeout):
+                headers = await self._outbound_headers()
+                async with httpx.AsyncClient(
+                    timeout=self._timeout, transport=self._transport
+                ) as client:
+                    result = await self._extraction_request(
+                        client,
+                        method,
+                        path,
+                        payload,
+                        deadline=asyncio.get_running_loop().time() + self._timeout,
+                        headers=headers,
+                    )
+                    assert result is not None
+                    return self._check_extraction_identity(result, idempotency_key, source_sha256)
+        except (PersonalAIError, TimeoutError, httpx.HTTPError, ValueError, ValidationError):
+            raise PersonalAIExtractionError("booking extraction service is unavailable") from None
+
+    async def _extraction_request(
+        self,
+        client: httpx.AsyncClient,
+        method: Literal["GET", "POST", "DELETE"],
+        path: str,
+        payload: dict[str, object] | None,
+        *,
+        deadline: float,
+        missing_is_none: bool = False,
+        headers: dict[str, str] | None = None,
+    ) -> UpstreamBookingExtractionResult | None:
+        remaining = deadline - asyncio.get_running_loop().time()
+        if remaining <= 0:
+            raise TimeoutError
+        async with asyncio.timeout_at(deadline):
+            async with client.stream(
+                method,
+                f"{self._base_url}{path}",
+                json=payload,
+                headers=headers,
+                timeout=httpx.Timeout(remaining),
+            ) as response:
+                if missing_is_none and response.status_code == 404:
+                    return None
+                response.raise_for_status()
+                raw = await read_json(response, max_bytes=MAX_EXTRACTION_RESPONSE_BYTES)
+                return UpstreamBookingExtractionResult.from_payload(raw)
+
+    @staticmethod
+    def _check_extraction_identity(
+        result: UpstreamBookingExtractionResult, key: UUID, source_sha256: str
+    ) -> UpstreamBookingExtractionResult:
+        if result.idempotency_key != key or result.source_sha256 != source_sha256:
+            raise InvalidUpstreamResponse("booking extraction identity mismatch")
         return result
 
     async def _get_itinerary_proposal(

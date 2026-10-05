@@ -24,6 +24,7 @@ import {
 import TripMap, { type TripMapMarker, type TripMapRoute } from "./trip-map";
 import TripResearchPanel from "./trip-research-panel";
 import ProposalPanel from "./trip-workspace/proposal-panel";
+import BookingImportPanel from "./trip-workspace/booking-import-panel";
 import { errorMessage } from "../lib/errors";
 import { uncertainMutationError } from "../lib/mutation-outcome.mjs";
 import { revisionConflictRecovery } from "../lib/revision-conflict.mjs";
@@ -682,6 +683,14 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
           disabled={stale}
           onPendingChange={setProposalPending}
           onCommitted={() => refresh({ resetDrafts: true })}
+        />
+
+        <BookingImportPanel
+          trip={trip}
+          reservations={reservations}
+          savedPlaces={savedPlaces}
+          disabled={pending !== null || stale}
+          onTripChanged={() => refresh({ resetDrafts: true })}
         />
 
         <section className="itinerarySection" id="itinerary">

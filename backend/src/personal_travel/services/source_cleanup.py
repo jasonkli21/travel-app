@@ -17,7 +17,8 @@ from sqlalchemy.orm import Session
 
 from personal_travel.config import get_settings
 from personal_travel.db.session import SessionFactory
-from personal_travel.models.import_source import SourceAttachment
+from personal_travel.models.import_source import BookingImport, SourceAttachment
+from personal_travel.models.trip import Trip
 from personal_travel.services.source_store import KEY, LocalSourceStore
 
 SessionFactoryLike = Callable[[], Session]
@@ -238,6 +239,19 @@ def _claim_ready_for_deletion(
     session_factory: SessionFactoryLike, source_id: UUID, object_key: str
 ) -> bool:
     with session_factory() as session, session.begin():
+        trip_id = session.scalar(
+            select(SourceAttachment.trip_id).where(SourceAttachment.id == source_id)
+        )
+        if trip_id is not None:
+            session.scalar(select(Trip).where(Trip.id == trip_id).with_for_update())
+        imports = list(
+            session.scalars(
+                select(BookingImport)
+                .where(BookingImport.source_id == source_id)
+                .order_by(BookingImport.id)
+                .with_for_update()
+            )
+        )
         result = session.execute(
             update(SourceAttachment)
             .where(
@@ -248,7 +262,21 @@ def _claim_ready_for_deletion(
             .values(state="deleting", updated_at=datetime.now(UTC))
             .returning(SourceAttachment.id)
         )
-        return result.scalar_one_or_none() is not None
+        if result.scalar_one_or_none() is None:
+            return False
+        for item in imports:
+            item.source_id = None
+            item.candidate_snapshot = None
+            if item.extraction_key is not None and item.extraction_post_attempted:
+                item.upstream_delete_pending = True
+            item.extraction_claim_token = None
+            item.extraction_claimed_at = None
+            if item.state not in {"applied", "rejected", "failed", "expired"}:
+                item.state = "expired"
+                item.candidate_snapshot = {"failure_code": "source_deleted"}
+                item.review_revision += 1
+            item.updated_at = datetime.now(UTC)
+        return True
 
 
 def _finish_deletion(
@@ -262,6 +290,30 @@ def _finish_deletion(
     store.delete(object_key)
     store.delete(object_key, temp=True)
     with session_factory() as session, session.begin():
+        source = session.scalar(
+            select(SourceAttachment).where(
+                SourceAttachment.id == source_id,
+                SourceAttachment.object_key == object_key,
+                SourceAttachment.state == "deleting",
+            )
+        )
+        if source is not None and source.trip_id is not None:
+            session.scalar(select(Trip).where(Trip.id == source.trip_id).with_for_update())
+        item = session.scalar(
+            select(BookingImport).where(BookingImport.source_id == source_id).with_for_update()
+        )
+        if item is not None:
+            item.source_id = None
+            item.candidate_snapshot = None
+            if item.extraction_key is not None and item.extraction_post_attempted:
+                item.upstream_delete_pending = True
+            item.extraction_claim_token = None
+            item.extraction_claimed_at = None
+            if item.state not in {"applied", "rejected", "failed", "expired"}:
+                item.state = "expired"
+                item.candidate_snapshot = {"failure_code": "source_deleted"}
+                item.review_revision += 1
+            item.updated_at = datetime.now(UTC)
         result = session.execute(
             delete(SourceAttachment)
             .where(

@@ -42,9 +42,11 @@ class Settings(BaseSettings):
     personal_ai_timeout_seconds: float = Field(default=45.0, gt=0, le=50)
     personal_ai_research_enabled: bool = False
     personal_ai_proposals_enabled: bool = False
+    personal_ai_extractions_enabled: bool = False
     private_imports_enabled: bool = False
     private_source_dir: str = ""
     personal_ai_proposal_timeout_seconds: float = Field(default=45.0, gt=0, le=49)
+    personal_ai_extraction_timeout_seconds: float = Field(default=35.0, gt=0, le=40)
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     allowed_hosts: str = "localhost,127.0.0.1,::1"
     geoapify_api_key: SecretStr | None = None
@@ -161,9 +163,15 @@ class Settings(BaseSettings):
                     "Cloud Run AI transport requires a Google user-token audience matching the "
                     "OAuth client, plus an HTTPS service audience and identity."
                 )
+        if self.personal_ai_extractions_enabled and not self.private_imports_enabled:
+            raise ValueError("Booking extraction requires private source intake to be enabled.")
         if (
             self.travel_auth_mode == "google_oidc"
-            and (self.personal_ai_research_enabled or self.personal_ai_proposals_enabled)
+            and (
+                self.personal_ai_research_enabled
+                or self.personal_ai_proposals_enabled
+                or self.personal_ai_extractions_enabled
+            )
             and self.personal_ai_auth_mode == "none"
         ):
             raise ValueError("Authenticated AI operations require an independent AI credential.")

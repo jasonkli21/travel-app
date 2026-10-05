@@ -239,6 +239,11 @@ export async function proxyRequest(request, path, {
       return errorResponse(400, "invalid_request_key", "A valid import request key is required.");
     }
     headers.set("x-import-request-key", requestKey);
+    const retention = request.headers.get("x-source-retention") ?? "delete_after_confirmation";
+    if (!new Set(["delete_after_confirmation", "keep_until_expiry"]).has(retention)) {
+      return errorResponse(400, "invalid_retention_choice", "Choose a supported source retention option.");
+    }
+    headers.set("x-source-retention", retention);
     const filename = request.headers.get("x-source-filename");
     if (filename) headers.set("x-source-filename", filename.slice(0, 512));
     const declared = request.headers.get("content-length");
@@ -252,7 +257,11 @@ export async function proxyRequest(request, path, {
   const cookies = cookieMap(request);
   const cookieHeader = allowedCookieHeader(path, cookies);
   if (cookieHeader) headers.set("cookie", cookieHeader);
-  const aiCall = path.some((part) => part === "research" || part === "proposals");
+  const isBookingExtraction = path.length === 5 && path[0] === "trips"
+    && /^[0-9a-fA-F-]{36}$/.test(path[1]) && path[2] === "imports"
+    && /^[0-9a-fA-F-]{36}$/.test(path[3]) && path[4] === "extract";
+  const aiCall = path.some((part) => part === "research" || part === "proposals")
+    || isBookingExtraction;
   const aiUserToken = cookies.get(AI_USER_TOKEN_COOKIE);
   if (aiCall && typeof aiUserToken === "string" && aiUserToken) {
     headers.set("x-user-id-token", aiUserToken);

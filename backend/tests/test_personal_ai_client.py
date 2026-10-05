@@ -11,6 +11,7 @@ from personal_travel.auth.contracts import PersonalAIAuthContext
 from personal_travel.clients.personal_ai import (
     PersonalAIClient,
     PersonalAIError,
+    PersonalAIExtractionUnknown,
     PersonalAIHealth,
     PersonalAIProposalUnknown,
 )
@@ -222,6 +223,182 @@ def test_personal_ai_proposal_never_retries_post_after_ambiguous_timeout() -> No
     with pytest.raises(PersonalAIProposalUnknown):
         asyncio.run(client.create_itinerary_proposal(payload={"safe": True}, idempotency_key=key))
 
+    assert methods == ["POST", "GET"]
+
+
+def _booking_extraction_result(
+    key: object,
+    source_sha256: str,
+    *,
+    state: str = "completed",
+) -> dict[str, object]:
+    now = datetime.now(UTC)
+    return {
+        "schema_version": "booking-document-extraction-v1",
+        "extraction_id": str(uuid4()),
+        "idempotency_key": str(key),
+        "source_sha256": source_sha256,
+        "state": state,
+        "candidates": [
+            {
+                "candidate_id": "c_0123456789abcdef",
+                "reservation_type": "flight",
+                "provider_name": "Example Air",
+                "confirmation_code": "ABC123",
+                "starts_at_text": "2026-11-02 at 09:00",
+                "starts_at_date": "2026-11-02",
+                "starts_at_time": "09:00",
+                "starts_at_timezone": "America/Los_Angeles",
+                "ends_at_text": None,
+                "ends_at_date": None,
+                "ends_at_time": None,
+                "ends_at_timezone": None,
+                "source_start": 0,
+                "source_end": 26,
+                "source_excerpt": "Example Air booking ABC123",
+                "uncertain_fields": [],
+            }
+        ]
+        if state == "completed"
+        else [],
+        "failure_code": None,
+        "created_at": now.isoformat(),
+        "expires_at": (now + timedelta(days=7)).isoformat(),
+    }
+
+
+def test_personal_ai_extraction_recovers_running_with_same_key() -> None:
+    key = uuid4()
+    source_sha256 = "a" * 64
+    methods: list[tuple[str, str]] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        methods.append((request.method, request.url.path))
+        if request.method == "POST":
+            assert json.loads(request.content)["source_sha256"] == source_sha256
+            return httpx.Response(
+                200,
+                json=_booking_extraction_result(key, source_sha256, state="running"),
+                request=request,
+            )
+        return httpx.Response(
+            200, json=_booking_extraction_result(key, source_sha256), request=request
+        )
+
+    client = PersonalAIClient(
+        base_url="http://personal-ai.test",
+        timeout_seconds=1,
+        transport=httpx.MockTransport(handle),
+    )
+    result = asyncio.run(
+        client.create_booking_extraction(
+            payload={
+                "schema_version": "booking-document-extraction-v1",
+                "source_sha256": source_sha256,
+            },
+            idempotency_key=key,
+            source_sha256=source_sha256,
+        )
+    )
+
+    assert result.state == "completed"
+    assert result.candidates[0].source_excerpt == "Example Air booking ABC123"
+    assert methods == [
+        ("POST", "/v1/travel/booking-extractions"),
+        ("GET", f"/v1/travel/booking-extractions/by-key/{key}"),
+    ]
+
+
+def test_personal_ai_extraction_never_retries_after_ambiguous_post() -> None:
+    key = uuid4()
+    source_sha256 = "b" * 64
+    methods: list[str] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        methods.append(request.method)
+        if request.method == "POST":
+            raise httpx.ReadTimeout("ambiguous", request=request)
+        return httpx.Response(404, request=request)
+
+    client = PersonalAIClient(
+        base_url="http://personal-ai.test",
+        timeout_seconds=1,
+        transport=httpx.MockTransport(handle),
+    )
+    with pytest.raises(PersonalAIExtractionUnknown, match="outcome is unknown"):
+        asyncio.run(
+            client.create_booking_extraction(
+                payload={"safe": True}, idempotency_key=key, source_sha256=source_sha256
+            )
+        )
+    assert methods == ["POST", "GET"]
+
+
+def test_personal_ai_extraction_deletes_by_key_to_fence_late_post() -> None:
+    key = uuid4()
+    source_sha256 = "e" * 64
+    seen: list[tuple[str, str, dict[str, object] | None]] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content) if request.content else None
+        seen.append((request.method, request.url.path, payload))
+        return httpx.Response(
+            200,
+            json=_booking_extraction_result(key, source_sha256, state="deleted"),
+            request=request,
+        )
+
+    client = PersonalAIClient(
+        base_url="http://personal-ai.test",
+        timeout_seconds=1,
+        transport=httpx.MockTransport(handle),
+    )
+    result = asyncio.run(client.delete_booking_extraction_by_key(key, source_sha256))
+    assert result.state == "deleted"
+    assert seen == [
+        (
+            "DELETE",
+            f"/v1/travel/booking-extractions/by-key/{key}",
+            {"source_sha256": source_sha256},
+        )
+    ]
+
+
+@pytest.mark.parametrize("identity", ["key", "source"])
+def test_personal_ai_extraction_rejects_identity_mismatch_without_new_post(identity: str) -> None:
+    key = uuid4()
+    source_sha256 = "c" * 64
+    mismatched_key = uuid4() if identity == "key" else key
+    mismatched_source = "d" * 64 if identity == "source" else source_sha256
+    methods: list[str] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        methods.append(request.method)
+        if request.method == "POST":
+            return httpx.Response(
+                200,
+                json=_booking_extraction_result(key, source_sha256, state="running"),
+                request=request,
+            )
+        return httpx.Response(
+            200,
+            json=_booking_extraction_result(mismatched_key, mismatched_source),
+            request=request,
+        )
+
+    client = PersonalAIClient(
+        base_url="http://personal-ai.test",
+        timeout_seconds=1,
+        transport=httpx.MockTransport(handle),
+    )
+    with pytest.raises(PersonalAIExtractionUnknown):
+        asyncio.run(
+            client.create_booking_extraction(
+                payload={"source_sha256": source_sha256},
+                idempotency_key=key,
+                source_sha256=source_sha256,
+            )
+        )
     assert methods == ["POST", "GET"]
 
 

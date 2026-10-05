@@ -50,7 +50,13 @@ def import_metadata(item: BookingImport, source: SourceAttachment | None) -> dic
     return {
         "id": str(item.id),
         "trip_id": str(item.trip_id),
-        "state": item.state,
+        "state": (
+            "expired"
+            if item.state == "review_ready"
+            and item.upstream_result_expires_at is not None
+            and item.upstream_result_expires_at <= now
+            else item.state
+        ),
         "source_id": source_id,
         "source_state": source_state,
         "media_type": item.source_media_type,
@@ -58,6 +64,22 @@ def import_metadata(item: BookingImport, source: SourceAttachment | None) -> dic
         "sha256": item.source_sha256,
         "display_filename": display_filename,
         "review_revision": item.review_revision,
+        "retention_choice": item.retention_choice,
+        "extraction_state": item.state,
+        "extraction_key": str(item.extraction_key) if item.extraction_key else None,
+        "upstream_extraction_id": (
+            str(item.upstream_extraction_id) if item.upstream_extraction_id else None
+        ),
+        "upstream_revision": item.upstream_revision,
+        "upstream_result_expires_at": (
+            item.upstream_result_expires_at.isoformat() if item.upstream_result_expires_at else None
+        ),
+        "candidates": (
+            item.candidate_snapshot
+            if item.upstream_result_expires_at is None or item.upstream_result_expires_at > now
+            else None
+        ),
+        "confirmation_outcome": item.confirmation_outcome,
     }
 
 
@@ -86,8 +108,11 @@ class SourceLifecycleService:
         source_hash: str,
         display_filename: str | None,
         object_key: str,
+        retention_choice: str = "delete_after_confirmation",
     ) -> Registration:
-        fingerprint = hashlib.sha256(f"{media_type}\0{source_hash}".encode()).hexdigest()
+        fingerprint = hashlib.sha256(
+            f"{media_type}\0{source_hash}\0{retention_choice}".encode()
+        ).hexdigest()
         try:
             with self._session_factory() as session:
                 existing_key = self._by_request_key(session, owner_id, trip_id, request_key)
@@ -139,6 +164,7 @@ class SourceLifecycleService:
                     source_sha256=source_hash,
                     source_media_type=media_type,
                     source_byte_size=byte_size,
+                    retention_choice=retention_choice,
                     state="received",
                     parser_version="source-v1",
                     review_revision=0,
@@ -243,6 +269,26 @@ class SourceLifecycleService:
             )
             return import_metadata(item, source), descriptor
 
+    def list_imports(self, owner_id: str, trip_id: UUID) -> list[dict[str, object]]:
+        with self._session_factory() as session:
+            found = session.scalar(
+                select(Trip.id).where(Trip.id == trip_id, Trip.owner_id == owner_id)
+            )
+            if found is None:
+                raise not_found("trip")
+            items = list(
+                session.scalars(
+                    select(BookingImport)
+                    .where(BookingImport.owner_id == owner_id, BookingImport.trip_id == trip_id)
+                    .order_by(BookingImport.created_at.desc(), BookingImport.id)
+                    .limit(100)
+                )
+            )
+            return [
+                import_metadata(item, self._source(session, item, owner_id, trip_id))
+                for item in items
+            ]
+
     def download_descriptor(
         self, owner_id: str, trip_id: UUID, import_id: UUID
     ) -> SourceDescriptor:
@@ -254,13 +300,20 @@ class SourceLifecycleService:
         return descriptor
 
     def begin_delete(self, owner_id: str, trip_id: UUID, import_id: UUID) -> str | None:
-        with self._session_factory() as session:
+        with self._session_factory() as session, session.begin():
+            trip = session.scalar(
+                select(Trip).where(Trip.id == trip_id, Trip.owner_id == owner_id).with_for_update()
+            )
+            if trip is None:
+                raise not_found("trip")
             item = session.scalar(
-                select(BookingImport).where(
+                select(BookingImport)
+                .where(
                     BookingImport.id == import_id,
                     BookingImport.trip_id == trip_id,
                     BookingImport.owner_id == owner_id,
                 )
+                .with_for_update()
             )
             if item is None:
                 raise not_found("import")
@@ -279,7 +332,6 @@ class SourceLifecycleService:
                 .returning(SourceAttachment.object_key)
             )
             object_key = result.scalar_one_or_none()
-            session.commit()
             if object_key is not None:
                 return object_key
             # A competing delete may have finalized the source after our read.
@@ -288,16 +340,35 @@ class SourceLifecycleService:
 
     def finish_delete(self, object_key: str) -> None:
         with self._session_factory() as session, session.begin():
-            source_id = session.scalar(
-                select(SourceAttachment.id).where(
+            source = session.scalar(
+                select(SourceAttachment).where(
                     SourceAttachment.object_key == object_key,
                     SourceAttachment.state == "deleting",
                 )
             )
-            if source_id is not None:
+            if source is not None:
+                if source.trip_id is not None:
+                    session.scalar(select(Trip).where(Trip.id == source.trip_id).with_for_update())
+                item = session.scalar(
+                    select(BookingImport)
+                    .where(BookingImport.source_id == source.id)
+                    .with_for_update()
+                )
+                if item is not None:
+                    item.source_id = None
+                    item.candidate_snapshot = None
+                    if item.extraction_key is not None and item.extraction_post_attempted:
+                        item.upstream_delete_pending = True
+                    item.extraction_claim_token = None
+                    item.extraction_claimed_at = None
+                    if item.state not in {"applied", "rejected", "failed", "expired"}:
+                        item.state = "expired"
+                        item.candidate_snapshot = {"failure_code": "source_deleted"}
+                        item.review_revision += 1
+                    item.updated_at = datetime.now(UTC)
                 session.execute(
                     delete(SourceAttachment).where(
-                        SourceAttachment.id == source_id,
+                        SourceAttachment.id == source.id,
                         SourceAttachment.state == "deleting",
                     )
                 )

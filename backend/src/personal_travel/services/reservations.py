@@ -45,25 +45,47 @@ class ReservationService:
                 data.end_time,
                 trip.timezone,
             )
-            reservation = Reservation(
-                owner_id=self._owner_id,
-                trip_id=trip.id,
-                reservation_type=data.reservation_type,
-                status=data.status,
-                provider_name=data.provider_name,
-                confirmation_code=data.confirmation_code,
+            reservation = self.create_in_transaction(
+                trip,
+                data,
                 starts_at=starts_at,
                 ends_at=ends_at,
-                source_reference=data.source_reference,
-                notes=data.notes,
+                place=place,
             )
-            if place is not None:
-                reservation.place = place
-            trip.reservations.append(reservation)
-            self._reservations.add(reservation)
             trip.revision += 1
             self._session.flush()
             return reservation
+
+    def create_in_transaction(
+        self,
+        trip: Trip,
+        data: ReservationCreate,
+        *,
+        starts_at: datetime | None,
+        ends_at: datetime | None,
+        place: Place | None = None,
+    ) -> Reservation:
+        """Create inside a caller's already locked trip transaction."""
+        if place is None and data.place_id is not None:
+            place = self._get_place(data.place_id)
+        reservation = Reservation(
+            owner_id=self._owner_id,
+            trip_id=trip.id,
+            reservation_type=data.reservation_type,
+            status=data.status,
+            provider_name=data.provider_name,
+            confirmation_code=data.confirmation_code,
+            starts_at=starts_at,
+            ends_at=ends_at,
+            source_reference=data.source_reference,
+            notes=data.notes,
+        )
+        if place is not None:
+            reservation.place = place
+        trip.reservations.append(reservation)
+        self._reservations.add(reservation)
+        self._session.flush()
+        return reservation
 
     def update(
         self,

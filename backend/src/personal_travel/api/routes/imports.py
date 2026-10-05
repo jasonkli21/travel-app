@@ -12,8 +12,11 @@ from anyio.to_thread import run_sync
 from fastapi import APIRouter, Header, Request, Response
 
 from personal_travel.api.dependencies import OwnerDependency
+from personal_travel.api.schemas.booking_imports import ImportConfirmRequest, ImportEditsRequest
+from personal_travel.auth.contracts import PersonalAIAuthContext
 from personal_travel.config import get_settings
 from personal_travel.db.session import SessionFactory
+from personal_travel.services.booking_imports import BookingImportService
 from personal_travel.services.errors import DomainError, not_found
 from personal_travel.services.source_lifecycle import (
     Registration,
@@ -26,6 +29,7 @@ router = APIRouter(prefix="/trips/{trip_id}/imports", tags=["imports"])
 REQUEST_KEY = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
 MAX_TEXT_BYTES = 1024 * 1024
 MAX_PDF_BYTES = 10 * 1024 * 1024
+RETENTION_CHOICES = {"delete_after_confirmation", "keep_until_expiry"}
 
 
 def _gate() -> LocalSourceStore:
@@ -40,6 +44,37 @@ def _service(request: Request) -> SourceLifecycleService:
     # executes the synchronous operation. No ORM Session crosses threads.
     factory = getattr(request.app.state, "auth_session_factory", None) or SessionFactory
     return SourceLifecycleService(factory)
+
+
+def _booking_service(request: Request) -> BookingImportService:
+    factory = getattr(request.app.state, "auth_session_factory", None) or SessionFactory
+    auth_context: PersonalAIAuthContext | None = request.scope.get("personal_ai_auth_context")
+    return BookingImportService(factory, get_settings(), auth_context=auth_context)
+
+
+def _review_with_source_metadata(
+    request: Request,
+    owner_id: str,
+    trip_id: UUID,
+    import_id: UUID,
+    review: dict[str, object],
+) -> dict[str, object]:
+    metadata, _ = _service(request).get_import(owner_id, trip_id, import_id)
+    return metadata | review
+
+
+def _delete_source(request: Request, owner_id: str, trip_id: UUID, import_id: UUID) -> None:
+    store = _gate()
+    source_service = _service(request)
+    try:
+        object_key = source_service.begin_delete(owner_id, trip_id, import_id)
+        if object_key is not None:
+            store.delete(object_key)
+            store.delete(object_key, temp=True)
+            source_service.finish_delete(object_key)
+    finally:
+        store.close()
+    _booking_service(request).delete_upstream_extraction(owner_id, trip_id, import_id)
 
 
 def _display_filename(filename: str | None) -> str | None:
@@ -95,9 +130,12 @@ async def upload_source(
     owner_id: OwnerDependency,
     request_key: str = Header(alias="X-Import-Request-Key"),
     filename: str | None = Header(default=None, alias="X-Source-Filename"),
+    retention_choice: str = Header(default="delete_after_confirmation", alias="X-Source-Retention"),
 ) -> dict[str, object]:
     if not REQUEST_KEY.fullmatch(request_key):
         raise DomainError("invalid_request_key", "Invalid import request key.")
+    if retention_choice not in RETENTION_CHOICES:
+        raise DomainError("invalid_retention_choice", "Choose a supported source retention option.")
     media_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
     if media_type not in {"text/plain", "application/pdf"}:
         raise DomainError("unsupported_media_type", "Use plain text or PDF.", status_code=415)
@@ -167,6 +205,7 @@ async def upload_source(
                 source_hash=source_hash,
                 display_filename=_display_filename(filename),
                 object_key=key,
+                retention_choice=retention_choice,
             )
         )
         if not registration.created:
@@ -200,7 +239,77 @@ def get_import(
         metadata, descriptor = _service(request).get_import(owner_id, trip_id, import_id)
         if descriptor is not None and metadata["source_state"] == "ready":
             _verify_ready_source(store, metadata, descriptor.object_key)
-        return metadata
+        return metadata | _booking_service(request).detail(owner_id, trip_id, import_id)
+    finally:
+        store.close()
+
+
+@router.post("/{import_id}/extract")
+async def extract_import(
+    trip_id: UUID, import_id: UUID, request: Request, owner_id: OwnerDependency
+) -> dict[str, object]:
+    store = _gate()
+    store.close()
+    review = await _booking_service(request).extract(owner_id, trip_id, import_id)
+    return _review_with_source_metadata(request, owner_id, trip_id, import_id, review)
+
+
+@router.patch("/{import_id}/review")
+def edit_import_review(
+    trip_id: UUID,
+    import_id: UUID,
+    payload: ImportEditsRequest,
+    request: Request,
+    owner_id: OwnerDependency,
+) -> dict[str, object]:
+    store = _gate()
+    store.close()
+    review = _booking_service(request).update_edits(owner_id, trip_id, import_id, payload)
+    return _review_with_source_metadata(request, owner_id, trip_id, import_id, review)
+
+
+@router.post("/{import_id}/confirm")
+def confirm_import(
+    trip_id: UUID,
+    import_id: UUID,
+    payload: ImportConfirmRequest,
+    request: Request,
+    owner_id: OwnerDependency,
+) -> dict[str, object]:
+    store = _gate()
+    store.close()
+    metadata, _ = _service(request).get_import(owner_id, trip_id, import_id)
+    outcome = _booking_service(request).confirm(owner_id, trip_id, import_id, payload)
+    if metadata["retention_choice"] == "delete_after_confirmation":
+        _delete_source(request, owner_id, trip_id, import_id)
+    return outcome
+
+
+@router.post("/{import_id}/reject")
+def reject_import(
+    trip_id: UUID, import_id: UUID, request: Request, owner_id: OwnerDependency
+) -> dict[str, object]:
+    store = _gate()
+    store.close()
+    metadata, _ = _service(request).get_import(owner_id, trip_id, import_id)
+    result = _booking_service(request).reject(owner_id, trip_id, import_id)
+    if metadata["retention_choice"] == "delete_after_confirmation":
+        _delete_source(request, owner_id, trip_id, import_id)
+    return _review_with_source_metadata(request, owner_id, trip_id, import_id, result)
+
+
+@router.get("")
+def list_imports(
+    trip_id: UUID, request: Request, owner_id: OwnerDependency
+) -> list[dict[str, object]]:
+    store = _gate()
+    try:
+        source_service = _service(request)
+        items = source_service.list_imports(owner_id, trip_id)
+        return [
+            item | _booking_service(request).detail(owner_id, trip_id, UUID(str(item["id"])))
+            for item in items
+        ]
     finally:
         store.close()
 
@@ -240,14 +349,5 @@ def download_source(
 def delete_source(
     trip_id: UUID, import_id: UUID, request: Request, owner_id: OwnerDependency
 ) -> Response:
-    store = _gate()
-    source_service = _service(request)
-    try:
-        object_key = source_service.begin_delete(owner_id, trip_id, import_id)
-        if object_key is not None:
-            store.delete(object_key)
-            store.delete(object_key, temp=True)
-            source_service.finish_delete(object_key)
-        return Response(status_code=204)
-    finally:
-        store.close()
+    _delete_source(request, owner_id, trip_id, import_id)
+    return Response(status_code=204)

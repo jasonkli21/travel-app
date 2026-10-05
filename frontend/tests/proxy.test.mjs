@@ -137,6 +137,12 @@ test("proxy adds the AI user token only for exact capability path segments", asy
   });
   await proxyRequest(request, ["trips", "trip-id", "research-old"], { fetchImpl });
   assert.equal(forwarded.get("x-user-id-token"), null);
+  const tripId = "00000000-0000-4000-8000-000000000001";
+  const importId = "00000000-0000-4000-8000-000000000002";
+  await proxyRequest(request, ["trips", tripId, "imports", importId, "extract"], { fetchImpl });
+  assert.equal(forwarded.get("x-user-id-token"), "signed-user-token");
+  await proxyRequest(request, ["trips", tripId, "imports", importId], { fetchImpl });
+  assert.equal(forwarded.get("x-user-id-token"), null);
 });
 
 test("proxy bounds chunked request bodies and reports backend failures", async () => {
@@ -167,6 +173,7 @@ test("private source upload streams beyond the ordinary JSON cap", async () => {
         "x-csrf-token": "csrf",
         "x-import-request-key": "upload_0001",
         "x-source-filename": "booking.txt",
+        "x-source-retention": "keep_until_expiry",
         "content-type": "text/plain",
       },
       body: input,
@@ -192,6 +199,7 @@ test("private source upload streams beyond the ordinary JSON cap", async () => {
   assert.equal(size, bytes.byteLength);
   assert.equal(seenHeaders.get("x-import-request-key"), "upload_0001");
   assert.equal(seenHeaders.get("x-source-filename"), "booking.txt");
+  assert.equal(seenHeaders.get("x-source-retention"), "keep_until_expiry");
   assert.equal(seenHeaders.get("cookie"), "__Host-travel_session=session; __Host-travel_csrf=csrf");
 });
 

@@ -114,6 +114,47 @@ h3 { margin: 3px 0 0; }
 .proposalWarnings ul { display: grid; gap: 5px; margin: 0; padding-left: 18px; }
 .proposalWarnings li { font-size: 12px; line-height: 1.45; }
 .proposalNoWarnings { border: 1px solid #c6d9ca; border-radius: 8px; background: #f1f7f1; color: #37573f; font-size: 12px; margin: 0; padding: 9px 11px; }
+.bookingImportPanel { display: grid; gap: 14px; margin-top: 38px; scroll-margin-top: 20px; }
+.bookingImportPanel > .sectionHeading { margin-bottom: 0; }
+.importDisclosure, .duplicateNotice, .importRecovery, .importOutcome, .reviewExpiry, .successBanner { border: 1px solid var(--line); border-radius: 9px; background: var(--bg); font-size: 13px; line-height: 1.5; padding: 11px 13px; }
+.importDisclosure { border-left: 3px solid var(--accent); background: var(--accent-soft); color: #34483a; }
+.importDisclosure p { margin: 6px 0 0; }
+.importUploadGrid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(220px, .6fr); gap: 12px; }
+.importUploadGrid textarea { min-height: 118px; }
+.retentionChoice { display: grid; gap: 9px; border: 1px solid var(--line); border-radius: 9px; margin: 0; padding: 12px; }
+.retentionChoice legend { color: var(--ink); font-size: 13px; font-weight: 750; padding: 0 5px; }
+.retentionChoice label { display: flex; align-items: flex-start; gap: 8px; color: var(--ink); font-size: 13px; font-weight: 500; line-height: 1.4; }
+.retentionChoice input { flex: 0 0 auto; width: 17px; height: 17px; margin: 0; accent-color: var(--accent); }
+.importList { display: grid; gap: 8px; }
+.importList h3 { font-size: 16px; }
+.importListItem { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--ink); padding: 10px 12px; text-align: left; }
+.importListItem[aria-current="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.importListItem > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.importReview { display: grid; gap: 12px; border: 1px solid var(--line); border-radius: 13px; background: var(--panel); box-shadow: var(--shadow); padding: 16px; }
+.reviewHeader, .candidateReviewHeading { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.reviewHeader h3 { font-size: 18px; }
+.reviewActions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 7px; }
+.reviewActions a { text-decoration: none; }
+.reviewExpiry, .importRecovery { margin: 0; }
+.duplicateNotice { border-color: #e2b9b1; background: #fff8f5; }
+.duplicateNotice p { margin: 5px 0 0; }
+.candidateReviewCard { display: grid; gap: 10px; border: 1px solid var(--line); border-radius: 11px; background: #fffefa; padding: 14px; }
+.candidateReviewHeading h4 { font-size: 16px; margin: 0; }
+.candidateId, .sourceEvidenceLabel { color: var(--muted); font-size: 11px; }
+.candidateId { border: 1px solid var(--line); border-radius: 999px; padding: 4px 8px; white-space: nowrap; }
+.uncertaintyNotice, .duplicateSuggestion { border-radius: 8px; background: #fff4df; color: #70531d; font-size: 12px; line-height: 1.4; margin: 0; padding: 8px 10px; }
+.duplicateSuggestion { background: var(--accent-soft); color: var(--ink); }
+.sourceEvidenceLabel { margin: 0; }
+.sourceEvidence { border-left: 3px solid #b8c7bb; background: var(--bg); color: var(--ink); font-size: 12px; line-height: 1.5; margin: -5px 0 0; overflow-wrap: anywhere; padding: 9px 11px; white-space: pre-wrap; }
+.candidateFields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 12px; }
+.scheduleEdit { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; gap: 9px; border: 1px solid var(--line); border-radius: 9px; padding: 10px; }
+.scheduleEdit > strong, .scheduleEdit > .muted { grid-column: 1 / -1; }
+.scheduleEdit > strong { font-size: 12px; }
+.scheduleEdit > .muted { font-size: 11px; }
+.successBanner, .importOutcome { border-color: #c6d9ca; background: #f1f7f1; }
+.successBanner { color: #37573f; margin: 0; }
+.importOutcome p { margin: 5px 0 0; }
+.importReview .errorBanner { margin: 0; }
 .mapControls { display: grid; grid-template-columns: repeat(3, minmax(120px, 1fr)) auto; align-items: end; gap: 10px; margin-top: 18px; }
 .mapControls > button { min-height: 40px; }
 .mapFrame { display: grid; gap: 12px; margin-top: 14px; }
@@ -285,6 +326,12 @@ input:focus, select:focus, textarea:focus, button:focus-visible, a:focus-visible
   .searchResult { align-items: stretch; flex-direction: column; }
   .searchResult button { width: 100%; }
   .proposalForm, .proposalReview { padding: 12px; }
+  .importUploadGrid, .candidateFields, .scheduleEdit { grid-template-columns: minmax(0, 1fr); }
+  .scheduleEdit > strong, .scheduleEdit > .muted { grid-column: auto; }
+  .reviewHeader, .candidateReviewHeading { flex-direction: column; }
+  .reviewActions { justify-content: flex-start; }
+  .reviewActions > * { width: 100%; text-align: center; }
+  .importListItem { align-items: flex-start; flex-direction: column; }
   .proposalDiff li { grid-template-columns: minmax(0, 1fr); gap: 5px; }
   .proposalDiff li > span[aria-hidden="true"] { display: none; }
   .proposalResultDay li { grid-template-columns: 1fr; gap: 2px; }

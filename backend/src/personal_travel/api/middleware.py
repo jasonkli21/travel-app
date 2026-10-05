@@ -220,9 +220,16 @@ class LocalBoundaryMiddleware:
 
                 is_research_operation = path.startswith("/v1/trips/") and "/research" in path
                 is_proposal_operation = path.startswith("/v1/trips/") and "/proposals" in path
+                is_extraction_operation = (
+                    path.startswith("/v1/trips/")
+                    and "/imports/" in path
+                    and path.endswith("/extract")
+                )
                 ai_operation = (
-                    is_research_operation and settings.personal_ai_research_enabled
-                ) or (is_proposal_operation and settings.personal_ai_proposals_enabled)
+                    (is_research_operation and settings.personal_ai_research_enabled)
+                    or (is_proposal_operation and settings.personal_ai_proposals_enabled)
+                    or (is_extraction_operation and settings.personal_ai_extractions_enabled)
+                )
                 if supplied_user_token is not None and not ai_operation:
                     await reject(
                         400,
