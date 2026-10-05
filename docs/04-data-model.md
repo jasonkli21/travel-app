@@ -1,6 +1,6 @@
 # Data model
 
-Status: Phase 5 proposal lifecycle implemented locally; independent review pending, gates off
+Status: Phase 5 proposal lifecycle and P6.2 secure-source lifecycle implemented locally; review pending, gates off
 Date: 2026-10-04
 
 The initial migration implements the core itinerary graph. Phase 1 adds
@@ -8,8 +8,9 @@ application services and ordering constraints; Phase 2 adds manual reservations,
 trip-scoped saved-place candidates, richer place metadata, reservation links,
 and retained source attribution for provider-imported places. Phase 4 stores
 manual candidates in these existing tables; AI sessions and evidence remain
-owned by `personal-ai-system` and are not copied into this database.
-Attachments remain planned rather than implemented.
+owned by `personal-ai-system` and are not copied into this database. General
+trip/reservation attachments remain planned; P6.2 source records below support
+only the authenticated booking-source lifecycle.
 
 ## Implemented scaffold tables
 
@@ -209,7 +210,45 @@ exact source-to-target confirmation. It takes a transaction lock, checks all
 constraints before commit, preserves revisions and rolls back on failure.
 There is no first-login claim path and the tool has not been run on user data.
 
-## Planned tables, not implemented
+## Implemented Phase 6 private-source lifecycle — migration `0010`
+
+The local source gate defaults off and requires Google OIDC plus an absolute
+private storage directory outside the application tree. Byte objects use
+random opaque keys under a mode-0700 directory, with mode-0600 regular files.
+The database stores hashes and metadata, never raw source text. Sources expire
+after seven days unless explicitly deleted sooner. Deleting a trip sets the
+source trip reference to null so cleanup retains the only metadata needed to
+remove the corresponding bytes.
+
+### `source_attachments`
+
+```text
+id UUID PK, owner_id, trip_id? FK -> trips ON DELETE SET NULL
+object_key unique opaque key, sha256, media_type, byte_size
+display_filename?, state: pending | ready | deleting, expires_at
+created_at, updated_at
+```
+
+Constraints cap sources at 10 MiB and plain text at 1 MiB. Filenames are
+sanitized display metadata and never participate in file paths.
+
+### `booking_imports`
+
+```text
+id UUID PK, owner_id, trip_id FK -> trips ON DELETE CASCADE
+source_id unique FK -> source_attachments ON DELETE RESTRICT
+request_key, request_fingerprint, source_sha256
+state: received | extracting | review_ready | applied | rejected | failed
+parser_version, review_revision, created_at, updated_at
+```
+
+Owner/trip/request-key and owner/trip/source-hash uniqueness make retries
+idempotent. Same-key content changes conflict; identical content in one trip
+returns its existing import. Extraction/candidates and reservation confirmation
+remain future stages. Cleanup is bounded and rerunnable; it never removes an
+object still referenced by another owner's metadata.
+
+## Planned general attachments, not implemented
 
 ### `attachments`
 

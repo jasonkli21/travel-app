@@ -1,7 +1,8 @@
 # Codex handoff
 
 Status: Phases 1–5 delivered and independently reviewed locally; P6.0/P6.1
-identity foundation implemented locally, review pending; remaining Phase 6 work planned
+identity and P6.2 secure-source lifecycle implemented locally, review pending;
+P6.3–P6.5 remain planned
 Date: 2026-10-04
 
 The six identity review findings have a local remediation change set awaiting
@@ -28,24 +29,26 @@ in [`releases/phase-5-groundwork.md`](releases/phase-5-groundwork.md).
 The Phase 4 consumer uses the accepted `research-v1` API in
 `personal-ai-system`; do not change that API from this repository. P6.0/P6.1
 adds an optional verified Google identity/session boundary and explicit
-local-owner migration. Live OAuth/service IAM remains unconfigured. Booking and
-email import, private storage/extraction, and cloud deployment remain deferred.
+local-owner migration. P6.2 adds a default-off, authenticated local source
+lifecycle. Live OAuth/service IAM remains unconfigured. Extraction,
+confirmation, import UI, and cloud deployment remain deferred.
 Phase 5 proposal generation is implemented and reviewed locally, with gates
 default off.
 
 The [comprehensive Phase 0–4 audit](reviews/phase-0-4-audit.md) documents current
-fixes and verification. Migration `0009` is the current head; `0005` still
+fixes and verification. Migration `0010` is the current head; `0005` still
 requires online legacy-data inspection/repair and a pre-upgrade backup before
 upgrading an existing database. See local development and ADR 0009 before
 changing concurrency or local HTTP boundaries.
 
 ## Next implementation work
 
-Independent Phase 5 review is closed. The Phase 6 identity design/local
-implementation is in review; storage, accepted extraction, booking imports and
-confirmation remain later identity-gated work. Its scope and release evidence
-are recorded in the [identity checkpoint](releases/phase-6-identity.md) and
-the coordinator file. The upstream uvloop clock-domain issue was fixed in
+Independent Phase 5 review is closed. The Phase 6 identity and P6.2
+source-lifecycle implementation are in review; accepted extraction, booking
+confirmation and review UI remain later work. Their scope and release evidence
+are recorded in the [identity checkpoint](releases/phase-6-identity.md), the
+[P6.2 checkpoint](releases/phase-6-private-sources.md), and the coordinator
+file. The upstream uvloop clock-domain issue was fixed in
 `personal-ai-system` revision `6045f004fbdc4887c2bb67da9ae19a571314fc27` and
 verified over local HTTP with Uvicorn `auto` and `asyncio`; default-off gates
 remain intentional after local review.
@@ -66,9 +69,9 @@ drafts against the newly loaded snapshot. Keep proposal generation gated; do
 not invent upstream APIs in this repository.
 
 Phase 6's P6.0/P6.1 identity stage establishes verified identity before private
-imports, with explicit local-owner migration. Secure source/blob lifecycle and
-accepted extraction have not started; only that later storage/access lifecycle
-is reused by Phase 8.
+imports, with explicit local-owner migration. P6.2 implements the off-by-default
+local source/blob lifecycle, without extraction, confirmation, or UI. Continue
+with P6.3–P6.5, record the final release evidence, then stop before Phase 7.
 Phase 7 requires category/evidence/rights contracts and consented preference
 projection. Phase 8 adds private document access and explicit static snapshots,
 not offline synchronization. Phase 9 proves auth, quotas, SQL/blob restore and
@@ -140,6 +143,8 @@ Backend:
   Cloud Run service IAM transport credential.
 - migration `0009` identity/session/login-attempt/migration-audit tables and
   explicit backed-up local-owner graph migration tooling.
+- migration `0010` owner-scoped booking-import and private-source metadata,
+  with opaque local files handled by the P6.2 lifecycle.
 - owner-scoped trip/day research with bounded day context and safe errors.
 - Streamed JSON/SSE byte bounds and whole-operation deadlines; synchronous
   SQL projections run in worker threads and release locks before provider work.
@@ -340,13 +345,11 @@ the delivered Phase 3 slice.
 
 ## Phase 6 identity handoff
 
-P6.0 identity decision and P6.1 verified-owner foundation are implemented
-locally, pending an independent security review. Read ADR 0011 and the
-[identity release checkpoint](releases/phase-6-identity.md) for the exact
-contract, checks and remaining gates. Google OIDC, opaque sessions, CSRF,
-request-principal ownership, the Next.js sign-in/proxy path, separated AI
-credentials and explicit owner migration are in scope. No private booking or
-document intake, storage, extraction or confirmation is implemented. The
-default local mode is still unauthenticated and the AI capability gates stay
-off. Do not treat local synthetic verification as live Google OAuth, Cloud Run
-IAM, or an accepted extraction/retention contract.
+P6.0 identity decision, P6.1 verified-owner foundation, and P6.2 secure-source
+lifecycle are implemented locally, pending review. Read ADRs 0011–0012 and the
+[identity](releases/phase-6-identity.md) and
+[P6.2 source](releases/phase-6-private-sources.md) checkpoints for contracts,
+checks, and remaining gates. The private-import flag remains off by default and
+local mode is denied. No extraction, reservation confirmation, or review UI is
+implemented. Do not treat synthetic local verification as live Google OAuth,
+Cloud Run IAM, or an accepted extraction/retention contract.

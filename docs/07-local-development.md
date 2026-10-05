@@ -1,6 +1,6 @@
 # Local development
 
-Status: Phases 1–5 plus the review-pending Phase 6 identity foundation
+Status: Phases 1–5 plus review-pending Phase 6 identity and P6.2 source lifecycle
 Date: 2026-10-04
 
 ## Prerequisites
@@ -76,6 +76,13 @@ matching the OAuth client, plus the configured Cloud Run service audience and
 service-account identity. No live IAM binding or upstream audience alignment
 is included in local verification. Keep AI feature gates off unless the full
 service boundary is separately configured.
+
+Private source intake is disabled by default. It is unavailable in local auth
+mode; enabling it requires Google OIDC plus `PRIVATE_SOURCE_DIR` set to an
+absolute directory outside this repository. The service requires that source
+directory to be private (`0700`) and stores opaque regular files as `0600`.
+Use synthetic inputs for local checks. P6.2 stores sources locally and does not
+send them to an AI provider; extraction remains unimplemented.
 
 Migration `0009` adds identities and sessions; it does not claim old rows on
 first sign-in. To move a local owner, provision/verify the target by a Google
@@ -285,8 +292,8 @@ uv run --locked alembic upgrade head
 
 Then run `uv run --locked alembic check` to verify ORM/migration parity.
 Migration `0005` requires an online connection; offline SQL can be generated
-through `0004`, but is not a complete upgrade to head. Migration `0009` is the
-current head.
+through `0004`, but is not a complete upgrade to head. Migration `0010` adds
+private source/import metadata and is the current head.
 
 ## Backup and migration recovery
 

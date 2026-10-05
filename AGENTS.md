@@ -21,10 +21,11 @@ When working on AI integration, also read `docs/06-ai-integration.md`.
 
 Phases 1–5 are delivered and independently reviewed locally. Proposal gates
 remain off by default; live provider and deployment readiness are separate
-gates. The Phase 6 identity decision and local P6.1 foundation are implemented
-in a review-pending stage, but Phase 6 booking/document import, secure source
-storage, and extraction are not implemented. Google OAuth and Cloud Run IAM
-remain unprovisioned external gates. Phase 5 closure is recorded in
+gates. The Phase 6 identity decision, local P6.1 foundation, and P6.2 secure
+source lifecycle are implemented in review-pending stages. Phase 6 extraction,
+reservation confirmation, and review UI are not implemented. Private source
+ingress defaults off and remains unavailable in local auth mode. Google OAuth
+and Cloud Run IAM remain unprovisioned external gates. Phase 5 closure is recorded in
 [`docs/releases/phase-5-local-proposals.md`](docs/releases/phase-5-local-proposals.md);
 identity-stage scope and limits are in
 [`docs/releases/phase-6-identity.md`](docs/releases/phase-6-identity.md).
@@ -57,6 +58,10 @@ Current delivered capabilities include:
 - Phase 0–4 audit remediation: migration `0005` repairs legacy moved-item dates,
   SQL order/coordinate integrity, local host/origin guards, bounded external
   deadlines, database readiness and migrated disposable-schema test fixtures.
+- Phase 6 P6.2: migration `0010` adds owner-scoped source/import metadata;
+  authenticated streamed text/PDF intake, opaque local storage, bounded PDF
+  parsing, safe download/deletion, and bounded cleanup are implemented behind
+  an off-by-default gate. No extraction or booking confirmation is included.
 - Docker Compose Postgres for local development.
 - CI skeleton.
 - product/design/architecture/implementation/release documentation.
@@ -70,8 +75,8 @@ opaque sessions, OAuth attempts, and migration audit. Google mode derives each
 domain owner from the server-verified Google issuer and subject; explicit local
 mode remains available and unauthenticated. No domain route trusts browser
 owner headers. Local-to-verified-owner migration is explicit, backed up, and
-never triggered by first login. Phase 6 booking/document imports and private
-storage/extraction, cloud deployment, and attachments remain planned.
+never triggered by first login. Phase 6 extraction, confirmation, and review
+UI, cloud deployment, and general attachments remain planned.
 
 ## Architectural invariants
 

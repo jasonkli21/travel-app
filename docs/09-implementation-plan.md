@@ -159,10 +159,10 @@ AI suggestions remain proposals.
 
 ## Phase 6 — Booking/document import
 
-Detailed plan: [Phase 6](phase-6-implementation-plan.md). Planned, not delivered.
-Authentication is the first work package before any private input. This phase
-introduces only the minimum secure local source/blob lifecycle needed for
-manual pasted text/PDF import; Phase 8 extends the same lifecycle.
+Detailed plan: [Phase 6](phase-6-implementation-plan.md). P6.0/P6.1 identity
+and P6.2 secure-source lifecycle are implemented locally, pending review; the
+phase remains incomplete. Authentication is required before private source
+access. P6.2 adds the minimum gated local source lifecycle; Phase 8 extends it.
 
 Prerequisites:
 
@@ -170,7 +170,7 @@ Prerequisites:
 - secure blob handling if uploads exist,
 - explicit connector/provider policy.
 
-Build incrementally:
+Remaining work:
 
 - manual email/document import first,
 - extraction through `personal-ai-system`,

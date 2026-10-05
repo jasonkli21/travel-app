@@ -20,19 +20,20 @@ proposal lifecycle, accepted typed HTTP integration, immutable previews,
 atomic apply/replay and rejection, and an explicit review/apply UI. Proposal
 gates remain off by default. The accepted upstream revision and exact local
 checks are in [the Phase 5 release record](docs/releases/phase-5-local-proposals.md).
-Phase 5 independent local review is closed. The Phase 6 identity decision and
-P6.1 local identity foundation are implemented as a separate, review-pending
-stage; this does not deliver Phase 6 booking/document imports or complete Phase
-6. The identity stage adds optional Google OIDC, opaque server-side sessions,
-request-principal ownership and explicit local-owner migration. Google OAuth,
-upstream AI identity alignment and Cloud Run service IAM are not provisioned or
-live-verified; local mode remains the default and private imports stay disabled.
+Phase 5 independent local review is closed. The Phase 6 identity foundation
+and P6.2 secure-source lifecycle are implemented locally, pending review. P6.2
+adds authenticated, owner-scoped text/PDF intake, private opaque local storage,
+source metadata/download/deletion, and bounded cleanup. Its feature gate is
+off by default; local mode cannot access it. Google OAuth, upstream AI identity
+alignment, and Cloud Run service IAM are not provisioned or live-verified. No
+extraction, reservation confirmation, or import UI is implemented yet, so
+Phase 6 remains incomplete. See the [Phase 6 identity checkpoint](docs/releases/phase-6-identity.md)
+and [P6.2 source checkpoint](docs/releases/phase-6-private-sources.md).
 The upstream monotonic-deadline conversion was fixed and the local fake HTTP
 proposal flow passes under both Uvicorn `auto` (uvloop on this host) and
 `asyncio`. Proposal gates default off and require separate provider configuration. Geoapify features are optional; manual
-planning works without provider keys. External booking imports, private storage
-and extraction, and cloud deployment remain planned. See the [Phase 6 identity
-checkpoint](docs/releases/phase-6-identity.md).
+planning works without provider keys. Extraction, confirmed booking imports,
+the review UI, and cloud deployment remain planned.
 
 The [Phase 0–4 audit](docs/reviews/phase-0-4-audit.md) records the architecture
 review, integrity/security/recovery fixes and verification. Migration `0005`

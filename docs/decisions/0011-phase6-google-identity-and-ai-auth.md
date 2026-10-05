@@ -100,9 +100,11 @@ directory readiness, and provider operation remain separate external gates.
 
 There is currently no accepted booking/document extraction capability or
 retention contract. `research-v1` and `itinerary-proposal-v1` do not satisfy
-that prerequisite. Private imports remain disabled until a separately
-accepted upstream HTTP/authentication/retention contract exists; this ADR
-does not create a replacement or enable private input.
+that prerequisite. This identity ADR does not enable source ingestion. ADR
+0012 later defines an off-by-default, local-only P6.2 source lifecycle; it does
+not send source bytes to an AI provider or authorize live private-input use.
+Extraction and hosted private-input use still require separately accepted
+upstream and deployment gates.
 
 ## Local-owner migration
 

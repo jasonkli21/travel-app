@@ -1,6 +1,6 @@
 # Phase 6 identity foundation — local checkpoint
 
-**Status:** P6.0/P6.1 identity review remediation implemented locally; independent re-review pending. Phase 6 booking/document import remains planned.
+**Status:** P6.0/P6.1 identity review remediation implemented locally; independent re-review pending. This checkpoint records the identity stage only; see the [P6.2 source checkpoint](phase-6-private-sources.md) for the later source lifecycle.
 **Date:** 2026-10-04
 
 ## Delivered identity boundary
@@ -86,4 +86,4 @@ transaction-local statement/lock limits begin after a connection is acquired.
 
 ## Remaining gates
 
-Independent coordinator security review is pending. No Google OAuth client, Cloud Run IAM binding or upstream user-identity deployment was provisioned; no live sign-in, hosted service invocation or private-input test occurred. Before enabling hosted AI or private imports, verify those live boundaries and accept a separate upstream booking/document extraction and retention contract. P6.2 storage/parser, P6.3 extraction, P6.4 confirmation and P6.5 import review UI are not implemented. Research/proposal and private-import gates stay off by default.
+Independent coordinator security review is pending. No Google OAuth client, Cloud Run IAM binding or upstream user-identity deployment was provisioned; no live sign-in, hosted service invocation or private-input test occurred. Before enabling hosted AI or live private-input use, verify those live boundaries and accept a separate upstream booking/document extraction and retention contract. P6.2 storage/parser is recorded separately; P6.3 extraction, P6.4 confirmation, and P6.5 import review UI remain unimplemented. Research/proposal and private-import gates stay off by default.

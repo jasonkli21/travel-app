@@ -272,13 +272,19 @@ verified target identity exists; it never runs during first sign-in.
 `TRAVEL_AUTH_MODE=local` remains the default and keeps local CRUD
 unauthenticated behind configured local host/origin checks. Live Google OAuth,
 upstream user-audience alignment, and Cloud Run service IAM remain separate
-enablement gates. No private booking/document import, attachment storage, or
-extraction is implemented. See [ADR 0011](decisions/0011-phase6-google-identity-and-ai-auth.md).
+enablement gates. P6.2 adds an off-by-default, Google-session-only local source
+lifecycle with opaque files stored outside the application tree; local mode
+cannot upload or read these sources. Source bytes are not sent to the AI system.
+Typed extraction, reservation confirmation, and general attachments remain
+unimplemented. See [ADR 0011](decisions/0011-phase6-google-identity-and-ai-auth.md)
+and [ADR 0012](decisions/0012-phase6-private-source-storage.md).
 
 Local API/web host and browser-origin allowlists plus loopback bindings protect
 against unintended browser access in local mode. Local clients without Origin
-remain possible by design; local mode is not an authenticated boundary. Bodies
-are capped at 64 KiB. Safe error envelopes, request IDs, route-template/status/
+remain possible by design; local mode is not an authenticated boundary.
+Ordinary JSON bodies are capped at 64 KiB. The exact authenticated P6.2 upload
+route has separate streamed 1 MiB text and 10 MiB PDF limits and a 30-second
+receive deadline. Safe error envelopes, request IDs, route-template/status/
 duration logs and bounded SQL waits remain in place. `/health` and `/ready`
 remain public probes; non-mutating OpenAPI documentation also remains public.
 Hosted metrics and quotas remain later-phase work.

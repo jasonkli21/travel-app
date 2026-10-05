@@ -1,7 +1,7 @@
 # Phase 6 implementation plan — authenticated booking and document import
 
-**Status:** P6.0 identity decision and P6.1 verified-identity foundation
-implemented locally (review pending); booking/document import remains planned
+**Status:** P6.0/P6.1 identity and P6.2 secure-source lifecycle implemented
+locally (review pending); extraction, confirmation, and UI remain planned
 **Date:** 2026-10-03
 **Baseline:** reviewed Phase 0–4 commit `56c0cbf`; Phase 5 version/replay slice required
 **Roadmap:** [phased implementation plan](09-implementation-plan.md)
@@ -9,11 +9,12 @@ implemented locally (review pending); booking/document import remains planned
 
 ## Goal and scope boundary
 
-The current identity-only checkpoint does not deliver booking/document import
-or complete Phase 6. Its release status is recorded in
-[`releases/phase-6-identity.md`](releases/phase-6-identity.md). No accepted
-upstream extraction or retention contract exists, and no private input is
-enabled. Remaining P6.0/P6.1 security review precedes P6.2 storage work.
+P6.2 delivers only authenticated local source intake, storage, scoped reads and
+deletion, and cleanup. It does not deliver extraction, confirmed reservations,
+or review UI and does not complete Phase 6. Its local checkpoint is in
+[`releases/phase-6-private-sources.md`](releases/phase-6-private-sources.md).
+The feature gate stays off by default. No accepted upstream extraction or
+retention contract exists, and no real private input has been used.
 
 A verified owner can manually submit a booking email/document, review extracted
 candidate reservation fields with source context, correct uncertainties and
@@ -44,7 +45,7 @@ only the secure storage lifecycle required for its documents.
 | Extraction contract | Accept/pin a separate versioned personal-ai-system extraction contract, including privacy/retention, bounded input/output, idempotency and durable outcome recovery. Phase 4 research-v1 is not an extraction API. |
 | Input | Pasted email/plaintext first, then text-bearing PDF. Initial limits: 1 MiB text, 10 MiB PDF, 100 pages and 200,000 extracted characters; finalize against measured parsing and accepted downstream limits. Reject encrypted/unsupported/scanned-only documents clearly. |
 | Output | At most ten typed reservation candidates. Missing or uncertain dates/timezones/provider/confirmation fields remain explicit uncertainties, not guessed facts. Confirmation applies a selected corrected batch atomically. |
-| Storage | Opaque application-generated object keys, outside source/web roots, restrictive local permissions, byte/hash/MIME validation and short-lived authorized reads. Original filenames are display metadata only. |
+| Storage | Opaque application-generated object keys, outside source/web roots, restrictive local permissions, byte/hash/MIME validation and short-lived authorized reads. Original filenames are display metadata only. P6.2 uses local storage only and stays off by default. |
 | Work lifecycle | Request-driven durable import record with short claim transitions and a bounded extraction deadline. No SQL locks span parsing/provider waits. No worker/queue until measured execution cannot fit the bounded request model. |
 | Retention | Input, extraction references and review data have explicit retention/deletion controls. Keep approved originals only with user consent; rejected/abandoned temporary inputs are cleaned up. Do not retain private raw text in logs. |
 
@@ -210,6 +211,14 @@ limits and reconciliation cleanup. Add SQL metadata/migrations.
 **Acceptance:** path traversal, deceptive MIME, oversized streams/PDF page
 counts, parser failure, interrupted promotion and missing blobs fail safely;
 cleanup is idempotent and cannot delete another owner's objects.
+
+**Status:** implemented locally, review pending. The exact upload route streams
+after authentication with separate 1 MiB text/10 MiB PDF and 30-second limits;
+ordinary JSON remains capped at 64 KiB. PDFs run in a spawned process with an
+8-second wall/CPU cap, a 512 MiB RSS watchdog on macOS or address/data-space
+limits on Linux, a 100-page/200,000-character cap, and no remote resource
+access. The gate defaults off and local mode is denied. No extraction,
+confirmation, UI, cloud storage, or real private input is included.
 
 ### P6.3 — Integrate typed extraction
 
