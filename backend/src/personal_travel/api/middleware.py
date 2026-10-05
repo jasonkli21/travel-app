@@ -219,7 +219,14 @@ class LocalBoundaryMiddleware:
                         await reject(403, "csrf_rejected", "The request could not be verified.")
                         return
 
-                is_research_operation = path.startswith("/v1/trips/") and "/research" in path
+                is_research_comparison_operation = (
+                    path.startswith("/v1/trips/") and "/research/compare" in path
+                )
+                is_research_operation = (
+                    path.startswith("/v1/trips/")
+                    and "/research" in path
+                    and not is_research_comparison_operation
+                )
                 is_proposal_operation = path.startswith("/v1/trips/") and "/proposals" in path
                 is_extraction_operation = (
                     path.startswith("/v1/trips/")
@@ -240,6 +247,10 @@ class LocalBoundaryMiddleware:
                 )
                 ai_operation = (
                     (is_research_operation and settings.personal_ai_research_enabled)
+                    or (
+                        is_research_comparison_operation
+                        and settings.personal_ai_comparisons_enabled
+                    )
                     or (is_proposal_operation and settings.personal_ai_proposals_enabled)
                     or (is_extraction_operation and settings.personal_ai_extractions_enabled)
                     or is_import_cleanup_operation

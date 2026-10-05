@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     personal_ai_base_url: AnyHttpUrl = AnyHttpUrl("http://localhost:8001")
     personal_ai_timeout_seconds: float = Field(default=45.0, gt=0, le=50)
     personal_ai_research_enabled: bool = False
+    personal_ai_comparisons_enabled: bool = False
     personal_ai_proposals_enabled: bool = False
     personal_ai_extractions_enabled: bool = False
     private_imports_enabled: bool = False
@@ -169,6 +170,7 @@ class Settings(BaseSettings):
             self.travel_auth_mode == "google_oidc"
             and (
                 self.personal_ai_research_enabled
+                or self.personal_ai_comparisons_enabled
                 or self.personal_ai_proposals_enabled
                 or self.personal_ai_extractions_enabled
             )

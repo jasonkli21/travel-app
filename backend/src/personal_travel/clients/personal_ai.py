@@ -19,6 +19,7 @@ from personal_travel.auth.google_oidc import cloud_run_service_id_token
 from personal_travel.clients.http import InvalidUpstreamResponse, read_json, sse_lines
 from personal_travel.config import get_settings
 from personal_travel.domain.types import ResearchState
+from personal_travel.domain.upstream_comparisons import UpstreamTravelComparison
 from personal_travel.domain.upstream_extractions import UpstreamBookingExtractionResult
 from personal_travel.domain.upstream_proposals import UpstreamProposalResult
 from personal_travel.domain.urls import validate_http_url
@@ -31,6 +32,7 @@ MAX_RESEARCH_EVENTS = 128
 MAX_RESEARCH_RESPONSE_BYTES = 1_000_000
 MAX_PROPOSAL_RESPONSE_BYTES = 128 * 1024
 MAX_EXTRACTION_RESPONSE_BYTES = 64 * 1024
+MAX_COMPARISON_RESPONSE_BYTES = 256 * 1024
 
 
 class PersonalAIError(RuntimeError):
@@ -118,6 +120,14 @@ class PersonalAIExtractionRejected(PersonalAIExtractionError):
     def __init__(self, status_code: int) -> None:
         self.status_code = status_code
         super().__init__("booking extraction request was rejected")
+
+
+class PersonalAIComparisonError(RuntimeError):
+    """Safe travel-comparison client failure."""
+
+
+class PersonalAIComparisonUnknown(PersonalAIComparisonError):
+    """The lookup outcome may be committed; retry only with its existing key."""
 
 
 class PersonalAIClient:
@@ -222,6 +232,82 @@ class PersonalAIClient:
                 )
         except TimeoutError:
             raise PersonalAIError("personal-ai-system research exceeded its deadline") from None
+
+    async def lookup_travel_comparison(
+        self, *, payload: dict[str, object]
+    ) -> UpstreamTravelComparison:
+        """Perform one bounded lookup; callers retain and replay the same key on uncertainty."""
+        try:
+            async with asyncio.timeout(self._timeout):
+                headers = await self._outbound_headers()
+                async with httpx.AsyncClient(
+                    timeout=self._timeout, transport=self._transport
+                ) as client:
+                    async with client.stream(
+                        "POST",
+                        f"{self._base_url}/v1/domains/travel/lookup",
+                        headers=headers,
+                        json=payload,
+                    ) as response:
+                        response.raise_for_status()
+                        raw = await read_json(response, max_bytes=MAX_COMPARISON_RESPONSE_BYTES)
+                result = UpstreamTravelComparison.model_validate(raw)
+                _validate_travel_comparison_urls(result)
+                return result
+        except TimeoutError:
+            raise PersonalAIComparisonUnknown(
+                "personal-ai-system comparison outcome is unknown; retry with the same request key"
+            ) from None
+        except (httpx.TransportError, httpx.TimeoutException):
+            raise PersonalAIComparisonUnknown(
+                "personal-ai-system comparison outcome is unknown; retry with the same request key"
+            ) from None
+        except PersonalAIComparisonError:
+            raise
+        except (
+            httpx.HTTPError,
+            InvalidUpstreamResponse,
+            ValidationError,
+            ValueError,
+            TypeError,
+            RecursionError,
+        ):
+            raise PersonalAIComparisonError(
+                "personal-ai-system comparison returned an unavailable or invalid response"
+            ) from None
+
+    async def get_travel_comparison(self, comparison_id: UUID) -> UpstreamTravelComparison:
+        """Read one durable owner-scoped comparison for a separate explicit save action."""
+        try:
+            async with asyncio.timeout(self._timeout):
+                headers = await self._outbound_headers()
+                async with httpx.AsyncClient(
+                    timeout=self._timeout, transport=self._transport
+                ) as client:
+                    async with client.stream(
+                        "GET",
+                        f"{self._base_url}/v1/domains/travel/comparisons/{comparison_id}",
+                        headers=headers,
+                    ) as response:
+                        response.raise_for_status()
+                        raw = await read_json(response, max_bytes=MAX_COMPARISON_RESPONSE_BYTES)
+                result = UpstreamTravelComparison.model_validate(raw)
+                _validate_travel_comparison_urls(result)
+                return result
+        except PersonalAIComparisonError:
+            raise
+        except (
+            httpx.HTTPError,
+            TimeoutError,
+            InvalidUpstreamResponse,
+            ValidationError,
+            ValueError,
+            TypeError,
+            RecursionError,
+        ):
+            raise PersonalAIComparisonError(
+                "personal-ai-system comparison is unavailable or no longer accessible"
+            ) from None
 
     async def create_itinerary_proposal(
         self, *, payload: dict[str, object], idempotency_key: UUID
@@ -683,6 +769,19 @@ def _validate_public_citation_url(value: str) -> None:
         return
     if not address.is_global:
         raise InvalidUpstreamResponse("proposal citation URL is not public")
+
+
+def _validate_travel_comparison_urls(result: UpstreamTravelComparison) -> None:
+    for observation in result.provider_observations:
+        _validate_public_citation_url(observation.url)
+        if observation.policy_url is not None:
+            _validate_public_citation_url(observation.policy_url)
+    for row in result.comparison.rows:
+        for cell in row.cells:
+            for source in cell.sources:
+                _validate_public_citation_url(source.url)
+                if source.policy_url is not None:
+                    _validate_public_citation_url(source.policy_url)
 
 
 async def _bounded_json(response: httpx.Response) -> object:

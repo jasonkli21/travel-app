@@ -1,9 +1,12 @@
 from decimal import Decimal
 from uuid import UUID
 
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from personal_travel.api.schemas import ManualSavedPlaceCreate, SavedPlaceCreate, SavedPlaceUpdate
+from personal_travel.domain.upstream_comparisons import VerifiedPlaceSource
 from personal_travel.models.place import Place
 from personal_travel.models.reservation import SavedPlace
 from personal_travel.models.trip import Trip
@@ -93,6 +96,82 @@ class SavedPlaceService:
             trip.revision += 1
             self._session.flush()
             return saved_place
+
+    def create_from_comparison(
+        self,
+        trip_id: UUID,
+        data: ManualSavedPlaceCreate,
+        source: VerifiedPlaceSource,
+        provider_place_id: str,
+        *,
+        expected_revision: int | None = None,
+    ) -> SavedPlace:
+        """Persist one explicitly reviewed, source-verified comparison candidate."""
+        if source.provider_place_id != provider_place_id:
+            raise DomainError(
+                "comparison_candidate_invalid",
+                "The verified source identity does not match the selected candidate.",
+                status_code=409,
+            )
+        try:
+            with self._session.begin():
+                trip = self._get_trip(trip_id, for_update=True)
+                existing_saved = next(
+                    (
+                        saved
+                        for saved in trip.saved_places
+                        if saved.place.provider == source.provider
+                        and saved.place.provider_place_id == provider_place_id
+                    ),
+                    None,
+                )
+                if existing_saved is not None:
+                    return existing_saved
+                require_expected_revision(trip.revision, expected_revision, aggregate="trip")
+
+                place = self._session.scalar(
+                    select(Place).where(
+                        Place.owner_id == self._owner_id,
+                        Place.provider == source.provider,
+                        Place.provider_place_id == provider_place_id,
+                    )
+                )
+                if place is None:
+                    place = Place(
+                        owner_id=self._owner_id,
+                        name=data.name,
+                        address=data.address,
+                        category=data.category,
+                        latitude=Decimal(str(data.latitude)),
+                        longitude=Decimal(str(data.longitude)),
+                        provider=source.provider,
+                        provider_place_id=provider_place_id,
+                        provider_source_name=source.provider_source_name,
+                        provider_source_attribution=source.provider_source_attribution,
+                        provider_source_license=source.provider_source_license,
+                        provider_source_url=source.provider_source_url,
+                    )
+                    self._places.add(place)
+                    self._session.flush()
+
+                saved_place = SavedPlace(
+                    owner_id=self._owner_id,
+                    trip_id=trip.id,
+                    place_id=place.id,
+                    note=data.note,
+                )
+                saved_place.place = place
+                trip.saved_places.append(saved_place)
+                self._saved_places.add(saved_place)
+                trip.revision += 1
+                self._session.flush()
+                return saved_place
+        except IntegrityError:
+            raise DomainError(
+                "comparison_candidate_conflict",
+                "The place changed while it was being saved. Reload the trip before trying again.",
+                status_code=409,
+            ) from None
 
     def update(
         self,

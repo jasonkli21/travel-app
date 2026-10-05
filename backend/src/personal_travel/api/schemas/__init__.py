@@ -37,6 +37,18 @@ from .reservations import ReservationUpdate as ReservationUpdate
 from .saved_places import SavedPlaceCreate as SavedPlaceCreate
 from .saved_places import SavedPlaceResponse as SavedPlaceResponse
 from .saved_places import SavedPlaceUpdate as SavedPlaceUpdate
+from .travel_comparisons import (
+    TravelComparisonCandidateResponse as TravelComparisonCandidateResponse,
+)
+from .travel_comparisons import (
+    TravelComparisonCandidateSaveRequest as TravelComparisonCandidateSaveRequest,
+)
+from .travel_comparisons import (
+    TravelComparisonConstraintResponse as TravelComparisonConstraintResponse,
+)
+from .travel_comparisons import TravelComparisonRequest as TravelComparisonRequest
+from .travel_comparisons import TravelComparisonResponse as TravelComparisonResponse
+from .travel_comparisons import TravelComparisonSourceResponse as TravelComparisonSourceResponse
 from .trips import DayUpdate as DayUpdate
 from .trips import TripCreate as TripCreate
 from .trips import TripDayResponse as TripDayResponse
