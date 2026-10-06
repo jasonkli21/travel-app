@@ -3,6 +3,11 @@ export const CSRF_COOKIE = "__Host-travel_csrf";
 export const OAUTH_FLOW_COOKIE = "__Host-travel_oauth_flow";
 export const AI_USER_TOKEN_COOKIE = "__Host-travel_ai_token";
 
+export function sessionModeAllowed(sessionMode, deploymentMode = "local") {
+  return (deploymentMode === "local" || deploymentMode === "hosted")
+    && (deploymentMode === "local" || sessionMode === "google_oidc");
+}
+
 export function authCallbackCookieHeader(request) {
   const allowedNames = [SESSION_COOKIE, OAUTH_FLOW_COOKIE];
   const values = new Map();

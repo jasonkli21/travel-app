@@ -10,8 +10,16 @@ import {
   authFailureLocation,
   googleAuthorizationUrl,
   responseAuthCookies,
+  sessionModeAllowed,
   validatedPublicOrigin,
 } from "../lib/auth-flow.mjs";
+
+test("hosted page sessions fail closed unless API identity is Google verified", () => {
+  assert.equal(sessionModeAllowed("local", "local"), true);
+  assert.equal(sessionModeAllowed("google_oidc", "hosted"), true);
+  assert.equal(sessionModeAllowed("local", "hosted"), false);
+  assert.equal(sessionModeAllowed("local", "invalid"), false);
+});
 
 test("auth routes accept only configured browser hosts and preserve that origin", () => {
   const request = new Request("https://next-internal/auth/google/callback", {

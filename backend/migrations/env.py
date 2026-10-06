@@ -11,6 +11,7 @@ from personal_travel.models import (  # noqa: F401
     ItineraryItem,
     ItineraryProposal,
     Place,
+    ProviderQuotaBucket,
     Reservation,
     SavedPlace,
     SourceAttachment,

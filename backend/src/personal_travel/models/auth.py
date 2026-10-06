@@ -77,3 +77,23 @@ class OwnerMigrationAudit(UUIDPrimaryKeyMixin, Base):
         CheckConstraint("source_owner_id <> target_owner_id", name="different_owners"),
         Index("ix_owner_migration_audits_target_time", "target_owner_id", "occurred_at"),
     )
+
+
+class ProviderQuotaBucket(Base):
+    """Cross-instance, bounded-window provider admission counters."""
+
+    __tablename__ = "provider_quota_buckets"
+
+    scope_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    bucket_key: Mapped[str] = mapped_column(String(48), primary_key=True)
+    window_seconds: Mapped[int] = mapped_column(primary_key=True)
+    window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    used: Mapped[int] = mapped_column(nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("length(scope_hash) = 64", name="scope_hash_length"),
+        CheckConstraint("length(bucket_key) BETWEEN 1 AND 48", name="bucket_key_length"),
+        CheckConstraint("window_seconds IN (60,86400)", name="supported_window"),
+        CheckConstraint("used > 0", name="used_positive"),
+        Index("ix_provider_quota_buckets_window_start", "window_start"),
+    )

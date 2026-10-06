@@ -1,3 +1,4 @@
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -14,6 +15,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    deployment_mode: Literal["local", "hosted"] = "local"
     owner_id: str = Field(default="local", min_length=1, max_length=128)
     travel_auth_mode: Literal["local", "google_oidc"] = "local"
     google_oauth_client_id: str = Field(default="", max_length=255)
@@ -38,6 +40,13 @@ class Settings(BaseSettings):
     database_connect_timeout_seconds: int = Field(default=5, ge=1, le=30)
     database_statement_timeout_ms: int = Field(default=15000, ge=1000, le=60000)
     database_lock_timeout_ms: int = Field(default=5000, ge=1000, le=30000)
+    database_pool_size: int = Field(default=5, ge=1, le=40)
+    database_pool_max_overflow: int = Field(default=0, ge=0, le=40)
+    database_pool_recycle_seconds: int = Field(default=1800, ge=60, le=86400)
+    geoapify_global_requests_per_minute: int = Field(default=30, ge=6, le=10000)
+    geoapify_global_requests_per_day: int = Field(default=200, ge=60, le=1000000)
+    personal_ai_global_requests_per_minute: int = Field(default=12, ge=10, le=10000)
+    personal_ai_global_requests_per_day: int = Field(default=100, ge=10, le=1000000)
     personal_ai_base_url: AnyHttpUrl = AnyHttpUrl("http://localhost:8001")
     personal_ai_timeout_seconds: float = Field(default=45.0, gt=0, le=50)
     personal_ai_research_enabled: bool = False
@@ -60,6 +69,34 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_identity_configuration(self) -> "Settings":
+        if self.deployment_mode == "hosted":
+            hosts = self.allowed_host_list
+            origins = self.cors_origin_list
+            if self.travel_auth_mode != "google_oidc":
+                raise ValueError("Hosted deployment requires verified Google identity mode.")
+            if not hosts or any(
+                host in {"*", "localhost", "127.0.0.1", "::1", "[::1]"} or "*" in host
+                for host in hosts
+            ):
+                raise ValueError("Hosted deployment requires explicit non-loopback API hosts.")
+            parsed_origins = [urlsplit(origin) for origin in origins]
+            if not parsed_origins or any(
+                parsed.scheme != "https"
+                or not parsed.hostname
+                or parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+                or parsed.username is not None
+                or parsed.password is not None
+                or parsed.path != ""
+                or parsed.query
+                or parsed.fragment
+                or "*" in origin
+                for origin, parsed in zip(origins, parsed_origins, strict=True)
+            ):
+                raise ValueError("Hosted deployment requires explicit HTTPS browser origins.")
+        elif os.getenv("K_SERVICE"):
+            raise ValueError(
+                "Cloud Run requires TRAVEL_DEPLOYMENT_MODE=hosted; local identity is not allowed."
+            )
         if self.private_imports_enabled or self.private_attachments_enabled:
             source_path = Path(self.private_source_dir).expanduser()
             if self.travel_auth_mode != "google_oidc" or not self.private_source_dir:

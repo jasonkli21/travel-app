@@ -4,6 +4,7 @@ import asyncio
 import logging
 import re
 from datetime import UTC, datetime
+from functools import partial
 from hmac import compare_digest
 from time import monotonic
 from urllib.parse import urlsplit
@@ -25,6 +26,11 @@ from personal_travel.auth.google_oidc import (
 from personal_travel.auth.sessions import ActiveSession, load_active_session, matches_digest
 from personal_travel.config import Settings, get_settings
 from personal_travel.db.session import SessionFactory
+from personal_travel.services.provider_admission import (
+    ProviderAdmissionUnavailable,
+    QuotaExceeded,
+    admit_provider_request,
+)
 
 logger = logging.getLogger("personal_travel.requests")
 MAX_REQUEST_BYTES = 64 * 1024
@@ -35,6 +41,11 @@ EXTRACTION_PATH = re.compile(r"^/v1/trips/[0-9a-fA-F-]{36}/imports/[0-9a-fA-F-]{
 COMPARISON_PATH = re.compile(
     r"^/v1/trips/[0-9a-fA-F-]{36}/research/(?:compare|comparisons/[0-9a-fA-F-]{36}/candidates/[0-9a-fA-F-]{36}/save)$"
 )
+TRIP_RESEARCH_PATH = re.compile(r"^/v1/trips/[0-9a-fA-F-]{36}/research$")
+TRIP_PROPOSAL_PATH = re.compile(r"^/v1/trips/[0-9a-fA-F-]{36}/proposals$")
+IMPORT_CLEANUP_PATH = re.compile(
+    r"^/v1/trips/[0-9a-fA-F-]{36}/imports/[0-9a-fA-F-]{36}/(?:confirm|reject|source)$"
+)
 UPLOAD_SECONDS = 30
 
 
@@ -44,6 +55,40 @@ class UploadTooLarge(Exception):
 
 class UploadDeadlineExceeded(Exception):
     pass
+
+
+def _provider_operation(path: str, method: str, settings: Settings) -> str | None:
+    if settings.geoapify_api_key is not None and bool(
+        settings.geoapify_api_key.get_secret_value().strip()
+    ):
+        if method == "GET" and re.fullmatch(r"/v1/trips/[0-9a-fA-F-]{36}/places/search", path):
+            return "geoapify_search"
+        if method == "POST" and re.fullmatch(
+            r"/v1/trips/[0-9a-fA-F-]{36}/logistics/estimate", path
+        ):
+            return "geoapify_route"
+    if method == "POST":
+        if settings.personal_ai_research_enabled and TRIP_RESEARCH_PATH.fullmatch(path):
+            return "personal_ai_research"
+        if settings.personal_ai_comparisons_enabled and re.fullmatch(
+            r"/v1/trips/[0-9a-fA-F-]{36}/research/compare", path
+        ):
+            return "personal_ai_comparison"
+        if settings.personal_ai_proposals_enabled and TRIP_PROPOSAL_PATH.fullmatch(path):
+            return "personal_ai_proposal"
+        if settings.personal_ai_extractions_enabled and EXTRACTION_PATH.fullmatch(path):
+            return "personal_ai_extraction"
+        if path == "/v1/private-import-deletion-intents/retry":
+            return "personal_ai_deletion_batch"
+        if re.fullmatch(
+            r"/v1/trips/[0-9a-fA-F-]{36}/imports/[0-9a-fA-F-]{36}/(?:confirm|reject)", path
+        ):
+            return "personal_ai_deletion"
+    elif method == "DELETE" and re.fullmatch(
+        r"/v1/trips/[0-9a-fA-F-]{36}/imports/[0-9a-fA-F-]{36}/source", path
+    ):
+        return "personal_ai_deletion"
+    return None
 
 
 class LocalBoundaryMiddleware:
@@ -73,8 +118,16 @@ class LocalBoundaryMiddleware:
                 response_headers["X-Content-Type-Options"] = "nosniff"
             await send(message)
 
-        async def reject(code: int, name: str, message: str) -> None:
-            await error_response(code, name, message)(scope, receive, send_response)
+        async def reject(
+            code: int,
+            name: str,
+            message: str,
+            extra_headers: dict[str, str] | None = None,
+        ) -> None:
+            response = error_response(code, name, message)
+            for header_name, header_value in (extra_headers or {}).items():
+                response.headers[header_name] = header_value
+            await response(scope, receive, send_response)
 
         try:
             try:
@@ -321,6 +374,83 @@ class LocalBoundaryMiddleware:
                         service_audience=settings.personal_ai_service_iam_audience,
                         service_account=settings.personal_ai_service_account,
                     )
+
+            quota_operation = _provider_operation(path, method, settings)
+            if quota_operation is not None:
+                principal = scope.get("principal")
+                quota_owner = getattr(principal, "owner_id", None)
+                if not isinstance(quota_owner, str) or not quota_owner:
+                    await reject(401, "authentication_required", "Sign in to continue.")
+                    return
+                is_geoapify = quota_operation.startswith("geoapify_")
+                global_minute = (
+                    settings.geoapify_global_requests_per_minute
+                    if is_geoapify
+                    else settings.personal_ai_global_requests_per_minute
+                )
+                global_day = (
+                    settings.geoapify_global_requests_per_day
+                    if is_geoapify
+                    else settings.personal_ai_global_requests_per_day
+                )
+                try:
+                    async with asyncio.timeout(3):
+                        admission = await run_sync(
+                            partial(
+                                admit_provider_request,
+                                session_factory,
+                                owner_id=quota_owner,
+                                operation=quota_operation,
+                                global_per_minute=global_minute,
+                                global_per_day=global_day,
+                            ),
+                            abandon_on_cancel=True,
+                        )
+                except TimeoutError:
+                    logging.getLogger("personal_travel.provider_admission").error(
+                        "request id=%s operation=%s outcome=unavailable",
+                        request_id,
+                        quota_operation,
+                    )
+                    await reject(
+                        503,
+                        "provider_admission_unavailable",
+                        "Provider request admission is temporarily unavailable.",
+                    )
+                    return
+                except QuotaExceeded as exc:
+                    logging.getLogger("personal_travel.provider_admission").info(
+                        "request id=%s operation=%s outcome=denied retry_after=%s",
+                        request_id,
+                        quota_operation,
+                        exc.retry_after_seconds,
+                    )
+                    await reject(
+                        429,
+                        "provider_quota_exceeded",
+                        "This provider request budget is temporarily exhausted.",
+                        {"Retry-After": str(exc.retry_after_seconds)},
+                    )
+                    return
+                except ProviderAdmissionUnavailable:
+                    logging.getLogger("personal_travel.provider_admission").error(
+                        "request id=%s operation=%s outcome=unavailable",
+                        request_id,
+                        quota_operation,
+                    )
+                    await reject(
+                        503,
+                        "provider_admission_unavailable",
+                        "Provider request admission is temporarily unavailable.",
+                    )
+                    return
+                logging.getLogger("personal_travel.provider_admission").info(
+                    "request id=%s operation=%s provider=%s charged_units=%s outcome=admitted",
+                    request_id,
+                    admission.operation,
+                    admission.provider,
+                    admission.charged_units,
+                )
 
             import_upload = method == "POST" and UPLOAD_PATH.fullmatch(path) is not None
             attachment_upload = (

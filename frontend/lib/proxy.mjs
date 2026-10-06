@@ -211,9 +211,13 @@ async function readRequestBody(request) {
 export async function proxyRequest(request, path, {
   backendBaseUrl = "http://localhost:8000",
   allowedHosts = ["localhost", "127.0.0.1", "[::1]"],
+  deploymentMode = "local",
   fetchImpl = fetch,
   sourceResponseTimeoutMs = 30_000,
 } = {}) {
+  if (deploymentMode !== "local" && deploymentMode !== "hosted") {
+    return errorResponse(503, "deployment_mode_invalid", "The travel service is unavailable.");
+  }
   const url = new URL(request.url);
   const origin = request.headers.get("origin");
   // Next's request URL can use its internal listening hostname. Validate the
@@ -238,6 +242,15 @@ export async function proxyRequest(request, path, {
   }
   if (!path.length || path.some((part) => !/^[a-zA-Z0-9_-]+$/.test(part))) {
     return errorResponse(400, "invalid_path", "This API path is not valid.");
+  }
+  const cookies = cookieMap(request);
+  const publicHostedAuth = path[0] === "auth"
+    && ((path[1] === "session" && request.method.toUpperCase() === "GET")
+      || (path[1] === "google" && path[2] === "start" && request.method.toUpperCase() === "GET")
+      || (path[1] === "google" && path[2] === "callback" && request.method.toUpperCase() === "POST"));
+  if (deploymentMode === "hosted" && !publicHostedAuth
+      && (typeof cookies.get(SESSION_COOKIE) !== "string" || !cookies.get(SESSION_COOKIE))) {
+    return errorResponse(401, "authentication_required", "Sign in to continue.");
   }
   const headers = new Headers();
   const method = request.method.toUpperCase();
@@ -301,7 +314,6 @@ export async function proxyRequest(request, path, {
   }
   const expectedRevision = request.headers.get("x-expected-revision");
   if (expectedRevision !== null) headers.set("x-expected-revision", expectedRevision);
-  const cookies = cookieMap(request);
   const cookieHeader = allowedCookieHeader(path, cookies);
   if (cookieHeader) headers.set("cookie", cookieHeader);
   const isBookingExtraction = path.length === 5 && path[0] === "trips"

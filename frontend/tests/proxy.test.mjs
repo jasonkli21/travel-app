@@ -15,6 +15,35 @@ test("proxy validates the browser Host when Next uses an internal request URL", 
   }
 });
 
+test("hosted proxy requires a session for domain routes and rejects unknown modes", async () => {
+  let reachedBackend = false;
+  const fetchImpl = async () => {
+    reachedBackend = true;
+    return Response.json({ ok: true });
+  };
+  const denied = await proxyRequest(new Request(url), ["trips"], {
+    deploymentMode: "hosted",
+    fetchImpl,
+  });
+  assert.equal(denied.status, 401);
+  assert.equal(reachedBackend, false);
+
+  const invalidMode = await proxyRequest(new Request(url), ["trips"], {
+    deploymentMode: "public",
+    fetchImpl,
+  });
+  assert.equal(invalidMode.status, 503);
+  assert.equal(reachedBackend, false);
+
+  const publicSessionCheck = await proxyRequest(
+    new Request("http://localhost:3000/api/v1/auth/session"),
+    ["auth", "session"],
+    { deploymentMode: "hosted", fetchImpl },
+  );
+  assert.equal(publicSessionCheck.status, 200);
+  assert.equal(reachedBackend, true);
+});
+
 test("proxy rejects hostile origins, hosts and traversal before reaching the backend", async () => {
   const fetchImpl = () => { throw new Error("must not reach backend"); };
   for (const [request, path, status] of [

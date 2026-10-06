@@ -2,7 +2,7 @@ import "server-only";
 
 import { cookies } from "next/headers";
 
-import { SESSION_COOKIE } from "./auth-flow.mjs";
+import { SESSION_COOKIE, sessionModeAllowed } from "./auth-flow.mjs";
 
 export type PageSession = {
   mode: "local" | "google_oidc";
@@ -45,6 +45,11 @@ export async function lookupPageSession(): Promise<SessionLookup> {
       email: value.email,
       expires_at: value.expires_at,
     };
+    const deploymentMode = process.env.TRAVEL_DEPLOYMENT_MODE
+      ?? (process.env.NODE_ENV === "production" ? "hosted" : "local");
+    if (!sessionModeAllowed(session.mode, deploymentMode)) {
+      return { kind: "unavailable" };
+    }
     return session.authenticated
       ? { kind: "ok", session }
       : { kind: "unauthenticated", mode: session.mode };

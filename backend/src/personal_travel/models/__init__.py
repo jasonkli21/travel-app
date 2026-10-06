@@ -3,6 +3,7 @@ from personal_travel.models.auth import (
     AuthSession,
     OAuthLoginAttempt,
     OwnerMigrationAudit,
+    ProviderQuotaBucket,
 )
 from personal_travel.models.import_source import (
     BookingDeletionIntent,
@@ -25,6 +26,7 @@ __all__ = [
     "AuthSession",
     "OAuthLoginAttempt",
     "OwnerMigrationAudit",
+    "ProviderQuotaBucket",
     "Place",
     "Reservation",
     "SavedPlace",
