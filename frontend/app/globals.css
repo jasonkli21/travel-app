@@ -144,6 +144,55 @@ h3 { margin: 3px 0 0; }
 .proposalWarnings ul { display: grid; gap: 5px; margin: 0; padding-left: 18px; }
 .proposalWarnings li { font-size: 12px; line-height: 1.45; }
 .proposalNoWarnings { border: 1px solid #c6d9ca; border-radius: 8px; background: #f1f7f1; color: #37573f; font-size: 12px; margin: 0; padding: 9px 11px; }
+.privateAttachmentPanel, .tripExportPanel { display: grid; gap: 14px; margin-top: 38px; scroll-margin-top: 20px; }
+.attachmentDisclosure { border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0; background: var(--accent-soft); color: #34483a; font-size: 13px; line-height: 1.5; margin: 0; padding: 11px 13px; }
+.attachmentUpload, .tripExportForm { display: grid; gap: 13px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 16px; }
+.attachmentUpload { grid-template-columns: minmax(0, 1.3fr) minmax(220px, 1fr) auto; align-items: end; }
+.attachmentList { display: grid; gap: 11px; list-style: none; margin: 0; padding: 0; }
+.attachmentRow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, .9fr); gap: 14px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel); padding: 14px; }
+.attachmentFileSummary { display: grid; align-content: start; gap: 5px; min-width: 0; }
+.attachmentFileSummary > strong { overflow-wrap: anywhere; }
+.attachmentFileSummary > span, .attachmentFileSummary > a { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.attachmentFileSummary > a { color: var(--accent); font-weight: 750; }
+.attachmentEdit { display: grid; gap: 9px; }
+.attachmentCheck { display: flex; align-items: flex-start; gap: 9px; color: var(--ink); font-size: 13px; font-weight: 550; }
+.attachmentCheck input { flex: 0 0 auto; width: 17px; height: 17px; margin: 1px 0 0; accent-color: var(--accent); }
+.optionalLabel { color: var(--muted); font-size: 11px; font-weight: 500; }
+.tripExportForm .formHint { margin: 0; }
+.travelModeShell { display: grid; gap: 18px; width: min(100%, 1040px); margin: 0 auto; padding: 26px 20px 36px; }
+.travelModeHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; border-bottom: 1px solid var(--line); padding-bottom: 18px; }
+.travelModeHeader h1 { margin: 7px 0 5px; font-size: clamp(28px, 5vw, 42px); }
+.travelModeHeader .muted { margin: 0; }
+.travelModeHeader .linkButton { flex: 0 0 auto; text-decoration: none; }
+.backLink { color: var(--accent); font-size: 13px; font-weight: 750; text-decoration: none; }
+.travelModeNotice { border-left: 3px solid var(--accent); border-radius: 0 9px 9px 0; background: var(--accent-soft); color: #34483a; font-size: 13px; line-height: 1.5; margin: 0; padding: 12px 14px; }
+.travelModeError { display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid #e2b9b1; border-radius: 9px; background: #fff8f5; color: var(--danger); padding: 10px 12px; }
+.travelModeError p { margin: 0; }
+.travelModeControls { display: grid; grid-template-columns: minmax(170px, .6fr) minmax(170px, .6fr) minmax(240px, 1fr); align-items: end; gap: 12px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel); padding: 14px; }
+.travelModeControls .formHint { margin: 0 0 9px; }
+.travelModeDays { display: grid; gap: 14px; }
+.travelModeDay { display: grid; gap: 13px; border: 1px solid var(--line); border-radius: 13px; background: var(--panel); box-shadow: var(--shadow); padding: 17px; }
+.travelModeDay > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.travelModeDay h2 { margin: 3px 0; font-size: 21px; }
+.travelModeDay header .muted { margin: 0; }
+.travelModeItems { display: grid; gap: 0; list-style: none; margin: 0; padding: 0; }
+.travelModeItem { display: grid; grid-template-columns: minmax(72px, .18fr) minmax(0, 1fr); gap: 13px; border-top: 1px solid var(--line); padding: 13px 2px; }
+.travelModeItem > time { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; padding-top: 2px; }
+.travelModeItem h3 { margin: 0; font-size: 15px; }
+.travelModeItem .muted { margin: 4px 0 0; font-size: 12px; }
+.travelModeNotes { margin: 7px 0 0; color: var(--ink); font-size: 13px; line-height: 1.45; white-space: pre-wrap; }
+.travelReservationAnchor { display: grid; gap: 4px; margin-top: 9px; border-left: 2px solid #ddcfb4; padding-left: 9px; font-size: 12px; }
+.travelReservationAnchor > span { color: var(--muted); }
+.travelReservationAnchor a, .travelDocumentList a, .travelModeFooter a { color: var(--accent); font-weight: 750; }
+.travelWarning { border: 1px solid #e2b9b1; border-radius: 7px; background: #fff8f5; color: var(--danger); font-size: 12px; line-height: 1.4; margin: 8px 0 0; padding: 7px 9px; }
+.travelTransferList { display: grid; gap: 6px; border-top: 1px solid var(--line); padding-top: 11px; }
+.travelEstimateMeta { color: var(--muted); font-size: 11px; margin: 0 0 2px; }
+.travelTransfer { color: var(--ink); font-size: 12px; line-height: 1.4; margin: 0; }
+.travelDocumentList { display: grid; gap: 8px; list-style: none; margin: 0; padding: 0; }
+.travelDocumentList li { display: flex; align-items: center; justify-content: space-between; gap: 10px; border-top: 1px solid var(--line); padding-top: 8px; font-size: 12px; }
+.travelDocumentList li > span:first-child { overflow-wrap: anywhere; }
+.travelModeFooter { display: flex; justify-content: space-between; gap: 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; padding-top: 13px; }
+@media print { .travelModeHeader .linkButton, .travelModeControls, .travelModeDay > header button, .travelModeFooter a { display: none; } .travelModeShell { width: 100%; padding: 0; } .travelModeDay { break-inside: avoid; box-shadow: none; } }
 .bookingImportPanel { display: grid; gap: 14px; margin-top: 38px; scroll-margin-top: 20px; }
 .bookingImportPanel > .sectionHeading { margin-bottom: 0; }
 .importDisclosure, .duplicateNotice, .importRecovery, .importOutcome, .reviewExpiry, .successBanner { border: 1px solid var(--line); border-radius: 9px; background: var(--bg); font-size: 13px; line-height: 1.5; padding: 11px 13px; }
@@ -348,6 +397,14 @@ input:focus, select:focus, textarea:focus, button:focus-visible, a:focus-visible
   .itemSummary { grid-template-columns: 50px minmax(0, 1fr); }
   .itemActions { grid-column: 1 / -1; justify-content: flex-start; }
   .formGrid { grid-template-columns: 1fr; }
+  .attachmentUpload, .attachmentRow { grid-template-columns: 1fr; }
+  .attachmentUpload > button { width: 100%; }
+  .travelModeShell { padding: 18px 13px 26px; }
+  .travelModeHeader, .travelModeDay > header, .travelModeError, .travelModeFooter { align-items: stretch; flex-direction: column; }
+  .travelModeHeader .linkButton { align-self: flex-start; }
+  .travelModeControls { grid-template-columns: 1fr; }
+  .travelModeItem { grid-template-columns: 1fr; gap: 4px; }
+  .travelDocumentList li { align-items: flex-start; flex-direction: column; }
   .researchForm, .researchCandidateForm { padding: 12px; }
   .comparisonForm { padding: 12px; }
   .comparisonCandidate { padding: 12px; }

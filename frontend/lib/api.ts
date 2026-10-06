@@ -1,4 +1,4 @@
-import { request } from "./api-request.mjs";
+import { download as downloadRequest, request } from "./api-request.mjs";
 export { ApiError } from "./api-request.mjs";
 
 export type ItemType = "activity" | "food" | "lodging" | "transport" | "flight" | "note";
@@ -490,6 +490,38 @@ export interface ApiErrorPayload {
   };
 }
 
+export type AttachmentMediaType = "text/plain" | "application/pdf" | "image/jpeg" | "image/png";
+export type AttachmentState = "pending" | "ready" | "deleting" | "missing";
+
+export interface TripAttachment {
+  id: string;
+  trip_id: string | null;
+  reservation_id: string | null;
+  display_filename: string;
+  media_type: AttachmentMediaType;
+  byte_size: number;
+  state: AttachmentState;
+  expires_at: string | null;
+  created_at: string;
+  updated_at: string;
+  trip_revision: number;
+  download_available: boolean;
+}
+
+export type TripExportFormat = "ics" | "html" | "json";
+
+export interface TripExportInput {
+  format: TripExportFormat;
+  start_date?: string;
+  end_date?: string;
+  include_private_fields: boolean;
+  include_documents: boolean;
+  include_linked_reservations: boolean;
+}
+
+export const tripAttachmentsEnabled =
+  process.env.NEXT_PUBLIC_PRIVATE_ATTACHMENTS_ENABLED === "true";
+
 const expectedRevision = (revision: number) => ({
   "X-Expected-Revision": String(revision),
 });
@@ -529,6 +561,50 @@ export const travelApi = {
     input: { day_id: string; mode: LogisticsMode; buffer_minutes: number },
   ) =>
     request<LogisticsEstimate>(`/trips/${tripId}/logistics/estimate`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  listAttachments: (tripId: string) =>
+    request<TripAttachment[]>(`/trips/${tripId}/attachments`),
+  uploadAttachment: (
+    tripId: string,
+    file: File,
+    revision: number,
+    requestKey: string,
+    reservationId: string | null,
+  ) => {
+    const safeFilename = file.name.replace(/[^A-Za-z0-9 ._-]/g, "_").slice(0, 512);
+    return request<TripAttachment>(`/trips/${tripId}/attachments`, {
+      method: "POST",
+      headers: {
+        "Content-Type": file.type,
+        "X-Expected-Revision": String(revision),
+        "X-Attachment-Request-Key": requestKey,
+        "X-Attachment-Filename": safeFilename,
+        ...(reservationId ? { "X-Attachment-Reservation-ID": reservationId } : {}),
+      },
+      body: file,
+    });
+  },
+  updateAttachment: (
+    tripId: string,
+    attachmentId: string,
+    input: { display_filename: string | null; reservation_id: string | null },
+    revision: number,
+  ) => request<TripAttachment>(`/trips/${tripId}/attachments/${attachmentId}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+    headers: expectedRevision(revision),
+  }),
+  deleteAttachment: (tripId: string, attachmentId: string, revision: number) =>
+    request<void>(`/trips/${tripId}/attachments/${attachmentId}`, {
+      method: "DELETE",
+      headers: expectedRevision(revision),
+    }),
+  attachmentDownloadUrl: (tripId: string, attachmentId: string) =>
+    `/api/v1/trips/${tripId}/attachments/${attachmentId}/download`,
+  createTripExport: (tripId: string, input: TripExportInput) =>
+    downloadRequest(`/trips/${tripId}/exports`, {
       method: "POST",
       body: JSON.stringify(input),
     }),

@@ -2,7 +2,8 @@ import { readProxyBody } from "./proxy-response.mjs";
 
 const MAX_REQUEST_BYTES = 64 * 1024;
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
-const MAX_SOURCE_RESPONSE_BYTES = 10 * 1024 * 1024;
+const MAX_PRIVATE_DOWNLOAD_BYTES = 10 * 1024 * 1024;
+const MAX_EXPORT_RESPONSE_BYTES = 36 * 1024 * 1024;
 const SESSION_COOKIE = "__Host-travel_session";
 const CSRF_COOKIE = "__Host-travel_csrf";
 const OAUTH_FLOW_COOKIE = "__Host-travel_oauth_flow";
@@ -61,6 +62,22 @@ function isImportUpload(path, method) {
     && /^[0-9a-fA-F-]{36}$/.test(path[1]) && path[2] === "imports";
 }
 
+function isAttachmentUpload(path, method) {
+  return method === "POST" && path.length === 3 && path[0] === "trips"
+    && /^[0-9a-fA-F-]{36}$/.test(path[1]) && path[2] === "attachments";
+}
+
+function isTripExport(path, method) {
+  return method === "POST" && path.length === 3 && path[0] === "trips"
+    && /^[0-9a-fA-F-]{36}$/.test(path[1]) && path[2] === "exports";
+}
+
+function isAttachmentDownload(path, method) {
+  return method === "GET" && path.length === 5 && path[0] === "trips"
+    && /^[0-9a-fA-F-]{36}$/.test(path[1]) && path[2] === "attachments"
+    && /^[0-9a-fA-F-]{36}$/.test(path[3]) && path[4] === "download";
+}
+
 function streamedUpload(request, maxBytes, abortController, onTooLarge) {
   const reader = request.body?.getReader();
   if (!reader) return undefined;
@@ -103,7 +120,7 @@ function streamedUpload(request, maxBytes, abortController, onTooLarge) {
   });
 }
 
-function streamedSourceResponse(response, abortController, timeout, onFinish) {
+function streamedBoundedResponse(response, abortController, timeout, maxBytes, onFinish) {
   const reader = response.body?.getReader();
   if (!reader) {
     onFinish();
@@ -144,10 +161,10 @@ function streamedSourceResponse(response, abortController, timeout, onFinish) {
           return;
         }
         total += value.byteLength;
-        if (total > MAX_SOURCE_RESPONSE_BYTES) {
+        if (total > maxBytes) {
           abortController.abort("source response exceeds byte limit");
           await cancelReader("source response exceeds byte limit");
-          streamController.error(new RangeError("source_response_too_large"));
+          streamController.error(new RangeError("binary_response_too_large"));
           return;
         }
         streamController.enqueue(value);
@@ -223,29 +240,59 @@ export async function proxyRequest(request, path, {
     return errorResponse(400, "invalid_path", "This API path is not valid.");
   }
   const headers = new Headers();
-  const upload = isImportUpload(path, request.method.toUpperCase());
-  const isSource = request.method === "GET" && path.length === 5 && path[0] === "trips"
+  const method = request.method.toUpperCase();
+  const importUpload = isImportUpload(path, method);
+  const attachmentUpload = isAttachmentUpload(path, method);
+  const upload = importUpload || attachmentUpload;
+  const tripExport = isTripExport(path, method);
+  const isImportSource = method === "GET" && path.length === 5 && path[0] === "trips"
     && /^[0-9a-fA-F-]{36}$/.test(path[1]) && path[2] === "imports"
     && /^[0-9a-fA-F-]{36}$/.test(path[3]) && path[4] === "source";
+  const attachmentDownload = isAttachmentDownload(path, method);
+  const isPrivateDownload = isImportSource || attachmentDownload;
+  const isBinaryRequest = isPrivateDownload || tripExport;
+  const binaryLimit = tripExport ? MAX_EXPORT_RESPONSE_BYTES : MAX_PRIVATE_DOWNLOAD_BYTES;
   const contentType = request.headers.get("content-type");
   if (contentType) headers.set("content-type", contentType);
   if (upload) {
     const mediaType = (contentType ?? "").split(";", 1)[0].trim().toLowerCase();
-    if (!["text/plain", "application/pdf"].includes(mediaType)) {
-      return errorResponse(415, "unsupported_media_type", "Use plain text or PDF.");
+    const allowedMedia = importUpload
+      ? ["text/plain", "application/pdf"]
+      : ["text/plain", "application/pdf", "image/jpeg", "image/png"];
+    if (!allowedMedia.includes(mediaType)) {
+      return errorResponse(415, "unsupported_media_type", importUpload
+        ? "Use plain text or PDF."
+        : "Use plain text, PDF, JPEG, or PNG.");
     }
-    const requestKey = request.headers.get("x-import-request-key");
-    if (!requestKey || !/^[A-Za-z0-9_-]{8,128}$/.test(requestKey)) {
-      return errorResponse(400, "invalid_request_key", "A valid import request key is required.");
+    if (importUpload) {
+      const requestKey = request.headers.get("x-import-request-key");
+      if (!requestKey || !/^[A-Za-z0-9_-]{8,128}$/.test(requestKey)) {
+        return errorResponse(400, "invalid_request_key", "A valid import request key is required.");
+      }
+      headers.set("x-import-request-key", requestKey);
+      const retention = request.headers.get("x-source-retention") ?? "delete_after_confirmation";
+      if (!new Set(["delete_after_confirmation", "keep_until_expiry"]).has(retention)) {
+        return errorResponse(400, "invalid_retention_choice", "Choose a supported source retention option.");
+      }
+      headers.set("x-source-retention", retention);
+      const filename = request.headers.get("x-source-filename");
+      if (filename) headers.set("x-source-filename", filename.slice(0, 512));
+    } else {
+      const requestKey = request.headers.get("x-attachment-request-key");
+      if (!requestKey || !/^[A-Za-z0-9_-]{8,128}$/.test(requestKey)) {
+        return errorResponse(400, "invalid_request_key", "A valid attachment request key is required.");
+      }
+      headers.set("x-attachment-request-key", requestKey);
+      const filename = request.headers.get("x-attachment-filename");
+      if (filename) headers.set("x-attachment-filename", filename.slice(0, 512));
+      const reservationId = request.headers.get("x-attachment-reservation-id");
+      if (reservationId) {
+        if (!/^[0-9a-fA-F-]{36}$/.test(reservationId)) {
+          return errorResponse(400, "invalid_reservation_id", "A valid reservation link is required.");
+        }
+        headers.set("x-attachment-reservation-id", reservationId);
+      }
     }
-    headers.set("x-import-request-key", requestKey);
-    const retention = request.headers.get("x-source-retention") ?? "delete_after_confirmation";
-    if (!new Set(["delete_after_confirmation", "keep_until_expiry"]).has(retention)) {
-      return errorResponse(400, "invalid_retention_choice", "Choose a supported source retention option.");
-    }
-    headers.set("x-source-retention", retention);
-    const filename = request.headers.get("x-source-filename");
-    if (filename) headers.set("x-source-filename", filename.slice(0, 512));
     const declared = request.headers.get("content-length");
     const cap = mediaType === "text/plain" ? 1024 * 1024 : MAX_UPLOAD_BYTES;
     if (declared && (!/^\d+$/.test(declared) || Number(declared) > cap)) {
@@ -283,10 +330,11 @@ export async function proxyRequest(request, path, {
   let uploadTimedOut = false;
   let sourceTimedOut = false;
   let sourceStreamOwnsTimeout = false;
-  const timeoutMs = upload ? 30_000 : isSource ? sourceResponseTimeoutMs : 60_000;
+  const timeoutMs = upload ? 30_000 : isPrivateDownload ? sourceResponseTimeoutMs : 60_000;
   const timeout = setTimeout(() => {
     if (upload) uploadTimedOut = true;
-    if (isSource) sourceTimedOut = true;
+    if (isPrivateDownload) sourceTimedOut = true;
+    if (tripExport) sourceTimedOut = true;
     controller.abort();
   }, timeoutMs);
   try {
@@ -317,19 +365,23 @@ export async function proxyRequest(request, path, {
       if (value) responseHeaders.set(name, value);
     }
     for (const cookie of safeSetCookies(response)) responseHeaders.append("set-cookie", cookie);
-    if (isSource) {
+    if (isBinaryRequest && response.ok) {
       for (const name of ["content-disposition", "x-content-type-options"]) {
+        const value = response.headers.get(name);
+        if (value) responseHeaders.set(name, value);
+      }
+      for (const name of ["x-trip-revision", "x-trip-generated-at"]) {
         const value = response.headers.get(name);
         if (value) responseHeaders.set(name, value);
       }
       const declaredSize = response.headers.get("content-length");
       if (declaredSize && /^\d+$/.test(declaredSize)
-          && Number(declaredSize) > MAX_SOURCE_RESPONSE_BYTES) {
-        controller.abort("source response exceeds byte limit");
-        try { await response.body?.cancel("source response exceeds byte limit"); } catch { /* closed */ }
-        return errorResponse(502, "source_response_too_large", "The source response exceeds its size limit.");
+          && Number(declaredSize) > binaryLimit) {
+        controller.abort("binary response exceeds byte limit");
+        try { await response.body?.cancel("binary response exceeds byte limit"); } catch { /* closed */ }
+        return errorResponse(502, "binary_response_too_large", "The download exceeds its size limit.");
       }
-      const body = streamedSourceResponse(response, controller, timeout, () => {
+      const body = streamedBoundedResponse(response, controller, timeout, binaryLimit, () => {
         sourceStreamOwnsTimeout = false;
       });
       sourceStreamOwnsTimeout = body !== null;
@@ -338,7 +390,7 @@ export async function proxyRequest(request, path, {
         headers: responseHeaders,
       });
     }
-    return new Response(isSource ? response.body : await readProxyBody(response), {
+    return new Response(await readProxyBody(response), {
       status: response.status,
       headers: responseHeaders,
     });
@@ -350,7 +402,7 @@ export async function proxyRequest(request, path, {
       return errorResponse(408, "upload_timeout", "The upload took too long.");
     }
     if (sourceTimedOut) {
-      return errorResponse(408, "source_download_timeout", "The source download took too long.");
+      return errorResponse(408, "download_timeout", "The download took too long.");
     }
     if (error instanceof RangeError) {
       return errorResponse(413, "request_too_large", "The request body exceeds 64 KiB.");

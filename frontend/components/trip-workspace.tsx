@@ -21,6 +21,7 @@ import {
   type UpdatePlaceInput,
   type UpdateReservationInput,
   travelApi,
+  tripAttachmentsEnabled,
 } from "../lib/api";
 import TripMap, { type TripMapMarker, type TripMapRoute } from "./trip-map";
 import TripResearchPanel from "./trip-research-panel";
@@ -36,6 +37,7 @@ import DayTitleForm from "./trip-workspace/day-title-form";
 import ReservationForm from "./trip-workspace/reservation-form";
 import PlaceForm from "./trip-workspace/place-form";
 import SavedPlaceNoteForm from "./trip-workspace/saved-place-note-form";
+import { TripAttachmentsPanel, TripExportPanel } from "./trip-workspace/phase-eight-panels";
 
 
 function formatDate(value: string): string {
@@ -534,6 +536,9 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
           <a href="#proposals">Proposals</a>
           <a href="#reservations">Reservations</a>
           <a href="#saved-places">Saved places</a>
+          {tripAttachmentsEnabled ? <a href="#attachments">Documents</a> : null}
+          <a href="#exports">Travel exports</a>
+          <Link href={`/trips/${trip.id}/travel`}>Travel mode</Link>
         </nav>
         <div className="status"><span className="dot" />Local PostgreSQL planner</div>
       </aside>
@@ -546,6 +551,7 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
             <p className="muted">Manual changes are authoritative. Reservations and candidates remain useful when AI is offline.</p>
           </div>
           <div className="topActions">
+            <Link className="secondary linkButton" href={`/trips/${trip.id}/travel`}>Open travel mode</Link>
             <button className="secondary" type="button" onClick={() => setShowTripEditor((current) => !current)} disabled={(pending !== null || stale)}>{showTripEditor ? "Close trip editor" : "Edit trip"}</button>
             <button className="danger" type="button" onClick={deleteTrip} disabled={(pending !== null || stale)}>Delete trip</button>
           </div>
@@ -736,6 +742,16 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
           disabled={pending !== null || stale}
           onTripChanged={() => refresh({ resetDrafts: true })}
         />
+
+        {tripAttachmentsEnabled ? (
+          <TripAttachmentsPanel
+            trip={trip}
+            reservations={reservations}
+            disabled={pending !== null || stale}
+            onChanged={() => refresh()}
+          />
+        ) : null}
+        <TripExportPanel trip={trip} />
 
         <section className="itinerarySection" id="itinerary">
           <div className="sectionHeading"><div><p className="eyebrow">AUTHORITATIVE PLAN</p><h2>Day-by-day itinerary</h2></div></div>

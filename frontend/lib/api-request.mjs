@@ -55,3 +55,48 @@ export async function request(path, init = {}) {
   if (payload === null) throw new ApiError("The travel API returned an invalid response.", "invalid_response");
   return payload;
 }
+
+export async function download(path, init = {}) {
+  let response;
+  try {
+    const method = (init.method ?? "GET").toUpperCase();
+    const headers = new Headers(init.headers);
+    if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+    if (![
+      "GET", "HEAD", "OPTIONS",
+    ].includes(method) && typeof document !== "undefined") {
+      const csrf = csrfCookieValue(document.cookie);
+      if (csrf) headers.set("X-CSRF-Token", csrf);
+      else headers.delete("X-CSRF-Token");
+    }
+    response = await fetch(`/api/v1${path}`, {
+      ...init,
+      headers,
+      cache: "no-store",
+      signal: init.signal ?? AbortSignal.timeout(65_000),
+    });
+  } catch {
+    throw new ApiError("The travel API could not be reached. Is the local backend running?", "network_error");
+  }
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    if (response.status === 401 && typeof window !== "undefined"
+        && window.location.pathname !== "/sign-in") {
+      window.location.replace("/sign-in?expired=1");
+    }
+    throw new ApiError(
+      payload?.error?.message ?? `The travel API returned HTTP ${response.status}.`,
+      payload?.error?.code ?? "request_failed",
+      payload?.error?.details ?? null,
+      response.status,
+    );
+  }
+  const disposition = response.headers.get("content-disposition") ?? "";
+  const filename = disposition.match(/filename="([A-Za-z0-9._ -]{1,160})"/)?.[1] ?? "travel-download";
+  return {
+    blob: await response.blob(),
+    filename,
+    tripRevision: response.headers.get("x-trip-revision"),
+    generatedAt: response.headers.get("x-trip-generated-at"),
+  };
+}
