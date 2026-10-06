@@ -336,7 +336,7 @@ test("private source download bounds bytes and cancels an oversized upstream str
     },
   });
   const reader = response.body.getReader();
-  await assert.rejects(reader.read(), /source_response_too_large/);
+  await assert.rejects(reader.read(), /binary_response_too_large/);
   assert.equal(upstreamSignal.aborted, true);
   assert.equal(upstreamCancelled, true);
 });

@@ -5,27 +5,41 @@ from __future__ import annotations
 import hashlib
 import html
 import json
+import multiprocessing as mp
 import re
+import resource
+import sys
 import time
 import uuid
 import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+from datetime import time as local_time
 from io import BytesIO
+from multiprocessing.connection import Connection
+from multiprocessing.process import BaseProcess
 from typing import Any
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, func, or_, select
+from sqlalchemy.orm import Session, selectinload
 
 from personal_travel.api.schemas.attachments import TripExportRequest
+from personal_travel.domain.urls import validate_http_url
 from personal_travel.models.import_source import SourceAttachment
+from personal_travel.models.itinerary import ItineraryItem
 from personal_travel.models.place import Place
-from personal_travel.repositories.trips import SqlAlchemyTripRepository
-from personal_travel.services.conflicts import calculate_reservation_conflicts
+from personal_travel.models.reservation import Reservation, SavedPlace
+from personal_travel.models.trip import Trip, TripDay
+from personal_travel.services.conflicts import (
+    ReservationConflict,
+    intervals_overlap,
+    schedule_bounds,
+)
 from personal_travel.services.errors import DomainError, not_found
+from personal_travel.services.source_store import LocalSourceStore
 from personal_travel.services.time_utils import as_aware_utc, local_date_time_parts
 
 SessionFactoryLike = Callable[[], Session]
@@ -33,7 +47,10 @@ MAX_EXPORT_RECORDS = 5_000
 MAX_EXPORT_BYTES = 10 * 1024 * 1024
 MAX_BUNDLE_DOCUMENT_BYTES = 25 * 1024 * 1024
 MAX_BUNDLE_BYTES = MAX_EXPORT_BYTES + MAX_BUNDLE_DOCUMENT_BYTES + 1024 * 1024
+MAX_EXPORT_CONFLICT_PAIRS = 100_000
+MAX_EXPORT_DOCUMENTS = 50
 EXPORT_SECONDS = 10.0
+MAX_EXPORT_SOURCE_CHARS = 750_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +64,7 @@ class ExportArtifact:
 class _Projection:
     data: dict[str, Any]
     objects: tuple[tuple[str, str, str, int], ...]
+    started: float
 
 
 def build_export(
@@ -58,9 +76,15 @@ def build_export(
     generated_at: datetime | None = None,
 ) -> _Projection:
     generated = generated_at or datetime.now(UTC)
+    started = time.monotonic()
     with session_factory() as session, session.begin():
-        trip = SqlAlchemyTripRepository(session).get(
-            owner_id=owner_id, trip_id=trip_id, for_update=True
+        # Lock only the aggregate root first. Selected child rows are counted
+        # before loading, and shared-place locks are limited to this snapshot.
+        trip = session.scalar(
+            select(Trip)
+            .where(Trip.owner_id == owner_id, Trip.id == trip_id)
+            .with_for_update(read=True)
+            .execution_options(populate_existing=True)
         )
         if trip is None:
             raise not_found("trip")
@@ -71,73 +95,158 @@ def build_export(
                 "invalid_export_scope",
                 "The export date range must be within the trip dates.",
             )
-
-        place_ids = {
-            place_id
-            for place_id in (
-                [item.place_id for day in trip.days for item in day.items]
-                + [reservation.place_id for reservation in trip.reservations]
-                + [saved.place_id for saved in trip.saved_places]
+        reservation_scope = _reservation_date_scope(
+            owner_id=owner_id,
+            trip_id=trip_id,
+            trip_start_date=trip.start_date,
+            trip_end_date=trip.end_date,
+            start_date=start_date,
+            end_date=end_date,
+            timezone_name=trip.timezone,
+        )
+        item_scope = and_(
+            TripDay.trip_id == trip_id,
+            TripDay.date >= start_date,
+            TripDay.date <= end_date,
+        )
+        selected_item_count = (
+            session.scalar(
+                select(func.count()).select_from(ItineraryItem).join(TripDay).where(item_scope)
             )
-            if place_id is not None
-        }
-        if place_ids:
-            # Shared place edits have their own lock/revision. Lock all export
-            # dependencies after the trip root in a deterministic UUID order.
-            session.scalars(
-                select(Place)
-                .where(Place.owner_id == owner_id, Place.id.in_(place_ids))
-                .order_by(Place.id)
-                .with_for_update(read=True)
-                .execution_options(populate_existing=True)
-            ).all()
-
-        day_rows = [
-            day
-            for day in sorted(trip.days, key=lambda item: item.day_index)
-            if start_date <= day.date <= end_date
-        ]
-        conflict_map = calculate_reservation_conflicts(trip)
-        selected_reservations = []
-        zone = ZoneInfo(trip.timezone)
-        for reservation in sorted(
-            trip.reservations,
-            key=lambda row: (
-                row.starts_at is None,
-                row.starts_at or datetime.max.replace(tzinfo=UTC),
-                row.id,
-            ),
-        ):
-            start_local = (
-                as_aware_utc(reservation.starts_at).astimezone(zone).date()
-                if reservation.starts_at is not None
-                else None
+            or 0
+        )
+        selected_reservation_count = (
+            session.scalar(
+                select(func.count())
+                .select_from(Reservation)
+                .where(
+                    Reservation.owner_id == owner_id,
+                    Reservation.trip_id == trip_id,
+                    reservation_scope,
+                )
             )
-            end_local = (
-                as_aware_utc(reservation.ends_at).astimezone(zone).date()
-                if reservation.ends_at is not None
-                else None
+            or 0
+        )
+        saved_place_count = (
+            session.scalar(
+                select(func.count())
+                .select_from(SavedPlace)
+                .where(SavedPlace.owner_id == owner_id, SavedPlace.trip_id == trip_id)
             )
-            if start_local is not None and start_local > end_date:
-                continue
-            if end_local is not None and end_local < start_date:
-                continue
-            if start_local is None and start_date != trip.start_date:
-                continue
-            selected_reservations.append(reservation)
-
-        selected_item_count = sum(len(day.items) for day in day_rows)
+            or 0
+        )
         if (
             selected_item_count > MAX_EXPORT_RECORDS
-            or len(selected_reservations) > MAX_EXPORT_RECORDS
-            or len(trip.saved_places) > MAX_EXPORT_RECORDS
+            or selected_reservation_count > MAX_EXPORT_RECORDS
+            or saved_place_count > MAX_EXPORT_RECORDS
         ):
             raise DomainError(
                 "export_too_large",
                 "This date range has too many records for one snapshot.",
                 status_code=413,
             )
-
+        if selected_item_count * selected_reservation_count > MAX_EXPORT_CONFLICT_PAIRS:
+            raise DomainError(
+                "export_too_large",
+                "This date range has too many reservation/item comparisons for one snapshot.",
+                status_code=413,
+            )
+        selected_place_ids = (
+            select(ItineraryItem.place_id)
+            .join(TripDay)
+            .where(item_scope, ItineraryItem.place_id.is_not(None))
+            .union(
+                select(Reservation.place_id).where(
+                    Reservation.owner_id == owner_id,
+                    Reservation.trip_id == trip_id,
+                    reservation_scope,
+                    Reservation.place_id.is_not(None),
+                ),
+                select(SavedPlace.place_id).where(
+                    SavedPlace.owner_id == owner_id,
+                    SavedPlace.trip_id == trip_id,
+                ),
+            )
+        )
+        text_chars = len(trip.title) + len(trip.timezone)
+        text_chars += _text_char_count(session, TripDay, (TripDay.title,), item_scope)
+        text_chars += _text_char_count(
+            session,
+            ItineraryItem,
+            (
+                ItineraryItem.title,
+                ItineraryItem.item_type,
+                ItineraryItem.status,
+                ItineraryItem.notes,
+            ),
+            item_scope,
+            join=TripDay,
+        )
+        text_chars += _text_char_count(
+            session,
+            Reservation,
+            (
+                Reservation.provider_name,
+                Reservation.reservation_type,
+                Reservation.status,
+                Reservation.confirmation_code,
+                Reservation.source_reference,
+                Reservation.notes,
+            ),
+            Reservation.owner_id == owner_id,
+            Reservation.trip_id == trip_id,
+            reservation_scope,
+        )
+        text_chars += _text_char_count(
+            session,
+            SavedPlace,
+            (SavedPlace.note,),
+            SavedPlace.owner_id == owner_id,
+            SavedPlace.trip_id == trip_id,
+        )
+        text_chars += _text_char_count(
+            session,
+            Place,
+            (
+                Place.name,
+                Place.address,
+                Place.category,
+                Place.phone,
+                Place.website_url,
+                Place.provider_source_name,
+                Place.provider_source_attribution,
+                Place.provider_source_license,
+                Place.provider_source_url,
+            ),
+            Place.owner_id == owner_id,
+            Place.id.in_(selected_place_ids),
+        )
+        if text_chars > MAX_EXPORT_SOURCE_CHARS:
+            raise _export_too_large()
+        _check_deadline(started)
+        day_rows = session.scalars(
+            select(TripDay)
+            .where(item_scope)
+            .order_by(TripDay.day_index)
+            .options(selectinload(TripDay.items).selectinload(ItineraryItem.place))
+        ).all()
+        selected_reservations = session.scalars(
+            select(Reservation)
+            .where(
+                Reservation.owner_id == owner_id,
+                Reservation.trip_id == trip_id,
+                reservation_scope,
+            )
+            .order_by(Reservation.starts_at.is_(None), Reservation.starts_at, Reservation.id)
+            .options(selectinload(Reservation.place))
+        ).all()
+        selected_saved_places = session.scalars(
+            select(SavedPlace)
+            .where(SavedPlace.owner_id == owner_id, SavedPlace.trip_id == trip_id)
+            .order_by(SavedPlace.place_id)
+            .options(selectinload(SavedPlace.place))
+        ).all()
+        _check_deadline(started)
         all_selected_items = [item for day in day_rows for item in day.items]
         all_selected_ids = (
             {item.place_id for item in all_selected_items if item.place_id is not None}
@@ -146,7 +255,7 @@ def build_export(
                 for reservation in selected_reservations
                 if reservation.place_id is not None
             }
-            | {saved.place_id for saved in trip.saved_places}
+            | {saved.place_id for saved in selected_saved_places}
         )
         place_revisions = []
         if all_selected_ids:
@@ -154,11 +263,54 @@ def build_export(
                 select(Place)
                 .where(Place.owner_id == owner_id, Place.id.in_(all_selected_ids))
                 .order_by(Place.id)
+                .with_for_update(read=True)
+                .execution_options(populate_existing=True)
             ).all()
             place_revisions = [
                 {"place_id": str(place.id), "revision": place.revision} for place in places
             ]
+        _check_deadline(started)
 
+        conflicts_by_reservation: dict[UUID, list[ReservationConflict]] = {}
+        selected_pairs = 0
+        conflict_count = 0
+        for reservation in selected_reservations:
+            if reservation.status == "cancelled":
+                continue
+            reservation_bounds = schedule_bounds(reservation.starts_at, reservation.ends_at)
+            if reservation_bounds is None:
+                continue
+            for day in day_rows:
+                for item in day.items:
+                    selected_pairs += 1
+                    if selected_pairs > MAX_EXPORT_CONFLICT_PAIRS:
+                        raise DomainError(
+                            "export_too_large",
+                            "This date range has too many reservation/item comparisons "
+                            "for one snapshot.",
+                            status_code=413,
+                        )
+                    if item.status == "cancelled" or item.reservation_id == reservation.id:
+                        continue
+                    item_bounds = schedule_bounds(item.starts_at, item.ends_at)
+                    if item_bounds is not None and intervals_overlap(
+                        reservation_bounds, item_bounds
+                    ):
+                        conflict_count += 1
+                        if conflict_count > MAX_EXPORT_RECORDS:
+                            raise DomainError(
+                                "export_too_large",
+                                "This date range has too many conflicts for one snapshot.",
+                                status_code=413,
+                            )
+                        conflicts_by_reservation.setdefault(reservation.id, []).append(
+                            ReservationConflict(
+                                item=item,
+                                day=day,
+                                reason="Reservation overlaps this itinerary item.",
+                            )
+                        )
+                _check_deadline(started)
         attachments: list[dict[str, Any]] = []
         object_rows: list[tuple[str, str, str, int]] = []
         if options.include_documents:
@@ -171,7 +323,14 @@ def build_export(
                     SourceAttachment.state == "ready",
                 )
                 .order_by(SourceAttachment.created_at, SourceAttachment.id)
+                .limit(MAX_EXPORT_DOCUMENTS + 1)
             ).all()
+            if len(rows) > MAX_EXPORT_DOCUMENTS:
+                raise DomainError(
+                    "export_too_large",
+                    "Too many documents were selected for one snapshot.",
+                    status_code=413,
+                )
             total_document_bytes = sum(row.byte_size for row in rows)
             if total_document_bytes > MAX_BUNDLE_DOCUMENT_BYTES:
                 raise DomainError(
@@ -179,11 +338,30 @@ def build_export(
                     "Trip documents exceed the 25 MiB bundle limit. Remove some documents first.",
                     status_code=413,
                 )
+            reservation_ids = {row.reservation_id for row in rows if row.reservation_id is not None}
+            reservation_labels = {
+                reservation_id: provider_name
+                for reservation_id, provider_name in session.execute(
+                    select(Reservation.id, Reservation.provider_name).where(
+                        Reservation.owner_id == owner_id,
+                        Reservation.trip_id == trip_id,
+                        Reservation.id.in_(reservation_ids),
+                    )
+                )
+            }
             for index, row in enumerate(rows, start=1):
+                _check_deadline(started)
                 filename = _safe_document_name(row.display_filename or "travel-document")
                 archive_path = f"attachments/{index:02d}-{filename}"
                 attachments.append(
                     {
+                        "id": str(row.id),
+                        "reservation_id": str(row.reservation_id) if row.reservation_id else None,
+                        "reservation_label": (
+                            reservation_labels.get(row.reservation_id)
+                            if row.reservation_id is not None
+                            else None
+                        ),
                         "display_filename": filename,
                         "media_type": row.media_type,
                         "byte_size": row.byte_size,
@@ -193,6 +371,42 @@ def build_export(
                 object_rows.append((row.object_key, row.sha256, archive_path, row.byte_size))
 
         include_private = options.include_private_fields
+        projected_days: list[dict[str, Any]] = []
+        for day in day_rows:
+            _check_deadline(started)
+            projected_items = []
+            for item in sorted(day.items, key=lambda row: row.sort_order):
+                _check_deadline(started)
+                projected_items.append(_item_projection(item, trip.timezone, include_private))
+            projected_days.append(
+                {
+                    "id": str(day.id),
+                    "day_index": day.day_index,
+                    "date": day.date.isoformat(),
+                    "title": day.title,
+                    "items": projected_items,
+                }
+            )
+        projected_reservations = []
+        for reservation in selected_reservations:
+            _check_deadline(started)
+            projected_reservations.append(
+                _reservation_projection(
+                    reservation,
+                    trip.timezone,
+                    include_private,
+                    conflicts_by_reservation.get(reservation.id, []),
+                )
+            )
+        projected_saved_places = []
+        for saved in sorted(selected_saved_places, key=lambda row: row.place.name.casefold()):
+            _check_deadline(started)
+            projected_saved_places.append(
+                {
+                    "place": _place_projection(saved.place),
+                    **({"note": saved.note} if include_private and saved.note else {}),
+                }
+            )
         data: dict[str, Any] = {
             "schema_version": "travel-trip-export-v1",
             "metadata": {
@@ -218,39 +432,9 @@ def build_export(
                 "end_date": trip.end_date.isoformat(),
                 "timezone": trip.timezone,
             },
-            "days": [
-                {
-                    "id": str(day.id),
-                    "day_index": day.day_index,
-                    "date": day.date.isoformat(),
-                    "title": day.title,
-                    "items": [
-                        _item_projection(item, trip.timezone, include_private)
-                        for item in sorted(day.items, key=lambda row: row.sort_order)
-                    ],
-                }
-                for day in day_rows
-            ],
-            "reservations": [
-                _reservation_projection(
-                    reservation,
-                    trip.timezone,
-                    include_private,
-                    [
-                        conflict
-                        for conflict in conflict_map.get(reservation.id, [])
-                        if start_date <= conflict.day.date <= end_date
-                    ],
-                )
-                for reservation in selected_reservations
-            ],
-            "saved_places": [
-                {
-                    "place": _place_projection(saved.place),
-                    **({"note": saved.note} if include_private and saved.note else {}),
-                }
-                for saved in sorted(trip.saved_places, key=lambda row: row.place.name.casefold())
-            ],
+            "days": projected_days,
+            "reservations": projected_reservations,
+            "saved_places": projected_saved_places,
             "revision_footprint": {
                 "trip_revision": trip.revision,
                 "places": place_revisions,
@@ -262,7 +446,9 @@ def build_export(
             data["included_sections"].append("attachments")
         if include_private:
             data["included_sections"].append("private_fields")
-        return _Projection(data, tuple(object_rows))
+        _check_projection_text(data, started)
+        _check_deadline(started)
+        return _Projection(data, tuple(object_rows), started)
 
 
 def render_export(
@@ -273,7 +459,202 @@ def render_export(
     include_linked_reservations: bool,
     store: Any | None = None,
 ) -> ExportArtifact:
-    started = time.monotonic()
+    """Render a bounded artifact in a disposable process with a hard wall deadline."""
+    _check_deadline(projection.started)
+    store_root: str | None = None
+    if include_documents:
+        if store is None:
+            raise DomainError(
+                "attachments_disabled",
+                "Trip documents are unavailable for this export.",
+                status_code=404,
+            )
+        root = getattr(store, "root", None)
+        if not isinstance(root, (str, bytes)) and not hasattr(root, "__fspath__"):
+            raise DomainError(
+                "attachments_disabled",
+                "Trip documents are unavailable for this export.",
+                status_code=404,
+            )
+        store_root = str(root)
+
+    context = mp.get_context("spawn")
+    parent, child = context.Pipe(duplex=False)
+    process = context.Process(
+        target=_render_worker,
+        args=(
+            projection.data,
+            projection.objects,
+            projection.started,
+            export_format,
+            include_documents,
+            include_linked_reservations,
+            store_root,
+            child,
+        ),
+    )
+    deadline = projection.started + EXPORT_SECONDS
+    try:
+        process.start()
+        child.close()
+        header = _receive_worker_message(parent, process, deadline)
+        if not isinstance(header, tuple) or not header:
+            raise _render_worker_failed()
+        if header[0] == "error":
+            if (
+                len(header) != 4
+                or not isinstance(header[1], str)
+                or not isinstance(header[2], str)
+                or not isinstance(header[3], int)
+            ):
+                raise _render_worker_failed()
+            raise DomainError(header[1], header[2], status_code=header[3])
+        if (
+            len(header) != 4
+            or header[0] != "ok"
+            or not isinstance(header[1], str)
+            or not isinstance(header[2], str)
+            or not isinstance(header[3], int)
+            or header[3] < 0
+            or header[3] > (MAX_BUNDLE_BYTES if include_documents else MAX_EXPORT_BYTES)
+        ):
+            raise _render_worker_failed()
+        _, media_type, filename, expected_size = header
+        output = bytearray()
+        while len(output) < expected_size:
+            _check_deadline(projection.started)
+            _wait_for_worker_data(parent, process, deadline)
+            chunk = parent.recv_bytes(min(64 * 1024, expected_size - len(output)))
+            if not chunk or len(output) + len(chunk) > expected_size:
+                raise _render_worker_failed()
+            output.extend(chunk)
+        artifact_bytes = bytes(output)
+        _check_deadline(projection.started)
+        return ExportArtifact(artifact_bytes, media_type, filename)
+    except DomainError:
+        raise
+    except (EOFError, OSError, ValueError) as exc:
+        raise _render_worker_failed() from exc
+    finally:
+        parent.close()
+        if child.closed is False:
+            child.close()
+        if process.pid is not None:
+            if process.is_alive():
+                process.terminate()
+                process.join(timeout=0.2)
+                if process.is_alive():
+                    process.kill()
+            process.join(timeout=0.2)
+            process.close()
+
+
+def _render_worker(
+    snapshot: dict[str, Any],
+    objects: tuple[tuple[str, str, str, int], ...],
+    started: float,
+    export_format: str,
+    include_documents: bool,
+    include_linked_reservations: bool,
+    store_root: str | None,
+    connection: Connection,
+) -> None:
+    store = None
+    try:
+        _set_export_worker_limits()
+        if store_root is not None:
+            store = LocalSourceStore(store_root)
+        artifact = _render_export_contents(
+            _Projection(snapshot, objects, started),
+            export_format=export_format,
+            include_documents=include_documents,
+            include_linked_reservations=include_linked_reservations,
+            store=store,
+        )
+        connection.send(("ok", artifact.media_type, artifact.filename, len(artifact.data)))
+        for offset in range(0, len(artifact.data), 64 * 1024):
+            _check_deadline(started)
+            connection.send_bytes(artifact.data[offset : offset + 64 * 1024])
+    except DomainError as exc:
+        try:
+            connection.send(("error", exc.code, exc.message, exc.status_code))
+        except (BrokenPipeError, OSError):
+            pass
+    except BaseException:
+        try:
+            connection.send(
+                (
+                    "error",
+                    "export_worker_failed",
+                    "The snapshot could not be rendered. Please retry with a smaller scope.",
+                    503,
+                )
+            )
+        except (BrokenPipeError, OSError):
+            pass
+    finally:
+        if store is not None:
+            store.close()
+        connection.close()
+
+
+def _set_export_worker_limits() -> None:
+    try:
+        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+        cpu_limit = max(1, int(EXPORT_SECONDS))
+        soft, hard = resource.getrlimit(resource.RLIMIT_CPU)
+        ceiling = cpu_limit if hard == resource.RLIM_INFINITY else min(cpu_limit, hard)
+        resource.setrlimit(resource.RLIMIT_CPU, (ceiling, ceiling))
+        if sys.platform != "darwin":
+            _set_resource_limit(resource.RLIMIT_AS, 1024 * 1024 * 1024)
+            _set_resource_limit(resource.RLIMIT_DATA, 512 * 1024 * 1024)
+    except (OSError, ValueError) as exc:
+        raise DomainError(
+            "export_worker_limit_failed",
+            "The snapshot worker could not establish its resource limits.",
+            status_code=503,
+        ) from exc
+
+
+def _set_resource_limit(limit: int, maximum: int) -> None:
+    _, hard = resource.getrlimit(limit)
+    ceiling = maximum if hard == resource.RLIM_INFINITY else min(maximum, hard)
+    resource.setrlimit(limit, (ceiling, ceiling))
+
+
+def _receive_worker_message(connection: Connection, process: BaseProcess, deadline: float) -> Any:
+    _wait_for_worker_data(connection, process, deadline)
+    return connection.recv()
+
+
+def _wait_for_worker_data(connection: Connection, process: BaseProcess, deadline: float) -> None:
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise _export_too_slow()
+        if connection.poll(min(remaining, 0.05)):
+            return
+        if not process.is_alive():
+            raise _render_worker_failed()
+
+
+def _render_worker_failed() -> DomainError:
+    return DomainError(
+        "export_worker_failed",
+        "The snapshot could not be rendered. Please retry with a smaller scope.",
+        status_code=503,
+    )
+
+
+def _render_export_contents(
+    projection: _Projection,
+    *,
+    export_format: str,
+    include_documents: bool,
+    include_linked_reservations: bool,
+    store: Any | None,
+) -> ExportArtifact:
+    started = projection.started
     snapshot = projection.data
     if export_format == "ics":
         filename = "trip.ics"
@@ -286,9 +667,7 @@ def render_export(
     elif export_format == "json":
         filename = "trip.json"
         media_type = "application/json"
-        body = json.dumps(
-            snapshot, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-        ).encode()
+        body = _bounded_json_bytes(snapshot, started)
     else:
         raise ValueError("Unsupported export format.")
     if len(body) > MAX_EXPORT_BYTES:
@@ -313,8 +692,13 @@ def render_export(
             status_code=413,
         )
     archive = BytesIO()
-    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as bundle:
+    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as bundle:
         bundle.writestr(filename, body)
+        manifest = {
+            "schema_version": "travel-trip-bundle-manifest-v1",
+            "documents": snapshot.get("attachments", []),
+        }
+        bundle.writestr("manifest.json", _bounded_json_bytes(manifest, started))
         for object_key, expected_hash, archive_path, expected_size in projection.objects:
             _check_deadline(started)
             try:
@@ -331,15 +715,27 @@ def render_export(
                     "A selected trip document is unavailable. Refresh the document list and retry.",
                     status_code=410,
                 )
-            bundle.writestr(archive_path, data)
-            if archive.tell() > MAX_BUNDLE_BYTES:
-                raise DomainError(
-                    "export_too_large",
-                    "The download bundle exceeds its size limit.",
-                    status_code=413,
-                )
+            with bundle.open(archive_path, "w") as target:
+                for offset in range(0, len(data), 64 * 1024):
+                    _check_deadline(started)
+                    target.write(data[offset : offset + 64 * 1024])
+                    if archive.tell() > MAX_BUNDLE_BYTES:
+                        raise DomainError(
+                            "export_too_large",
+                            "The download bundle exceeds its size limit.",
+                            status_code=413,
+                        )
+    if archive.tell() > MAX_BUNDLE_BYTES:
+        raise DomainError(
+            "export_too_large",
+            "The download bundle exceeds its size limit.",
+            status_code=413,
+        )
+    _check_deadline(started)
+    bundle_bytes = archive.getvalue()
+    _check_deadline(started)
     return ExportArtifact(
-        archive.getvalue(),
+        bundle_bytes,
         "application/zip",
         _download_name(snapshot, "trip.zip"),
     )
@@ -456,34 +852,96 @@ def _render_ics(
         f"X-TRAVEL-DOCUMENTS:{'TRUE' if metadata['documents_included'] else 'FALSE'}",
         "X-TRAVEL-STATIC-SNAPSHOT:TRUE",
     ]
-    selected_linked_ids = {
-        item["reservation_id"]
-        for day in snapshot["days"]
-        for item in day["items"]
-        if item["reservation_id"] and item["status"] != "cancelled"
-    }
+    if "saved_places" in snapshot.get("included_sections", []):
+        lines.append("X-TRAVEL-OMITTED-SECTIONS:SAVED-PLACES")
+    reservation_by_id = {row["id"]: row for row in snapshot["reservations"]}
+    represented_item_by_reservation: dict[str, dict[str, Any]] = {}
+    for day in snapshot["days"]:
+        for item in day["items"]:
+            _check_deadline(started)
+            reservation_id = item.get("reservation_id")
+            reservation = reservation_by_id.get(reservation_id)
+            item_place = item.get("place")
+            reservation_place = reservation.get("place") if reservation else None
+            if (
+                item["status"] != "cancelled"
+                and reservation is not None
+                and reservation["status"] != "cancelled"
+                and item.get("starts_at_utc") == reservation.get("starts_at_utc")
+                and item.get("ends_at_utc") == reservation.get("ends_at_utc")
+                and (item_place or {}).get("id") == (reservation_place or {}).get("id")
+            ):
+                represented_item_by_reservation.setdefault(reservation_id, item)
+    represented_ids = set(represented_item_by_reservation)
+    rendered_size = sum(len(_fold_ical_line(line).encode("utf-8")) + 2 for line in lines)
     for day in snapshot["days"]:
         for item in day["items"]:
             _check_deadline(started)
             if item["status"] == "cancelled":
                 continue
-            lines.extend(_ics_item(item, day["date"], dtstamp, revision, metadata))
+            linked_reservation = None
+            candidate = reservation_by_id.get(item.get("reservation_id"))
+            if (
+                not include_linked_reservations
+                and candidate is not None
+                and represented_item_by_reservation.get(candidate["id"]) is item
+            ):
+                linked_reservation = candidate
+            rendered_size += _append_ics_lines(
+                lines,
+                _ics_item(item, day["date"], dtstamp, revision, metadata, linked_reservation),
+                started,
+            )
+            if rendered_size > MAX_EXPORT_BYTES:
+                raise _export_too_large()
     for reservation in snapshot["reservations"]:
         _check_deadline(started)
         if reservation["status"] == "cancelled":
             continue
-        if not include_linked_reservations and reservation["id"] in selected_linked_ids:
+        if not include_linked_reservations and reservation["id"] in represented_ids:
             continue
         if reservation["starts_at_utc"] is None and reservation["ends_at_utc"] is None:
             continue
-        lines.extend(_ics_reservation(reservation, dtstamp, revision, metadata))
+        rendered_size += _append_ics_lines(
+            lines, _ics_reservation(reservation, dtstamp, revision, metadata), started
+        )
+        if rendered_size > MAX_EXPORT_BYTES:
+            raise _export_too_large()
     lines.append("END:VCALENDAR")
-    return ("\r\n".join(_fold_ical_line(line) for line in lines) + "\r\n").encode("utf-8")
+    _check_deadline(started)
+    output = ("\r\n".join(_fold_ical_line(line) for line in lines) + "\r\n").encode("utf-8")
+    _check_deadline(started)
+    return output
 
 
 def _ics_item(
-    item: dict[str, Any], day_date: str, dtstamp: str, revision: int, metadata: dict[str, Any]
+    item: dict[str, Any],
+    day_date: str,
+    dtstamp: str,
+    revision: int,
+    metadata: dict[str, Any],
+    linked_reservation: dict[str, Any] | None = None,
 ) -> list[str]:
+    place = linked_reservation["place"] if linked_reservation else item["place"]
+    description_parts = []
+    if linked_reservation:
+        description_parts.append(
+            "Reservation: "
+            + linked_reservation["provider_name"]
+            + " ("
+            + linked_reservation["reservation_type"]
+            + ", "
+            + linked_reservation["status"]
+            + ")"
+        )
+        if metadata["private_fields_included"]:
+            for field, label in (
+                ("confirmation_code", "Confirmation"),
+                ("source_reference", "Source reference"),
+                ("notes", "Reservation notes"),
+            ):
+                if linked_reservation.get(field):
+                    description_parts.append(f"{label}: {linked_reservation[field]}")
     return _ics_event(
         kind="item",
         record_id=item["id"],
@@ -494,9 +952,18 @@ def _ics_item(
         date_value=day_date,
         dtstamp=dtstamp,
         revision=revision,
-        location=_place_location(item["place"]),
-        description=item.get("notes") if metadata["private_fields_included"] else None,
+        location=_place_location(place),
+        description="\n".join(
+            value
+            for value in [
+                item.get("notes") if metadata["private_fields_included"] else None,
+                *description_parts,
+            ]
+            if value
+        )
+        or None,
         item_type=item["item_type"],
+        place_credit=_place_credit(place),
     )
 
 
@@ -519,6 +986,10 @@ def _ics_reservation(
         confirmation_code=(
             reservation.get("confirmation_code") if metadata["private_fields_included"] else None
         ),
+        source_reference=(
+            reservation.get("source_reference") if metadata["private_fields_included"] else None
+        ),
+        place_credit=_place_credit(reservation["place"]),
     )
 
 
@@ -537,6 +1008,8 @@ def _ics_event(
     description: str | None,
     item_type: str | None,
     confirmation_code: str | None = None,
+    source_reference: str | None = None,
+    place_credit: str | None = None,
 ) -> list[str]:
     uid = uuid.uuid5(uuid.NAMESPACE_URL, f"personal-travel:{kind}:{record_id}")
     lines = [
@@ -570,8 +1043,12 @@ def _ics_event(
     description_parts = []
     if item_type:
         description_parts.append(f"Type: {item_type}")
+    if place_credit:
+        description_parts.append(place_credit)
     if confirmation_code:
         description_parts.append(f"Confirmation: {confirmation_code}")
+    if source_reference:
+        description_parts.append(f"Source reference: {source_reference}")
     if description:
         description_parts.append(description)
     if description_parts:
@@ -584,11 +1061,25 @@ def _render_html(snapshot: dict[str, Any], started: float) -> bytes:
     metadata = snapshot["metadata"]
     trip = snapshot["trip"]
     title = html.escape(trip["title"])
-    document_links = "".join(
-        f'<li><a href="{html.escape(item["archive_path"], quote=True)}">'
-        f"{html.escape(item['display_filename'])}</a></li>"
-        for item in snapshot.get("attachments", [])
-    )
+    reservation_by_id = {row["id"]: row for row in snapshot["reservations"]}
+    document_entries: list[str] = []
+    for item in snapshot.get("attachments", []):
+        _check_deadline(started)
+        reservation = reservation_by_id.get(item.get("reservation_id"))
+        linked_label = item.get("reservation_label") or (
+            reservation["provider_name"] if reservation else None
+        )
+        association = (
+            f" · Linked to {html.escape(linked_label)}"
+            if linked_label
+            else " · No reservation link"
+        )
+        document_entries.append(
+            f'<li data-attachment-id="{html.escape(item["id"], quote=True)}">'
+            f'<a href="{html.escape(item["archive_path"], quote=True)}">'
+            f"{html.escape(item['display_filename'])}</a>{association}</li>"
+        )
+    document_links = "".join(document_entries)
     sections: list[str] = []
     for day in snapshot["days"]:
         _check_deadline(started)
@@ -600,12 +1091,8 @@ def _render_html(snapshot: dict[str, Any], started: float) -> bytes:
                 if place
                 else ""
             )
-            when = item["start_time"] or "Flexible day plan"
-            if item["end_time"]:
-                when += f"–{item['end_time']}"
+            when = _format_schedule(item["start_time"], item["end_time"], "Flexible day plan")
             details = [place_text, item["status"], item["item_type"]]
-            if place and place.get("provider_source_attribution"):
-                details.append(place["provider_source_attribution"])
             if item.get("notes"):
                 details.append(item["notes"])
             linked = next(
@@ -625,6 +1112,7 @@ def _render_html(snapshot: dict[str, Any], started: float) -> bytes:
                 + html.escape(item["title"])
                 + "</strong><p>"
                 + html.escape(" · ".join(value for value in details if value))
+                + ("<br>" + _place_credit_markup(place) if _place_credit_markup(place) else "")
                 + "</p></div></li>"
             )
         heading = html.escape(day["title"] or f"Day {day['day_index']}")
@@ -657,16 +1145,22 @@ def _render_html(snapshot: dict[str, Any], started: float) -> bytes:
             detail_parts.append(f"Confirmation: {reservation['confirmation_code']}")
         if reservation.get("notes"):
             detail_parts.append(reservation["notes"])
-        warnings = "".join(
-            f'<li class="warning">{html.escape(conflict["reason"])} '
-            f"({html.escape(conflict['date'])} · {html.escape(conflict['item_title'])})</li>"
-            for conflict in reservation["conflicts"]
-        )
+        if reservation.get("source_reference"):
+            detail_parts.append(f"Source reference: {reservation['source_reference']}")
+        warning_rows = []
+        for conflict in reservation["conflicts"]:
+            _check_deadline(started)
+            warning_rows.append(
+                f'<li class="warning">{html.escape(conflict["reason"])} '
+                f"({html.escape(conflict['date'])} · {html.escape(conflict['item_title'])})</li>"
+            )
+        warnings = "".join(warning_rows)
         reservations.append(
             "<li><strong>"
             + html.escape(reservation["provider_name"])
             + "</strong><p>"
             + html.escape(" · ".join(detail_parts))
+            + ("<br>" + _place_credit_markup(place) if _place_credit_markup(place) else "")
             + "</p>"
             + (f"<ul>{warnings}</ul>" if warnings else "")
             + "</li>"
@@ -682,6 +1176,24 @@ def _render_html(snapshot: dict[str, Any], started: float) -> bytes:
     attachment_section = (
         "<section><h2>Trip documents</h2><ul>" + document_links + "</ul></section>"
         if document_links
+        else ""
+    )
+    saved_places: list[str] = []
+    for saved in snapshot.get("saved_places", []):
+        _check_deadline(started)
+        place = saved["place"]
+        fields = [place.get("name"), place.get("address"), place.get("category")]
+        if saved.get("note"):
+            fields.append(saved["note"])
+        saved_places.append(
+            "<li>"
+            + html.escape(" · ".join(value for value in fields if value))
+            + ("<br>" + _place_credit_markup(place) if _place_credit_markup(place) else "")
+            + "</li>"
+        )
+    saved_places_markup = (
+        "<section><h2>Saved place candidates</h2><ul>" + "".join(saved_places) + "</ul></section>"
+        if saved_places
         else ""
     )
     reservations_markup = (
@@ -727,6 +1239,7 @@ a{{color:inherit;text-decoration:none}}
 </header>
 {"".join(sections)}
 <section><h2>Reservations</h2>{reservations_markup}</section>
+{saved_places_markup}
 {attachment_section}
 <footer class="meta">
 <p>Route estimates and live availability are not included. Regenerate this
@@ -734,7 +1247,179 @@ file after trip changes.</p>
 </footer>
 </body>
 </html>"""
-    return output.encode("utf-8")
+    result = output.encode("utf-8")
+    _check_deadline(started)
+    return result
+
+
+def _bounded_json_bytes(value: Any, started: float) -> bytes:
+    encoder = json.JSONEncoder(ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    output = bytearray()
+    for part in encoder.iterencode(value):
+        _check_deadline(started)
+        encoded = part.encode("utf-8")
+        if len(output) + len(encoded) > MAX_EXPORT_BYTES:
+            raise _export_too_large()
+        output.extend(encoded)
+    return bytes(output)
+
+
+def _check_projection_text(value: Any, started: float) -> None:
+    stack = [value]
+    char_count = 0
+    while stack:
+        _check_deadline(started)
+        current = stack.pop()
+        if isinstance(current, str):
+            char_count += len(current)
+            if char_count > MAX_EXPORT_SOURCE_CHARS:
+                raise _export_too_large()
+        elif isinstance(current, dict):
+            stack.extend(current.keys())
+            stack.extend(current.values())
+        elif isinstance(current, (list, tuple)):
+            stack.extend(current)
+
+
+def _reservation_date_scope(
+    *,
+    owner_id: str,
+    trip_id: UUID,
+    trip_start_date: date,
+    trip_end_date: date,
+    start_date: date,
+    end_date: date,
+    timezone_name: str,
+) -> Any:
+    """Build the SQL date filter using point-event and half-open interval rules."""
+    zone = ZoneInfo(timezone_name)
+    scope_start = datetime.combine(start_date, local_time.min, zone).astimezone(UTC)
+    scope_end = datetime.combine(end_date + timedelta(days=1), local_time.min, zone).astimezone(UTC)
+    point_start = or_(
+        and_(Reservation.starts_at.is_not(None), Reservation.ends_at.is_(None)),
+        and_(Reservation.starts_at.is_not(None), Reservation.ends_at == Reservation.starts_at),
+    )
+    point_end = and_(Reservation.starts_at.is_(None), Reservation.ends_at.is_not(None))
+    interval = and_(
+        Reservation.starts_at.is_not(None),
+        Reservation.ends_at.is_not(None),
+        Reservation.starts_at < Reservation.ends_at,
+    )
+    date_conditions = [
+        and_(
+            point_start,
+            Reservation.starts_at >= scope_start,
+            Reservation.starts_at < scope_end,
+        ),
+        and_(point_end, Reservation.ends_at >= scope_start, Reservation.ends_at < scope_end),
+        and_(interval, Reservation.starts_at < scope_end, Reservation.ends_at > scope_start),
+    ]
+    if start_date == trip_start_date and end_date == trip_end_date:
+        date_conditions.append(and_(Reservation.starts_at.is_(None), Reservation.ends_at.is_(None)))
+    return and_(
+        Reservation.owner_id == owner_id,
+        Reservation.trip_id == trip_id,
+        or_(*date_conditions),
+    )
+
+
+def _text_char_count(
+    session: Session,
+    model: Any,
+    fields: tuple[Any, ...],
+    *criteria: Any,
+    join: Any | None = None,
+) -> int:
+    expression = sum(
+        (func.coalesce(func.length(field), 0) for field in fields),
+        start=0,
+    )
+    statement = select(func.coalesce(func.sum(expression), 0)).select_from(model)
+    if join is not None:
+        statement = statement.join(join)
+    return int(session.scalar(statement.where(*criteria)) or 0)
+
+
+def _export_too_large() -> DomainError:
+    return DomainError(
+        "export_too_large",
+        "This snapshot exceeds the 10 MiB export limit. Choose a smaller date range.",
+        status_code=413,
+    )
+
+
+def _append_ics_lines(lines: list[str], additions: list[str], started: float) -> int:
+    added_bytes = 0
+    for line in additions:
+        _check_deadline(started)
+        folded = _fold_ical_line(line)
+        added_bytes += len(folded.encode("utf-8")) + 2
+        if added_bytes > MAX_EXPORT_BYTES:
+            raise _export_too_large()
+        lines.append(line)
+    return added_bytes
+
+
+def _format_schedule(start: str | None, end: str | None, flexible: str) -> str:
+    if start is None and end is None:
+        return flexible
+    if start is None:
+        return end or flexible
+    if end is None or end == start:
+        return start
+    return f"{start}–{end}"
+
+
+def _place_credit(place: dict[str, Any] | None) -> str | None:
+    if place is None:
+        return None
+    fields = [
+        place.get("provider_source_attribution"),
+        place.get("provider_source_license"),
+        place.get("provider_source_name"),
+    ]
+    source_url = place.get("provider_source_url")
+    if source_url:
+        try:
+            valid_url = validate_http_url(source_url)
+        except ValueError:
+            valid_url = None
+        if valid_url:
+            fields.append(f"Source: {valid_url}")
+    return " · ".join(value for value in fields if value) or None
+
+
+def _place_credit_markup(place: dict[str, Any] | None) -> str:
+    if place is None or not any(
+        place.get(field)
+        for field in (
+            "provider_source_attribution",
+            "provider_source_license",
+            "provider_source_name",
+            "provider_source_url",
+        )
+    ):
+        return ""
+    fields = [
+        html.escape(value)
+        for value in (
+            place.get("provider_source_attribution"),
+            place.get("provider_source_license"),
+            place.get("provider_source_name"),
+        )
+        if value
+    ]
+    source_url = place.get("provider_source_url")
+    if source_url:
+        try:
+            safe_url = validate_http_url(source_url)
+        except ValueError:
+            safe_url = None
+        if safe_url:
+            fields.append(
+                f'<a href="{html.escape(safe_url, quote=True)}" rel="noreferrer">Source</a>'
+            )
+    return '<span class="source-credit">' + " · ".join(fields) + "</span>"
 
 
 def _ics_escape(value: str) -> str:
@@ -799,8 +1484,12 @@ def _sha256(data: bytes) -> str:
 
 def _check_deadline(started: float) -> None:
     if time.monotonic() - started > EXPORT_SECONDS:
-        raise DomainError(
-            "export_too_slow",
-            "The snapshot took too long to render. Choose a smaller date range.",
-            status_code=413,
-        )
+        raise _export_too_slow()
+
+
+def _export_too_slow() -> DomainError:
+    return DomainError(
+        "export_too_slow",
+        "The snapshot took too long to render. Choose a smaller date range.",
+        status_code=413,
+    )

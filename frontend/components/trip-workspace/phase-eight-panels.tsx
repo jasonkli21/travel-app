@@ -10,6 +10,7 @@ import {
   type TripExportFormat,
   travelApi,
   tripAttachmentsEnabled,
+  ApiError,
 } from "../../lib/api";
 import { errorMessage } from "../../lib/errors";
 
@@ -31,16 +32,29 @@ function saveBlob(blob: Blob, filename: string): void {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+function attachmentNeedsRecovery(error: unknown): boolean {
+  return error instanceof ApiError && (
+    error.code === "stale_revision"
+    || error.code === "attachment_upload_in_progress"
+    || error.code === "attachment_busy"
+    || error.status === null
+    || error.status === 0
+    || error.status >= 500
+  );
+}
+
 export function TripAttachmentsPanel({
   trip,
   reservations,
   disabled,
   onChanged,
+  onRecoveryRequired,
 }: {
   trip: TripDetail;
   reservations: Reservation[];
   disabled: boolean;
   onChanged: () => Promise<boolean>;
+  onRecoveryRequired: (message: string) => void;
 }) {
   const [attachments, setAttachments] = useState<TripAttachment[]>([]);
   const [file, setFile] = useState<File | null>(null);
@@ -110,6 +124,7 @@ export function TripAttachmentsPanel({
       );
     } catch (nextError) {
       setError(errorMessage(nextError));
+      if (attachmentNeedsRecovery(nextError)) onRecoveryRequired(errorMessage(nextError));
     } finally {
       setPending(null);
     }
@@ -120,6 +135,13 @@ export function TripAttachmentsPanel({
     const values = new FormData(event.currentTarget);
     const displayFilename = String(values.get("display_filename") ?? "").trim() || null;
     const nextReservationId = String(values.get("reservation_id") ?? "") || null;
+    const input: { display_filename?: string | null; reservation_id?: string | null } = {};
+    if (displayFilename !== attachment.display_filename) input.display_filename = displayFilename;
+    if (nextReservationId !== attachment.reservation_id) input.reservation_id = nextReservationId;
+    if (Object.keys(input).length === 0) {
+      setMessage("No document details changed.");
+      return;
+    }
     setPending(attachment.id);
     setError(null);
     setMessage(null);
@@ -127,7 +149,7 @@ export function TripAttachmentsPanel({
       await travelApi.updateAttachment(
         trip.id,
         attachment.id,
-        { display_filename: displayFilename, reservation_id: nextReservationId },
+        input,
         trip.revision,
       );
       const reloaded = await onChanged();
@@ -135,6 +157,7 @@ export function TripAttachmentsPanel({
       setMessage(reloaded ? "Document details updated." : "Saved. Reload the trip to refresh its revision.");
     } catch (nextError) {
       setError(errorMessage(nextError));
+      if (attachmentNeedsRecovery(nextError)) onRecoveryRequired(errorMessage(nextError));
     } finally {
       setPending(null);
     }
@@ -152,6 +175,7 @@ export function TripAttachmentsPanel({
       setMessage(reloaded ? "Document deleted." : "Deleted. Reload the trip to refresh its revision.");
     } catch (nextError) {
       setError(errorMessage(nextError));
+      if (attachmentNeedsRecovery(nextError)) onRecoveryRequired(errorMessage(nextError));
     } finally {
       setPending(null);
     }
@@ -181,7 +205,6 @@ export function TripAttachmentsPanel({
             disabled={disabled || pending !== null}
             onChange={(event) => {
               setFile(event.target.files?.[0] ?? null);
-              requestKey.current = null;
               setError(null);
             }}
           />
@@ -221,7 +244,11 @@ export function TripAttachmentsPanel({
                     <a href={travelApi.attachmentDownloadUrl(trip.id, attachment.id)}>Download document</a>
                   ) : null}
                 </div>
-                <form className="attachmentEdit" onSubmit={(event) => void update(event, attachment)}>
+                <form
+                  key={`${attachment.id}:${attachment.updated_at}:${attachment.display_filename}:${attachment.reservation_id ?? ""}`}
+                  className="attachmentEdit"
+                  onSubmit={(event) => void update(event, attachment)}
+                >
                   <label>
                     Display label
                     <input name="display_filename" maxLength={120} defaultValue={attachment.display_filename} disabled={disabled || pending !== null} />
@@ -346,7 +373,11 @@ export function TripExportPanel({ trip }: { trip: TripDetail }) {
             <span>Also add reservations that are already linked to itinerary events</span>
           </label>
         ) : null}
-        <p className="formHint">By default, private fields and documents are omitted. The snapshot records its generation time, timezone, date scope, and trip revision. Calendar imports are not live subscriptions and may not mirror future changes.</p>
+        <p className="formHint">
+          By default, private fields and documents are omitted. The snapshot records its generation time, timezone, date scope, and trip revision.
+          {format === "ics" ? " Calendar files omit saved-place candidates; this omission is marked in the calendar metadata." : " Saved-place candidates appear in the static HTML and versioned JSON snapshots."}
+          {" Calendar imports are not live subscriptions and may not mirror future changes."}
+        </p>
         <button className="primary" type="submit" disabled={pending}>
           {pending ? "Preparing snapshot…" : "Download snapshot"}
         </button>

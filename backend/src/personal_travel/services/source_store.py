@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import fcntl
+import hashlib
 import os
 import re
 import secrets
@@ -59,6 +61,41 @@ class LocalSourceStore:
     def temp_path(self, key: str) -> Path:
         """Return the private temp path for the isolated local PDF worker."""
         return self.root / (self.validate_key(key) + ".tmp")
+
+    def try_promotion_lock(self, key: str) -> int | None:
+        """Claim one object's promotion/deletion lifecycle across processes.
+
+        The lock file is intentionally retained: unlinking a locked inode could
+        let a second process create and lock a different inode for the same key.
+        ``flock`` is released by the kernel when a process exits, so interrupted
+        uploads remain recoverable without stale lock cleanup.
+        """
+        name = self.validate_key(key) + ".lock"
+        flags = os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW
+        flags |= getattr(os, "O_CLOEXEC", 0)
+        fd = os.open(name, flags, 0o600, dir_fd=self.dirfd)
+        try:
+            os.fchmod(fd, 0o600)
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode):
+                raise ValueError("Source lock entry is not a regular file.")
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                os.close(fd)
+                return None
+            return fd
+        except BaseException:
+            if fd >= 0:
+                os.close(fd)
+            raise
+
+    @staticmethod
+    def release_promotion_lock(fd: int) -> None:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
 
     def open_temp(self, key: str) -> int:
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
@@ -122,6 +159,24 @@ class LocalSourceStore:
         if len(data) > MAX_SOURCE_BYTES:
             raise ValueError("Source object exceeds the configured size limit.")
         return data
+
+    def matches(
+        self, key: str, expected_hash: str, expected_size: int, *, temp: bool = False
+    ) -> bool:
+        """Verify size and digest with a small bounded read buffer."""
+        try:
+            fd = self._open_read(key, temp=temp)
+        except (OSError, ValueError):
+            return False
+        digest = hashlib.sha256()
+        size = 0
+        with os.fdopen(fd, "rb") as stream:
+            while chunk := stream.read(64 * 1024):
+                size += len(chunk)
+                if size > expected_size or size > MAX_SOURCE_BYTES:
+                    return False
+                digest.update(chunk)
+        return size == expected_size and digest.hexdigest() == expected_hash
 
     def exists(self, key: str) -> bool:
         try:

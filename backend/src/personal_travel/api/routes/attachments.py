@@ -5,9 +5,8 @@ from __future__ import annotations
 import hashlib
 import os
 import re
-import stat
 from functools import partial
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from anyio.to_thread import run_sync
@@ -75,22 +74,57 @@ def _close(fd: int) -> None:
         pass
 
 
-def _matches(store: LocalSourceStore, key: str, digest: str, byte_size: int) -> bool:
+def _matches(
+    store: LocalSourceStore, key: str, digest: str, byte_size: int, *, temp: bool = False
+) -> bool:
+    return store.matches(key, digest, byte_size, temp=temp)
+
+
+def _promote_or_recover(
+    store: LocalSourceStore,
+    key: str,
+    data: bytes,
+    digest: str,
+    byte_size: int,
+    service: AttachmentService,
+    owner_id: str,
+    trip_id: UUID,
+    attachment_id: UUID,
+    *,
+    lock_fd: int | None = None,
+) -> tuple[Literal["ready", "busy", "unavailable"], dict[str, object] | None]:
+    """Publish/recover bytes while holding the per-object lifecycle lock."""
+    owns_lock = lock_fd is None
+    if lock_fd is None:
+        lock_fd = store.try_promotion_lock(key)
+        if lock_fd is None:
+            return "busy", None
     try:
-        data = store.read(key)
-    except (OSError, ValueError):
-        return False
-    return len(data) == byte_size and hashlib.sha256(data).hexdigest() == digest
-
-
-def _available(store: LocalSourceStore, key: str, byte_size: int) -> bool:
-    info = store.entry_stat(key)
-    return bool(
-        info is not None
-        and stat.S_ISREG(info.st_mode)
-        and stat.S_IMODE(info.st_mode) == 0o600
-        and info.st_size == byte_size
-    )
+        if not _matches(store, key, digest, byte_size):
+            if store.entry_stat(key) is not None:
+                # A final object is immutable. Never replace a corrupt or unrelated
+                # object with retry bytes under an existing metadata row.
+                return "unavailable", None
+            if not _matches(store, key, digest, byte_size, temp=True):
+                if store.entry_stat(key + ".tmp") is not None:
+                    store.delete(key, temp=True)
+                store.write_temp(key, data)
+            try:
+                store.promote(key)
+            except OSError:
+                # Another lifecycle transition may have completed the hard link
+                # before the unlink/fsync failed. Accept only the verified final.
+                if not _matches(store, key, digest, byte_size):
+                    return "unavailable", None
+        if not _matches(store, key, digest, byte_size):
+            # A final object is immutable. Never replace a corrupt or unrelated
+            # object with retry bytes under an existing metadata row.
+            return "unavailable", None
+        metadata = service.mark_ready(owner_id, trip_id, attachment_id)
+        return "ready", metadata
+    finally:
+        if owns_lock:
+            store.release_promotion_lock(lock_fd)
 
 
 def _headers_for_download(filename: str) -> dict[str, str]:
@@ -113,16 +147,16 @@ def list_attachments(
         for raw in _service(request).list(owner_id, trip_id):
             item = dict(raw)
             key = item.pop("_object_key")
+            digest = item.pop("_sha256")
             state = item["state"]
             available = False
-            if state == "ready" and isinstance(key, str):
-                info = store.entry_stat(key)
-                available = bool(
-                    info is not None
-                    and stat.S_ISREG(info.st_mode)
-                    and stat.S_IMODE(info.st_mode) == 0o600
-                    and info.st_size == item["byte_size"]
-                )
+            if (
+                state == "ready"
+                and isinstance(key, str)
+                and isinstance(digest, str)
+                and isinstance(item["byte_size"], int)
+            ):
+                available = _matches(store, key, digest, item["byte_size"])
                 if not available:
                     item["state"] = "missing"
             item["download_available"] = available
@@ -157,10 +191,18 @@ async def upload_attachment(
     safe_filename = _display_filename(filename)
     key = store.new_key()
     fd: int | None = None
+    promotion_lock_fd: int | None = None
     registered_key: str | None = None
     try:
         # Scope checks precede the first read from the streamed request body.
         await run_sync(service.ensure_target, owner_id, trip_id, reservation_id)
+        promotion_lock_fd = await run_sync(store.try_promotion_lock, key)
+        if promotion_lock_fd is None:
+            raise DomainError(
+                "attachment_upload_in_progress",
+                "This upload is still being saved. Retry with the same request key.",
+                status_code=409,
+            )
         fd = await run_sync(store.open_temp, key)
         digest = hashlib.sha256()
         size = 0
@@ -182,10 +224,20 @@ async def upload_attachment(
         try:
             await run_sync(partial(validate_attachment, store.temp_path(key), media_type, raw))
         except AttachmentValidationError as exc:
-            if exc.args[0] == "image_dimensions_exceeded":
+            code = exc.args[0] if exc.args else "invalid_attachment"
+            if code == "image_dimensions_exceeded":
                 raise DomainError(
                     "image_dimensions_exceeded",
                     "Images must be 40 megapixels or smaller.",
+                ) from exc
+            if code in {"unsupported_jpeg_encoding", "unsupported_jpeg_restart"}:
+                raise DomainError(
+                    "unsupported_image_encoding",
+                    "Use an 8-bit baseline JPEG without restart markers, or a static PNG.",
+                ) from exc
+            if code == "animated_image_unsupported":
+                raise DomainError(
+                    "animated_image_unsupported", "Animated PNG images are not supported."
                 ) from exc
             raise DomainError(
                 "invalid_attachment", "The document does not match its declared file type."
@@ -217,38 +269,79 @@ async def upload_attachment(
             )
         )
         if not registration.created:
+            # This request wrote to its own fresh opaque key before resolving
+            # the stable request key. It must never touch the registered key's
+            # temp file unless it owns that object's lifecycle lock.
             await run_sync(partial(store.delete, key, temp=True))
+            if promotion_lock_fd is not None:
+                await run_sync(store.release_promotion_lock, promotion_lock_fd)
+                promotion_lock_fd = None
             current_state = registration.metadata["state"]
             if current_state == "ready":
-                if not await run_sync(
-                    partial(
-                        _matches,
-                        store,
-                        registration.object_key,
-                        source_hash,
-                        size,
+                ready_lock = await run_sync(store.try_promotion_lock, registration.object_key)
+                if ready_lock is None:
+                    raise DomainError(
+                        "attachment_busy",
+                        "The document is being removed. Retry shortly.",
+                        status_code=409,
                     )
-                ):
+                try:
+                    descriptor = await run_sync(
+                        partial(
+                            service.download_descriptor,
+                            owner_id,
+                            trip_id,
+                            registration.attachment_id,
+                        )
+                    )
+                    available = await run_sync(
+                        partial(
+                            _matches,
+                            store,
+                            registration.object_key,
+                            descriptor.sha256,
+                            descriptor.byte_size,
+                        )
+                    )
+                finally:
+                    await run_sync(store.release_promotion_lock, ready_lock)
+                if not available:
                     raise DomainError(
                         "attachment_unavailable", "The document is unavailable.", status_code=410
                     )
             elif current_state == "pending":
-                if await run_sync(partial(_available, store, registration.object_key, size)):
-                    if not await run_sync(
-                        partial(_matches, store, registration.object_key, source_hash, size)
-                    ):
-                        raise DomainError(
-                            "attachment_unavailable",
-                            "The document is unavailable.",
-                            status_code=410,
+                try:
+                    state, metadata = await run_sync(
+                        partial(
+                            _promote_or_recover,
+                            store,
+                            registration.object_key,
+                            raw,
+                            source_hash,
+                            size,
+                            service,
+                            owner_id,
+                            trip_id,
+                            registration.attachment_id,
                         )
-                else:
-                    await run_sync(partial(store.delete, registration.object_key, temp=True))
-                    await run_sync(partial(store.write_temp, registration.object_key, raw))
-                    await run_sync(store.promote, registration.object_key)
-                metadata = await run_sync(
-                    service.mark_ready, owner_id, trip_id, registration.attachment_id
-                )
+                    )
+                except (OSError, ValueError) as exc:
+                    raise DomainError(
+                        "attachment_promotion_failed",
+                        "The upload is saved as pending. Retry with the same request key "
+                        "to recover it.",
+                        status_code=503,
+                    ) from exc
+                if state == "busy":
+                    raise DomainError(
+                        "attachment_upload_in_progress",
+                        "This upload is still being saved. Retry with the same request key.",
+                        status_code=409,
+                    )
+                if state != "ready" or metadata is None:
+                    raise DomainError(
+                        "attachment_unavailable", "The document is unavailable.", status_code=410
+                    )
                 return AttachmentResponse.model_validate(metadata | {"download_available": True})
             else:
                 raise DomainError(
@@ -259,12 +352,44 @@ async def upload_attachment(
             )
 
         registered_key = registration.object_key
-        await run_sync(store.promote, registration.object_key)
-        metadata = await run_sync(service.mark_ready, owner_id, trip_id, registration.attachment_id)
+        try:
+            state, metadata = await run_sync(
+                partial(
+                    _promote_or_recover,
+                    store,
+                    registration.object_key,
+                    raw,
+                    source_hash,
+                    size,
+                    service,
+                    owner_id,
+                    trip_id,
+                    registration.attachment_id,
+                    lock_fd=promotion_lock_fd,
+                )
+            )
+        except (OSError, ValueError) as exc:
+            raise DomainError(
+                "attachment_promotion_failed",
+                "The upload is saved as pending. Retry with the same request key to recover it.",
+                status_code=503,
+            ) from exc
+        if state == "busy":
+            raise DomainError(
+                "attachment_upload_in_progress",
+                "This upload is still being saved. Retry with the same request key.",
+                status_code=409,
+            )
+        if state != "ready" or metadata is None:
+            raise DomainError(
+                "attachment_unavailable", "The document is unavailable.", status_code=410
+            )
         return AttachmentResponse.model_validate(metadata | {"download_available": True})
     finally:
         if fd is not None:
             await run_sync(_close, fd)
+        if promotion_lock_fd is not None:
+            await run_sync(store.release_promotion_lock, promotion_lock_fd)
         # A registered pending object's temp/final byte is left for the cleanup
         # worker to recover after an interrupted promotion or state transition.
         if registered_key is None:
@@ -282,11 +407,21 @@ def update_attachment(
     expected_revision: Annotated[int, Header(alias="X-Expected-Revision", ge=0)],
 ) -> AttachmentResponse:
     store = _gate()
+    lock_fd: int | None = None
     try:
+        service = _service(request)
+        object_key = service.deletion_key(owner_id, trip_id, attachment_id)
+        lock_fd = store.try_promotion_lock(object_key)
+        if lock_fd is None:
+            raise DomainError(
+                "attachment_busy",
+                "The document is being saved or removed. Retry shortly.",
+                status_code=409,
+            )
         label = payload.display_filename
         if label is not None:
             label = _display_filename(label)
-        metadata = _service(request).patch(
+        metadata = service.patch(
             owner_id=owner_id,
             trip_id=trip_id,
             attachment_id=attachment_id,
@@ -296,19 +431,20 @@ def update_attachment(
             update_label="display_filename" in payload.model_fields_set,
             update_reservation="reservation_id" in payload.model_fields_set,
         )
-        key = _object_key(request, owner_id, trip_id, attachment_id)
+        descriptor = service.download_descriptor(owner_id, trip_id, attachment_id)
         response = AttachmentResponse.model_validate(metadata)
+        available = _matches(store, descriptor.object_key, descriptor.sha256, descriptor.byte_size)
         return AttachmentResponse.model_validate(
             response.model_dump()
-            | {"download_available": _available(store, key, response.byte_size)}
+            | {
+                "state": response.state if available else "missing",
+                "download_available": available,
+            }
         )
     finally:
+        if lock_fd is not None:
+            store.release_promotion_lock(lock_fd)
         store.close()
-
-
-def _object_key(request: Request, owner_id: str, trip_id: UUID, attachment_id: UUID) -> str:
-    descriptor = _service(request).download_descriptor(owner_id, trip_id, attachment_id)
-    return descriptor.object_key
 
 
 @router.get("/{attachment_id}/download")
@@ -349,8 +485,17 @@ def delete_attachment(
     expected_revision: Annotated[int, Header(alias="X-Expected-Revision", ge=0)],
 ) -> Response:
     store = _gate()
+    lock_fd: int | None = None
     try:
         service = _service(request)
+        object_key = service.deletion_key(owner_id, trip_id, attachment_id)
+        lock_fd = store.try_promotion_lock(object_key)
+        if lock_fd is None:
+            raise DomainError(
+                "attachment_busy",
+                "The document is being saved or removed. Retry shortly.",
+                status_code=409,
+            )
         object_key = service.begin_delete(
             owner_id=owner_id,
             trip_id=trip_id,
@@ -362,4 +507,6 @@ def delete_attachment(
         service.finish_delete(owner_id, trip_id, attachment_id)
         return Response(status_code=status.HTTP_204_NO_CONTENT)
     finally:
+        if lock_fd is not None:
+            store.release_promotion_lock(lock_fd)
         store.close()

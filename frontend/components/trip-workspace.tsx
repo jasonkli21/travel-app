@@ -749,6 +749,10 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
             reservations={reservations}
             disabled={pending !== null || stale}
             onChanged={() => refresh()}
+            onRecoveryRequired={(message) => {
+              setStale(true);
+              setError(`${message} Reload the workspace before continuing. Reloading clears open editors.`);
+            }}
           />
         ) : null}
         <TripExportPanel trip={trip} />

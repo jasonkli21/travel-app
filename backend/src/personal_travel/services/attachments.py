@@ -91,7 +91,8 @@ class AttachmentService:
                 .limit(MAX_TRIP_ATTACHMENTS)
             ).all()
             return [
-                attachment_metadata(item, trip.revision) | {"_object_key": item.object_key}
+                attachment_metadata(item, trip.revision)
+                | {"_object_key": item.object_key, "_sha256": item.sha256}
                 for item in items
             ]
 
@@ -359,6 +360,21 @@ class AttachmentService:
                 item.display_filename or "travel-document",
                 item.state,
             )
+
+    def deletion_key(self, owner_id: str, trip_id: UUID, attachment_id: UUID) -> str:
+        """Return the private key for any trip attachment lifecycle state."""
+        with self._session_factory() as session:
+            found = session.scalar(
+                select(SourceAttachment.object_key).where(
+                    SourceAttachment.id == attachment_id,
+                    SourceAttachment.owner_id == owner_id,
+                    SourceAttachment.trip_id == trip_id,
+                    SourceAttachment.purpose == "trip_attachment",
+                )
+            )
+            if found is None:
+                raise not_found("attachment")
+            return found
 
     def begin_delete(
         self,

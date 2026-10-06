@@ -14,6 +14,7 @@ from personal_travel.api.routes import (
     research,
     reservations,
     saved_places,
+    travel_mode,
     trips,
 )
 
@@ -21,6 +22,7 @@ api_router = APIRouter()
 api_router.include_router(health.router)
 api_router.include_router(auth.router, prefix="/v1")
 api_router.include_router(trips.router, prefix="/v1")
+api_router.include_router(travel_mode.router, prefix="/v1")
 api_router.include_router(itinerary.router, prefix="/v1")
 api_router.include_router(imports.router, prefix="/v1")
 api_router.include_router(attachments.router, prefix="/v1")

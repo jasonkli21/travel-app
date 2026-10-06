@@ -129,7 +129,9 @@ def cleanup(
     entry_cursor = after_entry
     remaining = limit - inspected
     if remaining > 0 and owner_id is None and time.monotonic() < deadline:
-        names = store.entry_names()
+        # Per-object flock files are stable coordination inodes, not byte
+        # objects or temporary uploads. They are intentionally retained.
+        names = [name for name in store.entry_names() if not name.endswith(".lock")]
         start = bisect.bisect_right(names, after_entry) if after_entry else 0
         page = names[start : start + remaining + 1]
         has_more = len(page) > remaining
@@ -154,9 +156,29 @@ def cleanup(
                 referenced = session.scalar(
                     select(SourceAttachment.id).where(SourceAttachment.object_key == object_key)
                 )
-            if referenced is None:
-                store.delete(object_key, temp=entry_name.endswith(".tmp"))
-                reconciled += 1
+            if referenced is not None:
+                continue
+            lock_fd = store.try_promotion_lock(object_key)
+            if lock_fd is None:
+                continue
+            try:
+                # An upload may have registered the key after the first query.
+                # Recheck while holding the same object lock as its writer.
+                with session_factory() as session:
+                    referenced = session.scalar(
+                        select(SourceAttachment.id).where(SourceAttachment.object_key == object_key)
+                    )
+                latest = store.entry_stat(entry_name)
+                if (
+                    referenced is None
+                    and latest is not None
+                    and stat.S_ISREG(latest.st_mode)
+                    and datetime.fromtimestamp(latest.st_mtime, UTC) <= stale
+                ):
+                    store.delete(object_key, temp=entry_name.endswith(".tmp"))
+                    reconciled += 1
+            finally:
+                store.release_promotion_lock(lock_fd)
         if not has_more and len(page) <= remaining:
             entry_cursor = None
 
@@ -200,30 +222,36 @@ def _recover_pending(
         or created_at > stale
     ):
         return False
-    if not _matches(store, object_key, expected_hash, expected_size):
+    lock_fd = store.try_promotion_lock(object_key)
+    if lock_fd is None:
         return False
-    statement = (
-        update(SourceAttachment)
-        .where(
-            SourceAttachment.id == source_id,
-            SourceAttachment.state == "pending",
-            or_(SourceAttachment.expires_at.is_(None), SourceAttachment.expires_at > now),
-            SourceAttachment.created_at <= stale,
-        )
-        .values(state="ready", updated_at=now)
-        .returning(SourceAttachment.id)
-    )
-    if owner_id is not None:
-        statement = statement.where(SourceAttachment.owner_id == owner_id)
-    with session_factory() as session, session.begin():
-        trip = session.scalar(select(Trip).where(Trip.id == trip_id).with_for_update())
-        if trip is None:
+    try:
+        if not _matches(store, object_key, expected_hash, expected_size):
             return False
-        statement = statement.where(SourceAttachment.trip_id == trip_id)
-        recovered = session.execute(statement).scalar_one_or_none() is not None
-    if recovered:
-        store.delete(object_key, temp=True)
-    return recovered
+        statement = (
+            update(SourceAttachment)
+            .where(
+                SourceAttachment.id == source_id,
+                SourceAttachment.state == "pending",
+                or_(SourceAttachment.expires_at.is_(None), SourceAttachment.expires_at > now),
+                SourceAttachment.created_at <= stale,
+            )
+            .values(state="ready", updated_at=now)
+            .returning(SourceAttachment.id)
+        )
+        if owner_id is not None:
+            statement = statement.where(SourceAttachment.owner_id == owner_id)
+        with session_factory() as session, session.begin():
+            trip = session.scalar(select(Trip).where(Trip.id == trip_id).with_for_update())
+            if trip is None:
+                return False
+            statement = statement.where(SourceAttachment.trip_id == trip_id)
+            recovered = session.execute(statement).scalar_one_or_none() is not None
+        if recovered:
+            store.delete(object_key, temp=True)
+        return recovered
+    finally:
+        store.release_promotion_lock(lock_fd)
 
 
 def _claim_for_deletion(
@@ -307,51 +335,57 @@ def _finish_deletion(
     source_id: UUID,
     object_key: str,
 ) -> bool:
-    # Bytes are removed only after a committed deleting transition. Competing
-    # deleters may repeat unlink; the final conditional row delete is idempotent.
-    store.delete(object_key)
-    store.delete(object_key, temp=True)
-    with session_factory() as session, session.begin():
-        source = session.scalar(
-            select(SourceAttachment).where(
-                SourceAttachment.id == source_id,
-                SourceAttachment.object_key == object_key,
-                SourceAttachment.state == "deleting",
-            )
-        )
-        if source is not None and source.trip_id is not None:
-            session.scalar(select(Trip).where(Trip.id == source.trip_id).with_for_update())
-        item = session.scalar(
-            select(BookingImport).where(BookingImport.source_id == source_id).with_for_update()
-        )
-        if item is not None:
-            item.source_id = None
-            item.candidate_snapshot = None
-            if item.extraction_key is not None and item.extraction_post_attempted:
-                enqueue_in_session(
-                    session,
-                    owner_id=item.owner_id,
-                    extraction_key=item.extraction_key,
-                    source_sha256=item.extraction_text_sha256 or item.source_sha256,
+    lock_fd = store.try_promotion_lock(object_key)
+    if lock_fd is None:
+        return False
+    try:
+        # Bytes are removed only after a committed deleting transition. The
+        # same lock serializes cleanup with an in-flight attachment promotion.
+        store.delete(object_key)
+        store.delete(object_key, temp=True)
+        with session_factory() as session, session.begin():
+            source = session.scalar(
+                select(SourceAttachment).where(
+                    SourceAttachment.id == source_id,
+                    SourceAttachment.object_key == object_key,
+                    SourceAttachment.state == "deleting",
                 )
-                item.upstream_delete_pending = True
-            item.extraction_claim_token = None
-            item.extraction_claimed_at = None
-            if item.state not in {"applied", "rejected", "failed", "expired"}:
-                item.state = "expired"
-                item.candidate_snapshot = {"failure_code": "source_deleted"}
-                item.review_revision += 1
-            item.updated_at = datetime.now(UTC)
-        result = session.execute(
-            delete(SourceAttachment)
-            .where(
-                SourceAttachment.id == source_id,
-                SourceAttachment.object_key == object_key,
-                SourceAttachment.state == "deleting",
             )
-            .returning(SourceAttachment.id)
-        )
-        return result.scalar_one_or_none() is not None
+            if source is not None and source.trip_id is not None:
+                session.scalar(select(Trip).where(Trip.id == source.trip_id).with_for_update())
+            item = session.scalar(
+                select(BookingImport).where(BookingImport.source_id == source_id).with_for_update()
+            )
+            if item is not None:
+                item.source_id = None
+                item.candidate_snapshot = None
+                if item.extraction_key is not None and item.extraction_post_attempted:
+                    enqueue_in_session(
+                        session,
+                        owner_id=item.owner_id,
+                        extraction_key=item.extraction_key,
+                        source_sha256=item.extraction_text_sha256 or item.source_sha256,
+                    )
+                    item.upstream_delete_pending = True
+                item.extraction_claim_token = None
+                item.extraction_claimed_at = None
+                if item.state not in {"applied", "rejected", "failed", "expired"}:
+                    item.state = "expired"
+                    item.candidate_snapshot = {"failure_code": "source_deleted"}
+                    item.review_revision += 1
+                item.updated_at = datetime.now(UTC)
+            result = session.execute(
+                delete(SourceAttachment)
+                .where(
+                    SourceAttachment.id == source_id,
+                    SourceAttachment.object_key == object_key,
+                    SourceAttachment.state == "deleting",
+                )
+                .returning(SourceAttachment.id)
+            )
+            return result.scalar_one_or_none() is not None
+    finally:
+        store.release_promotion_lock(lock_fd)
 
 
 def _matches(

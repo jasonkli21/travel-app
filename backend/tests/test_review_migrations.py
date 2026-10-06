@@ -68,7 +68,7 @@ def test_invalid_dst_repair_aborts_and_can_be_recovered(database_engine: Engine)
         seed_moved_item(connection, date="2026-03-08", time="2026-03-07T07:30:00Z")
         command.upgrade(config, "head")
     with database_engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0013"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0014"
         assert connection.scalar(text("SELECT count(*) FROM itinerary_items")) == 0
 
 
@@ -95,8 +95,9 @@ def test_source_lifecycle_downgrade_preserves_detached_import_outcomes(
         connection.execute(
             text(
                 "INSERT INTO source_attachments "
-                "(id,owner_id,trip_id,object_key,sha256,media_type,byte_size,state,expires_at) "
-                "VALUES (:id,'local',:trip,:key,:hash,'text/plain',1,'ready',"
+                "(id,owner_id,trip_id,purpose,object_key,sha256,media_type,byte_size,state,"
+                "expires_at) "
+                "VALUES (:id,'local',:trip,'booking_source',:key,:hash,'text/plain',1,'ready',"
                 "now() + interval '1 day')"
             ),
             {"id": source_id, "trip": trip_id, "key": "a" * 32, "hash": "1" * 64},

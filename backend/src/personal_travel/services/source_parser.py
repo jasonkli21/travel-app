@@ -165,6 +165,55 @@ def _worker(path: str, connection: Connection, require_text: bool = True) -> Non
         connection.close()
 
 
+def _image_worker(path: str, media_type: str, connection: Connection) -> None:
+    """Check untrusted image structure in a disposable resource-limited process."""
+    try:
+        limits = (
+            (resource.RLIMIT_CORE, 0, "image_core_limit_failed"),
+            (resource.RLIMIT_CPU, 4, "image_cpu_limit_failed"),
+        )
+        if sys.platform != "darwin":
+            limits += (
+                (resource.RLIMIT_AS, PARSER_ADDRESS_SPACE_BYTES, "image_address_limit_failed"),
+                (resource.RLIMIT_DATA, PARSER_MEMORY_BYTES, "image_data_limit_failed"),
+            )
+        for limit, maximum, failure_code in limits:
+            try:
+                if limit == resource.RLIMIT_CORE:
+                    resource.setrlimit(limit, (0, 0))
+                else:
+                    _set_limit(limit, maximum)
+            except (OSError, ValueError):
+                _send(connection, failure_code)
+                return
+        _disable_network()
+        from personal_travel.services.attachment_validation import (
+            AttachmentValidationError,
+            _validate_jpeg,
+            _validate_png,
+        )
+
+        data = Path(path).read_bytes()
+        if media_type == "image/png":
+            _validate_png(data)
+        elif media_type == "image/jpeg":
+            _validate_jpeg(data)
+        else:
+            _send(connection, "unsupported_image_type")
+            return
+        _send(connection, "ok")
+    except AttachmentValidationError as exc:
+        _send(connection, str(exc.args[0]) if exc.args else "invalid_image")
+    except BaseException:
+        # Image data and parser details remain inside the disposable worker.
+        try:
+            _send(connection, "invalid_image")
+        except (BrokenPipeError, OSError):
+            pass
+    finally:
+        connection.close()
+
+
 def parse_pdf(
     path: Path,
     *,
@@ -225,6 +274,67 @@ def parse_pdf(
         raise
     except (OSError, ValueError, RuntimeError) as exc:
         raise SourceParseError("pdf_parser_failed") from exc
+    finally:
+        if not child_closed:
+            child.close()
+        parent.close()
+        if process.pid is not None:
+            process.join(0.1)
+            if process.is_alive():
+                process.terminate()
+                process.join(0.5)
+            if process.is_alive():
+                process.kill()
+            process.join()
+
+
+def validate_image(path: Path, media_type: str, *, wall_time_seconds: float = 5) -> None:
+    """Run structural image checks with a wall clock and process resource limits."""
+    if wall_time_seconds <= 0 or wall_time_seconds > 5:
+        raise ValueError("The image parser deadline must be between zero and five seconds.")
+    context = mp.get_context("spawn")
+    parent, child = context.Pipe(duplex=False)
+    process = context.Process(target=_image_worker, args=(str(path), media_type, child))
+    child_closed = False
+    started = time.monotonic()
+    try:
+        process.start()
+        child.close()
+        child_closed = True
+        deadline = started + wall_time_seconds
+        code: str | None = None
+        while code is None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise SourceParseError("image_timeout")
+            if sys.platform == "darwin" and process.is_alive():
+                resident = _darwin_resident_bytes(process.pid or -1)
+                if resident is None:
+                    process.terminate()
+                    raise SourceParseError("image_memory_monitor_failed")
+                if resident > PARSER_MEMORY_BYTES:
+                    process.terminate()
+                    raise SourceParseError("image_memory_limit")
+            if parent.poll(min(remaining, 0.05)):
+                try:
+                    value = parent.recv()
+                except EOFError as exc:
+                    raise SourceParseError("image_parser_failed") from exc
+                if (
+                    not isinstance(value, tuple)
+                    or len(value) != 2
+                    or not all(isinstance(part, str) for part in value)
+                ):
+                    raise SourceParseError("image_parser_failed")
+                code = value[0]
+            elif not process.is_alive():
+                raise SourceParseError("image_parser_failed")
+        if code != "ok":
+            raise SourceParseError(code)
+    except SourceParseError:
+        raise
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise SourceParseError("image_parser_failed") from exc
     finally:
         if not child_closed:
             child.close()

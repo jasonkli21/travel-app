@@ -29,7 +29,12 @@ storage directory. The default-off gate is independent of booking extraction.
 Accept UTF-8 text up to 1 MiB and PDF, JPEG, and PNG up to 10 MiB. PDFs are
 structure-checked in the existing isolated parser process with a 100-page
 limit. Text is UTF-8 checked. Images are signature/structure checked and
-limited to 40 million pixels; the application never decodes or renders them.
+limited to 40 million pixels; the application does not reconstruct or render
+image pixels.
+PNG compressed scanlines and checksums are validated in the isolated parser.
+JPEG support is limited to 8-bit baseline sequential Huffman images without
+restart markers; other JPEG encodings are rejected explicitly. The parser
+checks the coefficient scan without reconstructing or rendering pixels.
 All documents download as attachments with `nosniff` and `no-store`; the UI
 does not inline document or image bytes. Filenames remain sanitized display
 metadata and never form object paths.
@@ -56,6 +61,22 @@ itinerary items. All-day `DTEND` is exclusive. Open-ended timed records omit
 events by default when an itinerary event already represents them, with an
 explicit option to include both. Property text is escaped and lines are folded
 by UTF-8 octets. Canceled records are omitted from calendar output.
+
+Date-limited snapshots use the trip's local calendar days as a half-open range:
+midnight at the selected start date through midnight after the selected end
+date. A point at either endpoint follows point-event semantics; an interval
+ending exactly at the range start or starting exactly at the range end is
+excluded. Reservations with one schedule endpoint are selected as point events,
+and fully unscheduled reservations appear only in a whole-trip export. A linked
+calendar event can stand in for its reservation only when both endpoints and
+the place reference match; the retained event carries the booking identity and
+opted-in private fields. Otherwise the booking keeps its own event and schedule.
+
+The JSON export and ZIP `manifest.json` use versioned contracts. The bundle
+manifest preserves attachment and optional reservation IDs, the display name,
+type, size, and archive path, without owner credentials or private object keys.
+Static HTML shows the reservation association. ICS marks saved-place candidates
+as omitted because the calendar format does not carry that section.
 
 GCS is not implemented or enabled by this decision. An adapter, bucket,
 credentials, IAM binding, or cloud smoke test requires its separate P8.4

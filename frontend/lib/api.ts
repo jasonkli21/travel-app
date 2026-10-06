@@ -508,6 +508,13 @@ export interface TripAttachment {
   download_available: boolean;
 }
 
+export interface TravelModeProjection {
+  trip: TripDetail;
+  reservations: Reservation[];
+  attachments: TripAttachment[];
+  attachments_available: boolean;
+}
+
 export type TripExportFormat = "ics" | "html" | "json";
 
 export interface TripExportInput {
@@ -531,6 +538,8 @@ export const travelApi = {
   createTrip: (input: CreateTripInput) =>
     request<TripDetail>("/trips", { method: "POST", body: JSON.stringify(input) }),
   getTrip: (tripId: string) => request<TripDetail>(`/trips/${tripId}`),
+  getTravelMode: (tripId: string) =>
+    request<TravelModeProjection>(`/trips/${tripId}/travel`),
   updateTrip: (tripId: string, input: UpdateTripInput, revision: number) =>
     request<TripDetail>(`/trips/${tripId}`, {
       method: "PATCH",
@@ -589,7 +598,7 @@ export const travelApi = {
   updateAttachment: (
     tripId: string,
     attachmentId: string,
-    input: { display_filename: string | null; reservation_id: string | null },
+    input: { display_filename?: string | null; reservation_id?: string | null },
     revision: number,
   ) => request<TripAttachment>(`/trips/${tripId}/attachments/${attachmentId}`, {
     method: "PATCH",
