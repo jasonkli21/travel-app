@@ -66,7 +66,8 @@ class SourceAttachment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         CheckConstraint("length(object_key) = 32", name="source_attachment_key_length"),
         CheckConstraint(
             "(upload_request_key IS NULL AND upload_request_fingerprint IS NULL) OR "
-            "(length(upload_request_key) BETWEEN 8 AND 128 AND "
+            "(upload_request_key IS NOT NULL AND upload_request_fingerprint IS NOT NULL AND "
+            "length(upload_request_key) BETWEEN 8 AND 128 AND "
             "length(upload_request_fingerprint) = 64)",
             name="source_attachment_upload_request",
         ),

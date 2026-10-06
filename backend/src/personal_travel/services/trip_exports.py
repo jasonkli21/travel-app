@@ -130,6 +130,7 @@ def build_export(
         if (
             selected_item_count > MAX_EXPORT_RECORDS
             or len(selected_reservations) > MAX_EXPORT_RECORDS
+            or len(trip.saved_places) > MAX_EXPORT_RECORDS
         ):
             raise DomainError(
                 "export_too_large",

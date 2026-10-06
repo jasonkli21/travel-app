@@ -65,7 +65,8 @@ def upgrade() -> None:
         "ck_source_attachments_source_attachment_upload_request",
         "source_attachments",
         "(upload_request_key IS NULL AND upload_request_fingerprint IS NULL) OR "
-        "(length(upload_request_key) BETWEEN 8 AND 128 AND "
+        "(upload_request_key IS NOT NULL AND upload_request_fingerprint IS NOT NULL AND "
+        "length(upload_request_key) BETWEEN 8 AND 128 AND "
         "length(upload_request_fingerprint) = 64)",
     )
     op.create_unique_constraint(
