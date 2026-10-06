@@ -9,4 +9,8 @@ COPY src ./src
 RUN uv sync --locked --no-dev
 ENV PATH="/app/.venv/bin:${PATH}"
 ENV PORT=8080
-CMD ["sh", "-c", "uvicorn personal_travel.main:app --host 0.0.0.0 --port ${PORT} --no-access-log"]
+RUN groupadd --system --gid 10001 travel \
+    && useradd --system --uid 10001 --gid 10001 --create-home travel \
+    && chown -R travel:travel /app
+USER 10001:10001
+CMD ["sh", "-c", "exec uvicorn personal_travel.main:app --host 0.0.0.0 --port \"$PORT\" --no-access-log"]

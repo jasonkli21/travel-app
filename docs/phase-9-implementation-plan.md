@@ -1,6 +1,6 @@
 # Phase 9 implementation plan — operational hardening and controlled deployment
 
-**Status:** planned; no Phase 9 implementation/deployment delivered
+**Status:** local hardening slice implemented; whole-phase exit verification open
 **Date:** 2026-10-03
 **Baseline:** reviewed Phase 0–4 commit `56c0cbf`, followed by accepted Phases 5–8
 **Roadmap:** [phased implementation plan](09-implementation-plan.md)
@@ -121,6 +121,12 @@ revision/ORM parity, verifies representative trips/reservations/proposals/import
 outcomes, resolves blob hashes/references and runs read/write smoke tests with
 synthetic data. Record elapsed time and achieved recovery point. Never restore
 over a live environment without explicit operator authorization.
+
+The local age-encrypted snapshot and isolated restore command are documented
+in [the Phase 9 operations runbook](runbooks/phase-9-operations.md). Their
+presence does not satisfy the restore-drill acceptance gate: no PostgreSQL
+environment was available to exercise SQL/blob recovery, and RPO/RTO/retention
+remain pending explicit approval.
 
 Versioned Phase 8 JSON exports support owner access to data. If a transfer/
 restore tool is built, require schema version validation, owner remapping,

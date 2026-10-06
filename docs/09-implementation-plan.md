@@ -248,11 +248,15 @@ Remaining separately gated work:
 
 ## Phase 9 — Operational hardening
 
-Detailed plan: [Phase 9](phase-9-implementation-plan.md). Planned, not delivered.
-This reviews established authentication and basic local operability; it does
-not postpone those prerequisites. Prove resource/cost controls, SQL/blob
-restore, locked releases/migration jobs and separately authorized hosted smoke
-before claiming production readiness.
+Detailed plan: [Phase 9](phase-9-implementation-plan.md). A local hardening
+slice is implemented: shared provider-unit budgets, a hosted identity guard,
+bounded database pools, encrypted local SQL/private-store backup and restore
+tooling, and non-root production containers. Whole-phase verification remains
+open. This reviews established authentication and basic local operability; it
+does not postpone those prerequisites. Prove approved recovery objectives,
+SQL/blob restore, release controls, and separately authorized hosted smoke
+before claiming production readiness. See the
+[Phase 9 release record](releases/phase-9-operational-hardening.md).
 
 - auth/authorization review,
 - backup/export/delete tools,

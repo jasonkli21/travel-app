@@ -1,13 +1,14 @@
 # Codex handoff
 
-Status: Phases 1–6 delivered/reviewed locally; Phase 7 initial comparison and Phase 8 local attachment/export slices implemented with exit gates open
+Status: Phases 1–6 delivered/reviewed locally; Phase 7/8 slices and Phase 9 local hardening implemented with exit gates open
 Date: 2026-10-05
 
 The identity and P6.2 checkpoints record their stage evidence. The combined
 Phase 6 release and whole-review report record remediation, checks, and
 external gates. Phase 7's initial implementation and open gates are recorded in
-its release note. Phase 8 local work is now present; stop before Phase 9 unless
-the user explicitly requests it.
+its release note. Phase 8 local work and the initial Phase 9 operational-
+hardening slice are present. Phase 9's whole-phase exit gates remain open;
+hosted deployment still requires separate authorization.
 
 ## Objective
 
@@ -34,7 +35,7 @@ Phase 5 proposal generation is implemented and reviewed locally, with gates
 default off.
 
 The [comprehensive Phase 0–4 audit](reviews/phase-0-4-audit.md) documents current
-fixes and verification. Migration `0014` is the current head; `0005` still
+fixes and verification. Migration `0015` is the current head; `0005` still
 requires online legacy-data inspection/repair and a pre-upgrade backup before
 upgrading an existing database. See local development and ADR 0009 before
 changing concurrency or local HTTP boundaries.
@@ -84,9 +85,11 @@ snapshots, and a read-focused travel page; its release note records open
 verification gates. It does not provide offline synchronization. Private
 attachments and document bundles remain default-off and require verified
 Google identity plus a private local store. GCS remains unimplemented pending
-separate authorization. Stop before Phase 9 unless explicitly requested.
+separate authorization.
 Phase 9 proves auth, quotas, SQL/blob restore and
 release/deployment controls; it does not defer basic security until then.
+The local hardening implementation, open recovery objectives, and runbook are
+recorded in [`releases/phase-9-operational-hardening.md`](releases/phase-9-operational-hardening.md).
 Cloud actions continue to require separate authorization.
 
 ## Read first
@@ -157,6 +160,16 @@ Backend:
 - migrations `0010`–`0014` verified identity, owner-scoped source/import
   records, durable extraction/confirmation recovery, replay records after
   source deletion, and trip-document relationships/idempotency.
+- migration `0015` adds hashed-owner/provider-wide SQL quota windows. Provider
+  calls are admitted before route work; budgets are request units, not monetary
+  caps. Hosted API configuration cannot use local identity, and production
+  web proxy mode defaults to hosted.
+- configurable bounded SQLAlchemy pool settings (five connections and zero
+  overflow by default), plus bounded cleanup for expired sessions/OAuth
+  attempts/provider counters.
+- age-encrypted SQL/private-store backup and hash verification tooling with a
+  separate empty-database restore path. RPO/RTO/retention are not yet approved
+  and the restore drill remains open.
 - gated local trip attachments with bounded uploads, owner-authorized safe
   downloads, recoverable deletion, and same-trip reservation links.
 - request-owned revision-stamped ICS, self-contained printable HTML, and
@@ -205,6 +218,8 @@ Infrastructure:
 
 - local PostgreSQL 16 through Docker Compose.
 - Dockerfiles for API/web.
+- Production API/web containers run as non-root; CI includes container build
+  and startup smoke jobs.
 - GCP/Neon deployment documented but not implemented.
 
 ## Phase 1–3 verification

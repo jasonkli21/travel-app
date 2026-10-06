@@ -56,7 +56,60 @@ jobs:
       - run: corepack enable
       - run: corepack prepare pnpm@10.17.1 --activate
       - run: pnpm install --frozen-lockfile
+      - run: pnpm audit --prod --audit-level=high
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
+
+  containers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build API image
+        run: docker build --tag personal-travel-api:ci ./backend
+      - name: Build web image
+        run: docker build --tag personal-travel-web:ci ./frontend
+      - name: Smoke test non-root API image
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(docker image inspect --format='{{.Config.User}}' personal-travel-api:ci)" = "10001:10001"
+          docker run --detach --rm --name travel-api-ci \
+            --publish 127.0.0.1:18080:8080 \
+            --env TRAVEL_DEPLOYMENT_MODE=local \
+            --env ALLOWED_HOSTS=127.0.0.1 \
+            personal-travel-api:ci
+          cleanup() { docker stop travel-api-ci >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:18080/health >/dev/null; then
+              docker image inspect --format='API image {{.Id}}' personal-travel-api:ci
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs travel-api-ci
+          exit 1
+      - name: Smoke test non-root web image
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(docker image inspect --format='{{.Config.User}}' personal-travel-web:ci)" = "node"
+          docker run --detach --rm --name travel-web-ci \
+            --publish 127.0.0.1:13000:8080 \
+            --env TRAVEL_DEPLOYMENT_MODE=local \
+            --env TRAVEL_WEB_ALLOWED_HOSTS=127.0.0.1 \
+            personal-travel-web:ci
+          cleanup() { docker stop travel-web-ci >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:13000/ >/dev/null; then
+              docker image inspect --format='Web image {{.Id}}' personal-travel-web:ci
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs travel-web-ci
+          exit 1
