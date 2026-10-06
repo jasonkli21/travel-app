@@ -74,6 +74,39 @@ test("proxy preserves JSON body, request ID and 204 deletion responses", async (
   assert.equal(await response.text(), "");
 });
 
+test("proxy preserves Retry-After and structured quota errors", async () => {
+  const fetchImpl = async () => Response.json(
+    { error: { code: "provider_quota_exceeded", message: "Budget exhausted." } },
+    { status: 429, headers: { "retry-after": "60", "x-request-id": "trace" } },
+  );
+  const response = await proxyRequest(new Request(url), ["trips"], { fetchImpl });
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get("retry-after"), "60");
+  assert.equal(response.headers.get("x-request-id"), "trace");
+  assert.equal((await response.json()).error.code, "provider_quota_exceeded");
+});
+
+test("proxy recognizes compact UUID upload routes for bounded streaming", async () => {
+  let received;
+  const fetchImpl = async (_url, options) => {
+    received = options;
+    return Response.json({ accepted: true });
+  };
+  const tripId = "12345678123412341234123456789abc";
+  const response = await proxyRequest(new Request(url, {
+    method: "POST",
+    headers: {
+      "content-type": "text/plain",
+      "x-import-request-key": "request-key-123",
+      origin: "http://localhost:3000",
+    },
+    body: "synthetic booking text",
+  }), ["trips", tripId, "imports"], { fetchImpl });
+  assert.equal(response.status, 200);
+  assert.equal(received.duplex, "half");
+  assert.equal(received.headers.get("x-import-request-key"), "request-key-123");
+});
+
 test("proxy forwards only the explicitly supported revision precondition", async () => {
   let forwarded;
   const fetchImpl = async (_upstream, options) => {

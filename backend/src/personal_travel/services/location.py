@@ -29,6 +29,8 @@ from personal_travel.repositories.trips import SqlAlchemyTripRepository
 from personal_travel.services.errors import DomainError, not_found
 from personal_travel.services.revisions import require_expected_revision
 
+MAX_ROUTE_PROVIDER_CALLS = 6
+
 
 @dataclass(frozen=True)
 class _EligibleLeg:
@@ -171,6 +173,7 @@ class LocationService:
     ) -> LogisticsEstimateResponse:
         day_id, eligible_legs = await run_in_threadpool(self._logistics_snapshot, trip_id, data)
         leg_groups = self._group_legs(eligible_legs)
+        self._require_bounded_route_calls(leg_groups)
         try:
             async with asyncio.timeout(30):
                 return await self._estimate_groups(day_id, leg_groups, data)
@@ -347,6 +350,15 @@ class LocationService:
             else:
                 groups.append([leg])
         return groups
+
+    @staticmethod
+    def _require_bounded_route_calls(groups: list[list[_EligibleLeg]]) -> None:
+        if len(groups) > MAX_ROUTE_PROVIDER_CALLS:
+            raise DomainError(
+                "too_many_route_batches",
+                "This day requires more than six route-provider requests; "
+                "estimate fewer transfers at a time.",
+            )
 
     @staticmethod
     def _provider_error(exc: GeoapifyClientError) -> DomainError:

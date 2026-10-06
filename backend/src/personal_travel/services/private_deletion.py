@@ -13,8 +13,14 @@ from personal_travel.clients.personal_ai import (
     PersonalAIClient,
     PersonalAIExtractionError,
 )
+from personal_travel.config import get_settings
 from personal_travel.models.import_source import BookingDeletionIntent, BookingImport
 from personal_travel.models.trip import Trip
+from personal_travel.services.provider_admission import (
+    ProviderAdmissionUnavailable,
+    QuotaExceeded,
+    admit_provider_request,
+)
 
 MAX_DELETION_RETRIES = 10
 MAX_DELETION_RETRY_SECONDS = 20.0
@@ -63,6 +69,11 @@ class PrivateDeletionService:
         for intent_id, extraction_key, source_sha256 in intents:
             if loop.time() >= deadline:
                 break
+            try:
+                await asyncio.to_thread(self._admit, owner_id)
+            except (QuotaExceeded, ProviderAdmissionUnavailable):
+                failed += 1
+                break
             attempted += 1
             try:
                 async with asyncio.timeout_at(deadline):
@@ -93,6 +104,7 @@ class PrivateDeletionService:
         if intent is None:
             return True
         intent_id, key, source_sha256 = intent
+        await asyncio.to_thread(self._admit, owner_id)
         try:
             result = await self._client.delete_booking_extraction_by_key(key, source_sha256)
         except PersonalAIExtractionError:
@@ -101,6 +113,16 @@ class PrivateDeletionService:
             return False
         await asyncio.to_thread(self._finish, owner_id, intent_id, key)
         return True
+
+    def _admit(self, owner_id: str) -> None:
+        settings = get_settings()
+        admit_provider_request(
+            self._factory,
+            owner_id=owner_id,
+            operation="personal_ai_deletion",
+            global_per_minute=settings.personal_ai_global_requests_per_minute,
+            global_per_day=settings.personal_ai_global_requests_per_day,
+        )
 
     def _pending(self, owner_id: str, limit: int) -> list[tuple[UUID, UUID, str]]:
         with self._factory() as session:

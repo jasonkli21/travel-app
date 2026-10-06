@@ -1,6 +1,7 @@
 import { readProxyBody } from "./proxy-response.mjs";
 
 const MAX_REQUEST_BYTES = 64 * 1024;
+const UUID_PATH_RE = /^(?:[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12})$/;
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const MAX_PRIVATE_DOWNLOAD_BYTES = 10 * 1024 * 1024;
 const MAX_EXPORT_RESPONSE_BYTES = 36 * 1024 * 1024;
@@ -59,23 +60,23 @@ function safeSetCookies(response) {
 
 function isImportUpload(path, method) {
   return method === "POST" && path.length === 3 && path[0] === "trips"
-    && /^[0-9a-fA-F-]{36}$/.test(path[1]) && path[2] === "imports";
+    && UUID_PATH_RE.test(path[1]) && path[2] === "imports";
 }
 
 function isAttachmentUpload(path, method) {
   return method === "POST" && path.length === 3 && path[0] === "trips"
-    && /^[0-9a-fA-F-]{36}$/.test(path[1]) && path[2] === "attachments";
+    && UUID_PATH_RE.test(path[1]) && path[2] === "attachments";
 }
 
 function isTripExport(path, method) {
   return method === "POST" && path.length === 3 && path[0] === "trips"
-    && /^[0-9a-fA-F-]{36}$/.test(path[1]) && path[2] === "exports";
+    && UUID_PATH_RE.test(path[1]) && path[2] === "exports";
 }
 
 function isAttachmentDownload(path, method) {
   return method === "GET" && path.length === 5 && path[0] === "trips"
-    && /^[0-9a-fA-F-]{36}$/.test(path[1]) && path[2] === "attachments"
-    && /^[0-9a-fA-F-]{36}$/.test(path[3]) && path[4] === "download";
+    && UUID_PATH_RE.test(path[1]) && path[2] === "attachments"
+    && UUID_PATH_RE.test(path[3]) && path[4] === "download";
 }
 
 function streamedUpload(request, maxBytes, abortController, onTooLarge) {
@@ -180,11 +181,13 @@ function streamedBoundedResponse(response, abortController, timeout, maxBytes, o
   });
 }
 
-async function readRequestBody(request) {
+async function readRequestBody(request, signal) {
   const reader = request.body?.getReader();
   if (!reader) return undefined;
   const chunks = [];
   let size = 0;
+  const cancel = () => { void reader.cancel(signal?.reason).catch(() => {}); };
+  signal?.addEventListener("abort", cancel, { once: true });
   try {
     while (true) {
       const { value, done } = await reader.read();
@@ -197,6 +200,7 @@ async function readRequestBody(request) {
       chunks.push(value);
     }
   } finally {
+    signal?.removeEventListener("abort", cancel);
     reader.releaseLock();
   }
   const body = new Uint8Array(size);
@@ -259,8 +263,8 @@ export async function proxyRequest(request, path, {
   const upload = importUpload || attachmentUpload;
   const tripExport = isTripExport(path, method);
   const isImportSource = method === "GET" && path.length === 5 && path[0] === "trips"
-    && /^[0-9a-fA-F-]{36}$/.test(path[1]) && path[2] === "imports"
-    && /^[0-9a-fA-F-]{36}$/.test(path[3]) && path[4] === "source";
+    && UUID_PATH_RE.test(path[1]) && path[2] === "imports"
+    && UUID_PATH_RE.test(path[3]) && path[4] === "source";
   const attachmentDownload = isAttachmentDownload(path, method);
   const isPrivateDownload = isImportSource || attachmentDownload;
   const isBinaryRequest = isPrivateDownload || tripExport;
@@ -300,7 +304,7 @@ export async function proxyRequest(request, path, {
       if (filename) headers.set("x-attachment-filename", filename.slice(0, 512));
       const reservationId = request.headers.get("x-attachment-reservation-id");
       if (reservationId) {
-        if (!/^[0-9a-fA-F-]{36}$/.test(reservationId)) {
+        if (!UUID_PATH_RE.test(reservationId)) {
           return errorResponse(400, "invalid_reservation_id", "A valid reservation link is required.");
         }
         headers.set("x-attachment-reservation-id", reservationId);
@@ -317,11 +321,11 @@ export async function proxyRequest(request, path, {
   const cookieHeader = allowedCookieHeader(path, cookies);
   if (cookieHeader) headers.set("cookie", cookieHeader);
   const isBookingExtraction = path.length === 5 && path[0] === "trips"
-    && /^[0-9a-fA-F-]{36}$/.test(path[1]) && path[2] === "imports"
-    && /^[0-9a-fA-F-]{36}$/.test(path[3]) && path[4] === "extract";
+    && UUID_PATH_RE.test(path[1]) && path[2] === "imports"
+    && UUID_PATH_RE.test(path[3]) && path[4] === "extract";
   const isImportCleanup = path.length === 5 && path[0] === "trips"
-    && /^[0-9a-fA-F-]{36}$/.test(path[1]) && path[2] === "imports"
-    && /^[0-9a-fA-F-]{36}$/.test(path[3])
+    && UUID_PATH_RE.test(path[1]) && path[2] === "imports"
+    && UUID_PATH_RE.test(path[3])
     && ((path[4] === "confirm" || path[4] === "reject") && request.method === "POST"
       || path[4] === "source" && request.method === "DELETE");
   const isDeletionRetry = path.length === 2 && path[0] === "private-import-deletion-intents"
@@ -364,7 +368,7 @@ export async function proxyRequest(request, path, {
               controller,
               () => { uploadTooLarge = true; },
             )
-            : await readRequestBody(request),
+            : await readRequestBody(request, controller.signal),
         ...(upload ? { duplex: "half" } : {}),
         cache: "no-store",
         redirect: "error",
@@ -372,7 +376,7 @@ export async function proxyRequest(request, path, {
       },
     );
     const responseHeaders = new Headers({ "Cache-Control": "no-store" });
-    for (const name of ["content-type", "x-request-id"]) {
+    for (const name of ["content-type", "x-request-id", "retry-after"]) {
       const value = response.headers.get(name);
       if (value) responseHeaders.set(name, value);
     }

@@ -6,13 +6,51 @@
 **Decision:** [ADR 0016](../decisions/0016-phase9-operational-hardening.md)
 **Runbook:** [Local operations](../runbooks/phase-9-operations.md)
 
+## Independent review remediation — 2026-10-06
+
+The first independent review found concrete bypasses in quota path matching,
+routing call reservation, private cleanup admission, backup verification, restore
+validation, and proxy error headers. The local code now:
+
+- recognizes canonical and compact UUID spellings consistently in backend
+  admission/body guards and the web proxy;
+- rejects route projections requiring more than the six calls reserved before
+  provider work;
+- admits upstream deletion immediately before each actual outbound cleanup
+  request. Local confirmation, replay, and source deletion remain available when
+  quota storage is exhausted; cleanup stays durable and pending for retry;
+- creates a genuinely passwordless libpq connection URI and verifies the whole
+  age-authenticated SQL stream in a protected temporary file before listing it;
+- validates the restored `itinerary_proposals` table and forwards `Retry-After`
+  through the web proxy;
+- bounds ordinary JSON body acquisition to 60 seconds and cancels proxy body
+  reads when its request deadline aborts.
+
+Focused verification on 2026-10-06: full backend Ruff, formatting, and mypy
+passed; targeted backend tests reported **25 passed, 18 skipped** (the skipped
+booking-import and PostgreSQL cases require `TEST_DATABASE_URL`); the full
+frontend Node test suite reported **53 passed**. Frontend package-manager
+lint/typecheck could not run because pnpm attempted to fetch its package from
+the unavailable npm registry.
+These checks do not establish encrypted age/pg_dump recovery, real restore
+publication, full-body deadline behavior under a live slow client, or multi-
+instance quotas. Full Phase 9 remains open.
+
+The review's owner-wide deletion workflow, full auth/browser route audit,
+performance/concurrency and safe telemetry evidence, reproducible pinned images
+and security scans, and production-container integration smoke are not supplied
+by this remediation. RPO/RTO/retention approval, real SQL/blob restore, live TLS
+proxy/service audiences/least-privilege roles, and separately authorized hosted
+smoke remain external gates. Do not treat this remediation as Phase 9 closure.
+
 ## Delivered locally
 
 - Added atomic PostgreSQL/SQLite fixed-window counters for owner and
   provider-wide admission. Provider-enabled research, comparison, proposal,
-  extraction, Geoapify search/route, and upstream source-deletion requests are
-  admitted before route/provider work; a missing shared counter store fails
-  closed.
+  extraction, and Geoapify search/route are admitted before provider work;
+  upstream deletion is admitted per actual outbound attempt, leaving local
+  confirmation and privacy deletion available. A missing shared counter store
+  fails closed for provider calls.
 - Added configurable per-provider shared ceilings and documented per-owner
   operation units. Logs report safe admission outcomes without owner identity,
   payload, source metadata, credentials, or provider URLs. These are request

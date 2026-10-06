@@ -36,6 +36,10 @@ from personal_travel.models.reservation import Reservation
 from personal_travel.models.trip import Trip
 from personal_travel.services.errors import DomainError, not_found
 from personal_travel.services.private_deletion import PrivateDeletionService, enqueue_in_session
+from personal_travel.services.provider_admission import (
+    ProviderAdmissionUnavailable,
+    QuotaExceeded,
+)
 from personal_travel.services.source_lifecycle import SourceLifecycleService
 from personal_travel.services.source_parser import MAX_TEXT_CHARS, SourceParseError, parse_pdf
 from personal_travel.services.source_store import LocalSourceStore
@@ -283,6 +287,7 @@ class BookingImportService:
                 extraction_key=extraction_key,
                 source_sha256=digest,
             )
+        admission_denied = False
         try:
             deleted = asyncio.run(
                 PrivateDeletionService(self._factory, self._client).retry_one(
@@ -291,7 +296,12 @@ class BookingImportService:
             )
         except RuntimeError:
             deleted = False
-        if not deleted:
+        except (QuotaExceeded, ProviderAdmissionUnavailable):
+            deleted = False
+            admission_denied = True
+        # A quota-store outage must not block local confirmation or privacy
+        # deletion. Keep the durable intent for a later bounded retry.
+        if not deleted and not admission_denied:
             raise DomainError(
                 "upstream_delete_pending",
                 "The local source is deleted, but AI result deletion is pending. "

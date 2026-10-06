@@ -49,8 +49,8 @@ class ProviderAdmissionUnavailable(Exception):
 
 
 # Per-owner caps bound one owner's traffic. Provider-wide caps remain shared
-# across owners and app instances. Route estimates reserve the maximum six
-# Geoapify HTTP calls for a 50-leg request before route projection is known.
+# across owners and app instances. Route estimates reserve six calls and reject
+# projections that would require more before beginning provider work.
 RULES: dict[str, QuotaRule] = {
     "geoapify_search": QuotaRule("geoapify_search", "geoapify", 1, 8, 100),
     "geoapify_route": QuotaRule("geoapify_route", "geoapify", 6, 12, 60),
@@ -59,9 +59,6 @@ RULES: dict[str, QuotaRule] = {
     "personal_ai_proposal": QuotaRule("personal_ai_proposal", "personal_ai", 1, 2, 10),
     "personal_ai_extraction": QuotaRule("personal_ai_extraction", "personal_ai", 1, 1, 5),
     "personal_ai_deletion": QuotaRule("personal_ai_deletion", "personal_ai", 1, 2, 20),
-    "personal_ai_deletion_batch": QuotaRule(
-        "personal_ai_deletion_batch", "personal_ai", 10, 10, 20
-    ),
 }
 
 

@@ -26,7 +26,7 @@ from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine import make_url
+from sqlalchemy.engine import URL, make_url
 
 MANIFEST_NAME = "manifest.json"
 DATABASE_NAME = "database.dump.age"
@@ -49,8 +49,17 @@ def _postgres_connection(database_url: str) -> tuple[str, str, str]:
     if not url.host or not url.database or not url.username:
         raise BackupError("The database URL must include host, database, and user.")
     safe_query = {key: value for key, value in url.query.items() if key == "sslmode"}
-    safe_url = url.set(drivername="postgresql", password=None, query=safe_query)
-    rendered = safe_url.render_as_string(hide_password=True)
+    # URL.set(password=None) retains the existing password. Construct a new
+    # URL so libpq receives no password field and can use PGPASSFILE.
+    safe_url = URL.create(
+        drivername="postgresql",
+        username=url.username,
+        host=url.host,
+        port=url.port,
+        database=url.database,
+        query=safe_query,
+    )
+    rendered = safe_url.render_as_string(hide_password=False)
     return rendered, url.password or "", url.host
 
 
@@ -393,25 +402,32 @@ def _read_archive(
 
 def _verify_database_dump(database_ciphertext: Path, identity: Path) -> None:
     _require_programs("age", "pg_restore")
-    with database_ciphertext.open("rb") as encrypted:
-        age = subprocess.Popen(
-            ["age", "-d", "-i", str(identity)],
-            stdin=encrypted,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-        )
-        assert age.stdout is not None
-        restore = subprocess.Popen(
-            ["pg_restore", "--list"],
-            stdin=age.stdout,
+    # pg_restore --list exits after reading the archive TOC. Drain and
+    # authenticate the complete age stream to private temporary storage first.
+    fd, raw_path = tempfile.mkstemp(prefix="travel-verify-sql-")
+    plaintext = Path(raw_path)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "wb") as output, database_ciphertext.open("rb") as encrypted:
+            age = subprocess.run(
+                ["age", "-d", "-i", str(identity)],
+                stdin=encrypted,
+                stdout=output,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+            if age.returncode != 0:
+                raise BackupError("Age could not decrypt or authenticate this backup.")
+        restore = subprocess.run(
+            ["pg_restore", "--list", str(plaintext)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            check=False,
         )
-        age.stdout.close()
-        restore_status = restore.wait()
-        age_status = age.wait()
-    if restore_status != 0 or age_status != 0:
-        raise BackupError("Encrypted PostgreSQL archive could not be verified.")
+        if restore.returncode != 0:
+            raise BackupError("Encrypted PostgreSQL archive could not be verified.")
+    finally:
+        plaintext.unlink(missing_ok=True)
 
 
 def verify_backup(artifact: Path, identity: Path) -> dict[str, Any]:
@@ -498,7 +514,7 @@ def _validate_restored_database(database_url: str, expected_revision: str) -> di
                 raise BackupError("Restored Alembic revision differs from the backup manifest.")
             counts = {
                 table: int(connection.scalar(text(f"SELECT count(*) FROM {table}")) or 0)
-                for table in ("trips", "reservations", "proposals", "booking_imports")
+                for table in ("trips", "reservations", "itinerary_proposals", "booking_imports")
             }
             connection.exec_driver_sql(
                 "CREATE TEMP TABLE phase9_restore_smoke (value integer) ON COMMIT DROP"

@@ -35,17 +35,15 @@ from personal_travel.services.provider_admission import (
 logger = logging.getLogger("personal_travel.requests")
 MAX_REQUEST_BYTES = 64 * 1024
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
-UPLOAD_PATH = re.compile(r"^/v1/trips/[0-9a-fA-F-]{36}/imports$")
-ATTACHMENT_UPLOAD_PATH = re.compile(r"^/v1/trips/[0-9a-fA-F-]{36}/attachments$")
-EXTRACTION_PATH = re.compile(r"^/v1/trips/[0-9a-fA-F-]{36}/imports/[0-9a-fA-F-]{36}/extract$")
+UUID_PATH = r"(?:[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12})"
+UPLOAD_PATH = re.compile(rf"^/v1/trips/{UUID_PATH}/imports$")
+ATTACHMENT_UPLOAD_PATH = re.compile(rf"^/v1/trips/{UUID_PATH}/attachments$")
+EXTRACTION_PATH = re.compile(rf"^/v1/trips/{UUID_PATH}/imports/{UUID_PATH}/extract$")
 COMPARISON_PATH = re.compile(
-    r"^/v1/trips/[0-9a-fA-F-]{36}/research/(?:compare|comparisons/[0-9a-fA-F-]{36}/candidates/[0-9a-fA-F-]{36}/save)$"
+    rf"^/v1/trips/{UUID_PATH}/research/(?:compare|comparisons/{UUID_PATH}/candidates/{UUID_PATH}/save)$"
 )
-TRIP_RESEARCH_PATH = re.compile(r"^/v1/trips/[0-9a-fA-F-]{36}/research$")
-TRIP_PROPOSAL_PATH = re.compile(r"^/v1/trips/[0-9a-fA-F-]{36}/proposals$")
-IMPORT_CLEANUP_PATH = re.compile(
-    r"^/v1/trips/[0-9a-fA-F-]{36}/imports/[0-9a-fA-F-]{36}/(?:confirm|reject|source)$"
-)
+TRIP_RESEARCH_PATH = re.compile(rf"^/v1/trips/{UUID_PATH}/research$")
+TRIP_PROPOSAL_PATH = re.compile(rf"^/v1/trips/{UUID_PATH}/proposals$")
 UPLOAD_SECONDS = 30
 
 
@@ -61,33 +59,21 @@ def _provider_operation(path: str, method: str, settings: Settings) -> str | Non
     if settings.geoapify_api_key is not None and bool(
         settings.geoapify_api_key.get_secret_value().strip()
     ):
-        if method == "GET" and re.fullmatch(r"/v1/trips/[0-9a-fA-F-]{36}/places/search", path):
+        if method == "GET" and re.fullmatch(rf"/v1/trips/{UUID_PATH}/places/search", path):
             return "geoapify_search"
-        if method == "POST" and re.fullmatch(
-            r"/v1/trips/[0-9a-fA-F-]{36}/logistics/estimate", path
-        ):
+        if method == "POST" and re.fullmatch(rf"/v1/trips/{UUID_PATH}/logistics/estimate", path):
             return "geoapify_route"
     if method == "POST":
         if settings.personal_ai_research_enabled and TRIP_RESEARCH_PATH.fullmatch(path):
             return "personal_ai_research"
         if settings.personal_ai_comparisons_enabled and re.fullmatch(
-            r"/v1/trips/[0-9a-fA-F-]{36}/research/compare", path
+            rf"/v1/trips/{UUID_PATH}/research/compare", path
         ):
             return "personal_ai_comparison"
         if settings.personal_ai_proposals_enabled and TRIP_PROPOSAL_PATH.fullmatch(path):
             return "personal_ai_proposal"
         if settings.personal_ai_extractions_enabled and EXTRACTION_PATH.fullmatch(path):
             return "personal_ai_extraction"
-        if path == "/v1/private-import-deletion-intents/retry":
-            return "personal_ai_deletion_batch"
-        if re.fullmatch(
-            r"/v1/trips/[0-9a-fA-F-]{36}/imports/[0-9a-fA-F-]{36}/(?:confirm|reject)", path
-        ):
-            return "personal_ai_deletion"
-    elif method == "DELETE" and re.fullmatch(
-        r"/v1/trips/[0-9a-fA-F-]{36}/imports/[0-9a-fA-F-]{36}/source", path
-    ):
-        return "personal_ai_deletion"
     return None
 
 
@@ -532,6 +518,7 @@ class LocalBoundaryMiddleware:
             # an unbounded body in FastAPI's JSON parser.
             body = bytearray()
             extraction_deadline = None
+            body_deadline = asyncio.get_running_loop().time() + 60
             if method == "POST" and EXTRACTION_PATH.fullmatch(path):
                 extraction_deadline = (
                     asyncio.get_running_loop().time()
@@ -539,27 +526,27 @@ class LocalBoundaryMiddleware:
                 )
                 scope["booking_extraction_deadline"] = extraction_deadline
             while True:
-                if extraction_deadline is None:
-                    message = await receive()
-                else:
-                    remaining = extraction_deadline - asyncio.get_running_loop().time()
-                    if remaining <= 0:
-                        await reject(
-                            408,
-                            "extraction_timeout",
-                            "Booking extraction exceeded its total time limit.",
-                        )
-                        return
-                    try:
-                        async with asyncio.timeout(remaining):
-                            message = await receive()
-                    except TimeoutError:
-                        await reject(
-                            408,
-                            "extraction_timeout",
-                            "Booking extraction exceeded its total time limit.",
-                        )
-                        return
+                deadline = extraction_deadline or body_deadline
+                remaining = deadline - asyncio.get_running_loop().time()
+                timeout_code = (
+                    "extraction_timeout"
+                    if extraction_deadline is not None
+                    else "request_body_timeout"
+                )
+                timeout_message = (
+                    "Booking extraction exceeded its total time limit."
+                    if extraction_deadline is not None
+                    else "The request body took too long."
+                )
+                if remaining <= 0:
+                    await reject(408, timeout_code, timeout_message)
+                    return
+                try:
+                    async with asyncio.timeout(remaining):
+                        message = await receive()
+                except TimeoutError:
+                    await reject(408, timeout_code, timeout_message)
+                    return
                 if message["type"] == "http.disconnect":
                     return
                 body.extend(message.get("body", b""))

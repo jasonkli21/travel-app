@@ -19,12 +19,17 @@ decision.
 1. Provider admission uses atomic fixed-window counters in PostgreSQL, keyed by
    a one-way owner hash and operation, plus a provider-wide counter. Every
    configured instance uses the same database rows. Admission runs after
-   request identity/CSRF checks and before the relevant provider route. Failure
-   to read or update the shared counters returns `503`; exhausted budgets
-   return `429` with `Retry-After`.
+   request identity/CSRF checks and before billable provider work. For durable
+   private deletion, admission occurs per actual outbound attempt after the
+   intent is loaded, so local confirmation, replay, source deletion, and empty
+   cleanup retries do not depend on provider quota availability. Failure to
+   read or update the shared counters prevents the provider call; synchronous
+   provider operations return `503` and exhausted budgets return `429` with
+   `Retry-After`.
 2. A quota unit is a conservative provider request unit, not a monetary amount.
-   Route estimates reserve six Geoapify units, the maximum number of HTTP
-   batches for 50 eligible legs. Current defaults are:
+   Route estimates reserve six Geoapify units and reject a projection that
+   would require more than six HTTP batches, even when it has fewer than 50
+   eligible legs. Current defaults are:
 
    | Provider / operation | Per owner per minute | Per owner per day | Shared provider per minute | Shared provider per day |
    | --- | ---: | ---: | ---: | ---: |
@@ -35,12 +40,13 @@ decision.
    | Personal AI proposal | 2 | 10 | same AI pool | same AI pool |
    | Personal AI extraction | 1 | 5 | same AI pool | same AI pool |
    | Personal AI deletion | 2 | 20 | same AI pool | same AI pool |
-   | Personal AI deletion retry batch | 10 units | 20 units | same AI pool | same AI pool |
 
    Operators can lower or raise shared ceilings through settings within the
    validated ranges. The shared database ceiling applies across owners and
    instances. It is not a dollar cap. Provider billing controls, alerts, and
    the direct browser map-tile key require separate provider configuration.
+   Deletion cleanup charges one unit per outbound attempt, up to its bounded
+   ten-intent pass; empty batches charge nothing.
 3. `TRAVEL_DEPLOYMENT_MODE=hosted` requires Google OIDC, explicit non-loopback
    API hosts, and explicit HTTPS browser origins. Cloud Run's `K_SERVICE`
    marker makes local mode fail during settings validation. Production web

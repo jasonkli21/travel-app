@@ -24,6 +24,7 @@ def test_backup_connection_removes_password_and_unneeded_query_parameters() -> N
     assert password == "s@cret"
     assert host == "db.example.test"
     assert "secret" not in dsn
+    assert "***" not in dsn
     assert "private-value" not in dsn
 
 

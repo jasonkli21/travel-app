@@ -154,11 +154,10 @@ def test_provider_operation_mapping_is_gated_and_excludes_local_mutations() -> N
     )
     assert (
         _provider_operation(f"/v1/trips/{trip_id}/imports/{import_id}/confirm", "POST", settings)
-        == "personal_ai_deletion"
+        is None
     )
     assert (
-        _provider_operation("/v1/private-import-deletion-intents/retry", "POST", settings)
-        == "personal_ai_deletion_batch"
+        _provider_operation("/v1/private-import-deletion-intents/retry", "POST", settings) is None
     )
     assert _provider_operation(f"/v1/trips/{trip_id}/proposals", "GET", settings) is None
     assert (
@@ -171,6 +170,36 @@ def test_provider_operation_mapping_is_gated_and_excludes_local_mutations() -> N
     )
     no_providers = Settings(_env_file=None)
     assert _provider_operation(f"/v1/trips/{trip_id}/places/search", "GET", no_providers) is None
+
+
+def test_compact_uuid_paths_receive_the_same_provider_admission_mapping() -> None:
+    settings = Settings(_env_file=None).model_copy(
+        update={
+            "geoapify_api_key": SecretStr("synthetic-key"),
+            "personal_ai_research_enabled": True,
+            "personal_ai_extractions_enabled": True,
+        }
+    )
+    trip_id = "12345678123412341234123456789abc"
+    import_id = "abcdefabcdefabcdefabcdefabcdefab"
+    assert (
+        _provider_operation(f"/v1/trips/{trip_id}/places/search", "GET", settings)
+        == "geoapify_search"
+    )
+    assert (
+        _provider_operation(f"/v1/trips/{trip_id}/research", "POST", settings)
+        == "personal_ai_research"
+    )
+    assert (
+        _provider_operation(f"/v1/trips/{trip_id}/imports/{import_id}/extract", "POST", settings)
+        == "personal_ai_extraction"
+    )
+    # Local privacy deletion has its own late-bound admission immediately
+    # before the upstream call; the mutation route itself is never blocked.
+    assert (
+        _provider_operation(f"/v1/trips/{trip_id}/imports/{import_id}/source", "DELETE", settings)
+        is None
+    )
 
 
 def test_hosted_settings_require_verified_identity_and_explicit_web_origins(
@@ -240,6 +269,10 @@ def test_http_provider_budget_returns_retry_after_before_route_dispatch(
                     global_per_day=200,
                 )
             denied = client.get(f"/v1/trips/{trip_id}/places/search", params={"q": "coffee"})
+            compact_denied = client.get(
+                "/v1/trips/12345678123412341234123456789abc/places/search",
+                params={"q": "coffee"},
+            )
     finally:
         app.dependency_overrides.pop(session_dependency, None)
         app.state.auth_session_factory = original_factory
@@ -248,6 +281,7 @@ def test_http_provider_budget_returns_retry_after_before_route_dispatch(
     assert denied.status_code == 429
     assert denied.headers["Retry-After"]
     assert denied.json()["error"]["code"] == "provider_quota_exceeded"
+    assert compact_denied.status_code == 429
 
 
 def test_postgres_shared_budget_is_atomic_across_connections(database_engine) -> None:
