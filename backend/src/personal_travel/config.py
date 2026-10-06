@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     personal_ai_proposals_enabled: bool = False
     personal_ai_extractions_enabled: bool = False
     private_imports_enabled: bool = False
+    private_attachments_enabled: bool = False
     private_source_dir: str = ""
     personal_ai_proposal_timeout_seconds: float = Field(default=45.0, gt=0, le=49)
     personal_ai_extraction_timeout_seconds: float = Field(default=35.0, gt=0, le=40)
@@ -59,11 +60,12 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_identity_configuration(self) -> "Settings":
-        if self.private_imports_enabled:
+        if self.private_imports_enabled or self.private_attachments_enabled:
             source_path = Path(self.private_source_dir).expanduser()
             if self.travel_auth_mode != "google_oidc" or not self.private_source_dir:
                 raise ValueError(
-                    "Private imports require Google mode and a private source directory."
+                    "Private imports and attachments require Google mode "
+                    "and a private source directory."
                 )
             if not source_path.is_absolute():
                 raise ValueError("Private source storage must use an absolute directory path.")

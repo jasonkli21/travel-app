@@ -107,7 +107,7 @@ def _send(connection: Connection, code: str, text: str = "") -> None:
     connection.send((code, text))
 
 
-def _worker(path: str, connection: Connection) -> None:
+def _worker(path: str, connection: Connection, require_text: bool = True) -> None:
     try:
         limits = (
             (resource.RLIMIT_CORE, 0, "parser_core_limit_failed"),
@@ -140,6 +140,9 @@ def _worker(path: str, connection: Connection) -> None:
         if len(reader.pages) > MAX_PDF_PAGES:
             _send(connection, "too_many_pages")
             return
+        if not require_text:
+            _send(connection, "ok")
+            return
         pieces: list[str] = []
         count = 0
         for page in reader.pages:
@@ -167,13 +170,16 @@ def parse_pdf(
     *,
     wall_time_seconds: float = PARSER_SECONDS,
     worker: Callable[[str, Connection], None] | None = None,
+    require_text: bool = True,
 ) -> str:
     """Extract text, killing the child if its wall clock or process limits fail."""
     if wall_time_seconds <= 0 or wall_time_seconds > PARSER_SECONDS:
         raise ValueError("The parser deadline must be between zero and eight seconds.")
     context = mp.get_context("spawn")
     parent, child = context.Pipe(duplex=False)
-    process = context.Process(target=worker or _worker, args=(str(path), child))
+    target = worker or _worker
+    arguments = (str(path), child) if worker is not None else (str(path), child, require_text)
+    process = context.Process(target=target, args=arguments)
     started = time.monotonic()
     child_closed = False
     try:
@@ -231,3 +237,8 @@ def parse_pdf(
             if process.is_alive():
                 process.kill()
                 process.join()
+
+
+def validate_pdf(path: Path, *, wall_time_seconds: float = PARSER_SECONDS) -> None:
+    """Structure-check a document PDF without requiring extractable text."""
+    parse_pdf(path, wall_time_seconds=wall_time_seconds, require_text=False)

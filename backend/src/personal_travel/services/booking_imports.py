@@ -494,7 +494,12 @@ class BookingImportService:
                     SourceAttachment.trip_id == trip_id,
                 )
             )
-            if source is None or source.state != "ready" or source.expires_at <= now:
+            if (
+                source is None
+                or source.state != "ready"
+                or source.expires_at is None
+                or source.expires_at <= now
+            ):
                 raise DomainError(
                     "source_unavailable", "The source is unavailable.", status_code=410
                 )
@@ -603,6 +608,7 @@ class BookingImportService:
                 item.state != "extracting"
                 or source is None
                 or source.state != "ready"
+                or source.expires_at is None
                 or source.expires_at <= now
             ):
                 raise DomainError(

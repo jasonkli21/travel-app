@@ -12,6 +12,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -29,23 +30,46 @@ class SourceAttachment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     trip_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("trips.id", ondelete="SET NULL"), index=True
     )
+    reservation_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("reservations.id", ondelete="SET NULL"), index=True
+    )
+    purpose: Mapped[str] = mapped_column(String(24), nullable=False, default="booking_source")
     object_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     media_type: Mapped[str] = mapped_column(String(32), nullable=False)
     byte_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
     display_filename: Mapped[str | None] = mapped_column(String(120))
     state: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    upload_request_key: Mapped[str | None] = mapped_column(String(128))
+    upload_request_fingerprint: Mapped[str | None] = mapped_column(String(64))
     __table_args__ = (
+        Index(
+            "ix_source_attachments_owner_trip_purpose",
+            "owner_id",
+            "trip_id",
+            "purpose",
+        ),
+        UniqueConstraint("owner_id", "upload_request_key", name="uq_attachment_upload_request"),
         CheckConstraint("state IN ('pending','ready','deleting')", name="source_attachment_state"),
+        CheckConstraint(
+            "purpose IN ('booking_source','trip_attachment')", name="source_attachment_purpose"
+        ),
         CheckConstraint("byte_size > 0 AND byte_size <= 10485760", name="source_attachment_size"),
         CheckConstraint(
             "(media_type = 'text/plain' AND byte_size <= 1048576) "
-            "OR media_type = 'application/pdf'",
+            "OR (media_type = 'application/pdf' AND byte_size <= 10485760) "
+            "OR (media_type IN ('image/jpeg','image/png') AND byte_size <= 10485760)",
             name="source_attachment_media_size",
         ),
         CheckConstraint("length(sha256) = 64", name="source_attachment_hash_length"),
         CheckConstraint("length(object_key) = 32", name="source_attachment_key_length"),
+        CheckConstraint(
+            "(upload_request_key IS NULL AND upload_request_fingerprint IS NULL) OR "
+            "(length(upload_request_key) BETWEEN 8 AND 128 AND "
+            "length(upload_request_fingerprint) = 64)",
+            name="source_attachment_upload_request",
+        ),
     )
 
 

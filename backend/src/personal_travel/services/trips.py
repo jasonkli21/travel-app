@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from personal_travel.api.schemas import DayUpdate, TripCreate, TripUpdate
-from personal_travel.models.import_source import BookingImport
+from personal_travel.models.import_source import BookingImport, SourceAttachment
 from personal_travel.models.trip import Trip, TripDay
 from personal_travel.repositories.trips import SqlAlchemyTripRepository
 from personal_travel.services.errors import DomainError, not_found
@@ -159,6 +159,20 @@ class TripService:
                         extraction_key=item.extraction_key,
                         source_sha256=item.extraction_text_sha256 or item.source_sha256,
                     )
+            # Tombstone every source/document before ON DELETE SET NULL removes
+            # its trip reference. The bounded cleanup worker can finish even if
+            # this process stops after the database commit.
+            attachments = self._session.scalars(
+                select(SourceAttachment)
+                .where(
+                    SourceAttachment.owner_id == self._owner_id,
+                    SourceAttachment.trip_id == trip.id,
+                )
+                .order_by(SourceAttachment.id)
+                .with_for_update()
+            ).all()
+            for attachment in attachments:
+                attachment.state = "deleting"
             self._trips.delete(trip)
 
     def _get_in_transaction(self, trip_id: UUID) -> Trip:

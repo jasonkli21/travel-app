@@ -30,6 +30,7 @@ logger = logging.getLogger("personal_travel.requests")
 MAX_REQUEST_BYTES = 64 * 1024
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 UPLOAD_PATH = re.compile(r"^/v1/trips/[0-9a-fA-F-]{36}/imports$")
+ATTACHMENT_UPLOAD_PATH = re.compile(r"^/v1/trips/[0-9a-fA-F-]{36}/attachments$")
 EXTRACTION_PATH = re.compile(r"^/v1/trips/[0-9a-fA-F-]{36}/imports/[0-9a-fA-F-]{36}/extract$")
 COMPARISON_PATH = re.compile(
     r"^/v1/trips/[0-9a-fA-F-]{36}/research/(?:compare|comparisons/[0-9a-fA-F-]{36}/candidates/[0-9a-fA-F-]{36}/save)$"
@@ -321,9 +322,18 @@ class LocalBoundaryMiddleware:
                         service_account=settings.personal_ai_service_account,
                     )
 
-            upload = method == "POST" and UPLOAD_PATH.fullmatch(path) is not None
-            if upload:
-                if (
+            import_upload = method == "POST" and UPLOAD_PATH.fullmatch(path) is not None
+            attachment_upload = (
+                method == "POST" and ATTACHMENT_UPLOAD_PATH.fullmatch(path) is not None
+            )
+            if import_upload or attachment_upload:
+                if attachment_upload and (
+                    not settings.private_attachments_enabled
+                    or settings.travel_auth_mode != "google_oidc"
+                ):
+                    await reject(404, "attachments_disabled", "Trip attachments are unavailable.")
+                    return
+                if import_upload and (
                     not settings.private_imports_enabled
                     or settings.travel_auth_mode != "google_oidc"
                 ):
@@ -332,8 +342,18 @@ class LocalBoundaryMiddleware:
                     )
                     return
                 media_type = (headers.get("content-type") or "").split(";", 1)[0].strip().lower()
-                if media_type not in {"text/plain", "application/pdf"}:
-                    await reject(415, "unsupported_media_type", "Use plain text or PDF.")
+                allowed_media = (
+                    {"text/plain", "application/pdf"}
+                    if import_upload
+                    else {"text/plain", "application/pdf", "image/jpeg", "image/png"}
+                )
+                if media_type not in allowed_media:
+                    upload_error_message = (
+                        "Use plain text or PDF."
+                        if import_upload
+                        else "Use plain text, PDF, JPEG, or PNG."
+                    )
+                    await reject(415, "unsupported_media_type", upload_error_message)
                     return
                 limit = 1024 * 1024 if media_type == "text/plain" else MAX_UPLOAD_BYTES
                 content_length = headers.get("content-length")

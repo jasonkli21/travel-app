@@ -102,11 +102,16 @@ def cleanup(
         inspected += 1
         source_cursor = str(source_id)
         stale_pending = state == "pending" and created_at <= stale
-        if stale_pending and trip_id is not None and expires_at > now:
+        if stale_pending and trip_id is not None and (expires_at is None or expires_at > now):
             if _recover_pending(session_factory, store, source_id, owner_id, stale, now):
                 reconciled += 1
                 continue
-        stale_source = state == "deleting" or trip_id is None or expires_at <= now or stale_pending
+        stale_source = (
+            state == "deleting"
+            or trip_id is None
+            or (expires_at is not None and expires_at <= now)
+            or stale_pending
+        )
         if stale_source:
             claimed_key = _claim_for_deletion(session_factory, source_id, owner_id, stale, now)
             if claimed_key is not None and _finish_deletion(
@@ -160,7 +165,7 @@ def cleanup(
 
 def _source_snapshot(
     session_factory: SessionFactoryLike, source_id: UUID, owner_id: str | None
-) -> tuple[str, str, int, str, datetime, datetime] | None:
+) -> tuple[str, str, int, str, datetime | None, datetime, UUID | None] | None:
     statement = select(
         SourceAttachment.object_key,
         SourceAttachment.sha256,
@@ -168,6 +173,7 @@ def _source_snapshot(
         SourceAttachment.state,
         SourceAttachment.expires_at,
         SourceAttachment.created_at,
+        SourceAttachment.trip_id,
     ).where(SourceAttachment.id == source_id)
     if owner_id is not None:
         statement = statement.where(SourceAttachment.owner_id == owner_id)
@@ -186,8 +192,13 @@ def _recover_pending(
     snapshot = _source_snapshot(session_factory, source_id, owner_id)
     if snapshot is None:
         return False
-    object_key, expected_hash, expected_size, state, expires_at, created_at = snapshot
-    if state != "pending" or expires_at <= now or created_at > stale:
+    object_key, expected_hash, expected_size, state, expires_at, created_at, trip_id = snapshot
+    if (
+        state != "pending"
+        or trip_id is None
+        or (expires_at is not None and expires_at <= now)
+        or created_at > stale
+    ):
         return False
     if not _matches(store, object_key, expected_hash, expected_size):
         return False
@@ -196,7 +207,7 @@ def _recover_pending(
         .where(
             SourceAttachment.id == source_id,
             SourceAttachment.state == "pending",
-            SourceAttachment.expires_at > now,
+            or_(SourceAttachment.expires_at.is_(None), SourceAttachment.expires_at > now),
             SourceAttachment.created_at <= stale,
         )
         .values(state="ready", updated_at=now)
@@ -205,6 +216,10 @@ def _recover_pending(
     if owner_id is not None:
         statement = statement.where(SourceAttachment.owner_id == owner_id)
     with session_factory() as session, session.begin():
+        trip = session.scalar(select(Trip).where(Trip.id == trip_id).with_for_update())
+        if trip is None:
+            return False
+        statement = statement.where(SourceAttachment.trip_id == trip_id)
         recovered = session.execute(statement).scalar_one_or_none() is not None
     if recovered:
         store.delete(object_key, temp=True)

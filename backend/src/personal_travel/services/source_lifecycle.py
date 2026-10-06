@@ -46,7 +46,7 @@ def import_metadata(item: BookingImport, source: SourceAttachment | None) -> dic
     if source is not None:
         source_id = str(source.id)
         display_filename = source.display_filename
-        if source.state == "ready" and source.expires_at <= now:
+        if source.state == "ready" and source.expires_at is not None and source.expires_at <= now:
             source_state = "expired"
     return {
         "id": str(item.id),
@@ -256,18 +256,26 @@ class SourceLifecycleService:
             if item is None:
                 raise not_found("import")
             source = self._source(session, item, owner_id, trip_id)
-            descriptor = (
-                None
-                if source is None
-                else SourceDescriptor(
+            if source is not None and source.expires_at is None:
+                raise DomainError(
+                    "source_unavailable", "The source is unavailable.", status_code=410
+                )
+            if source is None:
+                descriptor = None
+            else:
+                expires_at = source.expires_at
+                if expires_at is None:
+                    raise DomainError(
+                        "source_unavailable", "The source is unavailable.", status_code=410
+                    )
+                descriptor = SourceDescriptor(
                     object_key=source.object_key,
                     sha256=source.sha256,
                     media_type=source.media_type,
                     byte_size=source.byte_size,
-                    expires_at=source.expires_at,
+                    expires_at=expires_at,
                     state=source.state,
                 )
-            )
             return import_metadata(item, source), descriptor
 
     def list_imports(self, owner_id: str, trip_id: UUID) -> list[dict[str, object]]:
@@ -403,6 +411,7 @@ class SourceLifecycleService:
                 SourceAttachment.id == item.source_id,
                 SourceAttachment.owner_id == owner_id,
                 SourceAttachment.trip_id == trip_id,
+                SourceAttachment.purpose == "booking_source",
             )
         )
 
