@@ -1,12 +1,13 @@
 # Codex handoff
 
-Status: Phases 1–6 delivered/reviewed locally; Phase 7 initial comparison slice implemented with exit gate open
+Status: Phases 1–6 delivered/reviewed locally; Phase 7 initial comparison and Phase 8 local attachment/export slices implemented with exit gates open
 Date: 2026-10-05
 
 The identity and P6.2 checkpoints record their stage evidence. The combined
 Phase 6 release and whole-review report record remediation, checks, and
 external gates. Phase 7's initial implementation and open gates are recorded in
-its release note. Stop before Phase 8 unless the user explicitly requests it.
+its release note. Phase 8 local work is now present; stop before Phase 9 unless
+the user explicitly requests it.
 
 ## Objective
 
@@ -33,7 +34,7 @@ Phase 5 proposal generation is implemented and reviewed locally, with gates
 default off.
 
 The [comprehensive Phase 0–4 audit](reviews/phase-0-4-audit.md) documents current
-fixes and verification. Migration `0013` is the current head; `0005` still
+fixes and verification. Migration `0014` is the current head; `0005` still
 requires online legacy-data inspection/repair and a pre-upgrade backup before
 upgrading an existing database. See local development and ADR 0009 before
 changing concurrency or local HTTP boundaries.
@@ -78,9 +79,13 @@ verification. Read
 and [`releases/phase-7-travel-comparison.md`](releases/phase-7-travel-comparison.md).
 ADR 0014 accepts the initial type/radius/source contract; the upstream has no
 memory-retrieval route, and the current category fixture/live-provider exit
-checks remain open. Stop before Phase 8 unless explicitly requested.
-Phase 8 adds private document access and explicit static snapshots,
-not offline synchronization. Phase 9 proves auth, quotas, SQL/blob restore and
+checks remain open. Phase 8 now adds private document access, explicit static
+snapshots, and a read-focused travel page; its release note records open
+verification gates. It does not provide offline synchronization. Private
+attachments and document bundles remain default-off and require verified
+Google identity plus a private local store. GCS remains unimplemented pending
+separate authorization. Stop before Phase 9 unless explicitly requested.
+Phase 9 proves auth, quotas, SQL/blob restore and
 release/deployment controls; it does not defer basic security until then.
 Cloud actions continue to require separate authorization.
 
@@ -149,9 +154,13 @@ Backend:
   Cloud Run service IAM transport credential.
 - migration `0009` identity/session/login-attempt/migration-audit tables and
   explicit backed-up local-owner graph migration tooling.
-- migrations `0010`–`0013` verified identity and owner-scoped source/import
-  records, durable extraction/confirmation recovery, and replay records after
-  source deletion.
+- migrations `0010`–`0014` verified identity, owner-scoped source/import
+  records, durable extraction/confirmation recovery, replay records after
+  source deletion, and trip-document relationships/idempotency.
+- gated local trip attachments with bounded uploads, owner-authorized safe
+  downloads, recoverable deletion, and same-trip reservation links.
+- request-owned revision-stamped ICS, self-contained printable HTML, and
+  versioned JSON exports with opt-in private fields/documents.
 - owner-scoped trip/day research with bounded day context and safe errors.
 - gated typed domain comparison client and owner-scoped detail lookup, with a
   256 KiB response bound and stable-key ambiguity handling.
@@ -183,6 +192,10 @@ Frontend:
   and visible conflict warnings.
 - selected-day research form, transfer disclosure, cited unexpired result
   rendering, and a user-entered manual candidate form.
+- private trip-document management, explicit snapshot generation, and a
+  read-focused travel page with reservation anchors and on-demand transfer
+  estimates; the page keeps visible state after request failures without
+  claiming offline caching or synchronization.
 - default-off comparison panel with category/radius disclosure, source and
   expiry display, reviewed candidate save, and Phase 5 proposal handoff.
 - TypeScript/ESLint setup and production build verification.

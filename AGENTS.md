@@ -34,6 +34,11 @@ slice. It is not a whole-phase exit: category fixtures and live provider
 approval are unverified, and date, price, availability, accessibility, and
 memory retrieval remain unsupported. See
 [`docs/releases/phase-7-travel-comparison.md`](docs/releases/phase-7-travel-comparison.md).
+Phase 8 has a locally implemented, default-off private trip attachment,
+revision-stamped export, and read-focused travel slice. Its whole-phase
+verification remains open; private input requires verified Google identity and
+private storage. GCS is not implemented or authorized. See
+[`docs/releases/phase-8-attachments-exports.md`](docs/releases/phase-8-attachments-exports.md).
 
 Current delivered capabilities include:
 
@@ -71,6 +76,11 @@ Current delivered capabilities include:
   storage, bounded parsing, safe download/deletion, typed extraction, durable
   recovery, atomic reviewed reservation confirmation, and the review UI are
   implemented behind off-by-default gates. No real private input was used.
+- Phase 8: migration `0014` extends the private source lifecycle to trip
+  documents with optional same-trip reservation links. Local gated upload,
+  download, deletion, HTML/ICS/JSON export, optional document bundles, and
+  travel mode are implemented. Exit verification remains open; GCS is not
+  implemented.
 - Docker Compose Postgres for local development.
 - CI skeleton.
 - product/design/architecture/implementation/release documentation.
@@ -89,7 +99,11 @@ mode remains available and unauthenticated. No domain route trusts browser
 owner headers. Local-to-verified-owner migration is explicit, backed up, and
 never triggered by first login. Phase 6 extraction, confirmation, and review
 UI are independently reviewed and verified locally. Live private input,
-cloud deployment, and general attachments remain gated or planned.
+cloud deployment, and private attachments remain gated. Migration `0014` is
+current. Phase 8's local implementation exists, but whole-phase verification
+is open. Phase 9 remains planned; stop before Phase 9 unless the user
+explicitly requests it. Documentation alone does not authorize cloud
+deployment.
 
 ## Architectural invariants
 
@@ -158,8 +172,8 @@ and a backup before legacy data repair.
 Detailed plans for Phases 5–9 are under
 `docs/phase-5-implementation-plan.md` through `docs/phase-9-implementation-plan.md`.
 Phase 5 and Phase 6 are independently reviewed locally. Phase 7's initial
-consumer slice is implemented, with its complete exit gate still open. External
-enablement gates remain closed. Phase 8–9 remain planned; stop before Phase 8
-unless the user explicitly requests later work. Start that work from its
-contract and dependency gates; documentation alone does not authorize cloud
-deployment.
+consumer slice and Phase 8 local attachment/export slice are implemented, with
+their complete exit gates still open. External enablement gates remain closed.
+Phase 9 remains planned; stop before Phase 9 unless the user explicitly
+requests later work. Start that work from its contract and dependency gates;
+documentation alone does not authorize cloud deployment.

@@ -38,12 +38,19 @@ or Phase 5 proposal action. The current upstream contract supplies no price,
 schedule, availability, accessibility, or memory retrieval data; category
 fixture and live-provider checks remain open. See the [Phase 7 release
 record](docs/releases/phase-7-travel-comparison.md).
+Phase 8 adds gated private trip documents, revision-stamped ICS/static HTML/
+versioned JSON downloads, and a read-focused travel page. Its locally
+implemented lifecycle and UI still need whole-phase regression and artifact
+verification; private attachments remain off by default and unavailable in
+local-auth mode. Google OAuth is unprovisioned and GCS remains unimplemented
+pending separate authorization. See the
+[Phase 8 release record](docs/releases/phase-8-attachments-exports.md).
 The upstream monotonic-deadline conversion was fixed and the local fake HTTP
 proposal flow passes under both Uvicorn `auto` (uvloop on this host) and
 `asyncio`. Proposal gates default off and require separate provider configuration. Geoapify features are optional; manual
 planning works without provider keys. Live/private booking-import use and
-cloud deployment remain gated on whole-phase review and external
-identity/provider/storage checks.
+private attachments, live providers, and cloud deployment remain gated on
+whole-phase review and external identity/provider/storage checks.
 
 The [Phase 0–4 audit](docs/reviews/phase-0-4-audit.md) records the architecture
 review, integrity/security/recovery fixes and verification. Migration `0005`
@@ -174,9 +181,9 @@ Architecture decisions are under [`docs/decisions/`](docs/decisions/).
 Detailed plans for Phases 5–9 are linked from the
 [roadmap](docs/09-implementation-plan.md) and [documentation index](docs/README.md).
 Phase 5 and Phase 6 are independently reviewed locally. Phase 7's initial
-comparison slice is implemented; its exit gate and external/provider checks
-remain open. Cloud deployment and provider gates remain closed. Phases 8–9
-remain planned work.
+comparison slice and Phase 8 local attachment/export slice are implemented;
+their exit gates and external/provider checks remain open. Cloud deployment
+and provider gates remain closed. Phase 9 remains planned work.
 The Phase 4 task plan, consumer decision, and release record are in
 [`docs/phase-4-implementation-plan.md`](docs/phase-4-implementation-plan.md),
 [`docs/decisions/0008-personal-ai-research-context.md`](docs/decisions/0008-personal-ai-research-context.md),

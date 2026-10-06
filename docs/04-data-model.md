@@ -1,6 +1,6 @@
 # Data model
 
-Status: Phase 5 independently reviewed; Phase 6 local remediation is verified and coordinator final verification is pending; gates off
+Status: Phases 5–6 locally reviewed; Phase 7 exit gate open; Phase 8 local implementation delivered with verification gates open
 Date: 2026-10-05
 
 The initial migration implements the core itinerary graph. Phase 1 adds
@@ -9,8 +9,8 @@ trip-scoped saved-place candidates, richer place metadata, reservation links,
 and retained source attribution for provider-imported places. Phase 4 stores
 manual candidates in these existing tables; AI sessions and evidence remain
 owned by `personal-ai-system` and are not copied into this database. Migrations
-`0010`–`0013` add the authenticated booking-source and durable extraction/review
-lifecycle; general trip/reservation attachments remain planned.
+`0010`–`0014` add the authenticated booking-source, durable extraction/review,
+and trip-document lifecycle. Attachments reuse the private source store.
 
 ## Implemented scaffold tables
 
@@ -215,7 +215,7 @@ exact source-to-target confirmation. It takes a transaction lock, checks all
 constraints before commit, preserves revisions and rolls back on failure.
 There is no first-login claim path and the tool has not been run on user data.
 
-## Phase 6 private-source and booking-import candidate — migrations `0010`–`0013`
+## Private-source, booking-import, and trip-attachment records — migrations `0010`–`0014`
 
 The local source gate defaults off and requires Google OIDC plus an absolute
 private storage directory outside the application tree. Byte objects use
@@ -231,13 +231,22 @@ metadata needed to remove the corresponding bytes.
 
 ```text
 id UUID PK, owner_id, trip_id? FK -> trips ON DELETE SET NULL
+reservation_id? FK -> reservations ON DELETE SET NULL
+purpose: booking_source | trip_attachment
 object_key unique opaque key, sha256, media_type, byte_size
-display_filename?, state: pending | ready | deleting, expires_at
+display_filename?, state: pending | ready | deleting, expires_at?
+upload_request_key?, upload_request_fingerprint?
 created_at, updated_at
 ```
 
-Constraints cap sources at 10 MiB and plain text at 1 MiB. Filenames are
-sanitized display metadata and never participate in file paths.
+Constraints cap files at 10 MiB and plain text at 1 MiB. JPEG and PNG images
+are also bounded to 40 megapixels; PDFs are structurally checked in an isolated
+parser with a 100-page cap. Filenames are sanitized display metadata and never
+participate in file paths. Booking sources retain their existing expiry rules;
+trip documents do not expire automatically. Their optional reservation link
+must point to the same owner and trip. A reservation delete clears that link,
+while trip deletion detaches metadata until byte cleanup completes. Upload
+request keys and fingerprints support bounded idempotent retry.
 
 ### `booking_imports`
 
@@ -282,24 +291,17 @@ Because detached imports must retain their outcome metadata, downgrade to
 `0010` is refused once any import has a null source reference; restore a
 pre-`0011` backup to roll back that lifecycle change.
 
-## Planned general attachments, not implemented
+## Phase 8 export boundary
 
-### `attachments`
-
-```text
-id
-owner_id
-trip_id
-reservation_id?
-object_key
-media_type
-size_bytes
-sha256
-original_filename
-created_at
-```
-
-Blob bytes live outside Postgres.
+Trip exports are request-owned artifacts rather than persisted database rows.
+The API projects a trip revision and referenced-place revisions under the
+shared trip/place lock order, then renders outside the SQL transaction. Static
+HTML, ICS, and `travel-trip-export-v1` JSON omit private notes, confirmation
+codes, source references, and documents by default. Documents require an
+explicit ZIP inclusion request. No export contains internal blob keys,
+credentials, or upstream session data. The local feature requires verified
+Google identity and `PRIVATE_ATTACHMENTS_ENABLED`; local-auth mode remains
+unavailable for private documents. GCS is not implemented or authorized.
 
 ## Implemented Phase 5 storage
 

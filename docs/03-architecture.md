@@ -1,7 +1,7 @@
 # Architecture
 
-Status: Phases 0–6 delivered/reviewed locally; Phase 7 initial comparison slice implemented; external gates remain off
-Date: 2026-10-04
+Status: Phases 0–6 delivered/reviewed locally; Phase 7 and Phase 8 initial local slices implemented; exit and external gates remain open
+Date: 2026-10-05
 
 ## System shape
 
@@ -22,7 +22,7 @@ FastAPI travel API
   v
 PostgreSQL 16
 
-future blobs -> local filesystem
+private source and trip-document blobs -> opaque local filesystem store
 
 
 INITIAL CLOUD
@@ -38,7 +38,7 @@ Cloud Run: travel-api
   v
 Neon Postgres
 
-future blobs -> Google Cloud Storage
+Google Cloud Storage -> separately authorized and not implemented
 ```
 
 ## Repository shape

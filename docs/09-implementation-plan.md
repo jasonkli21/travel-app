@@ -228,20 +228,23 @@ Hard constraints remain deterministic.
 
 ## Phase 8 — Attachments, exports, travel mode
 
-Detailed plan: [Phase 8](phase-8-implementation-plan.md). Planned, not delivered.
-Reuse Phase 6 authentication/blob lifecycle, add trip/reservation attachment
-access and explicit revision-stamped ICS/printable/static/JSON snapshots.
-GCS requires separate authorization; local storage remains first-class.
+Detailed plan: [Phase 8](phase-8-implementation-plan.md). Local attachment,
+export, and read-focused travel workflows are implemented; whole-phase exit
+verification remains open. See the
+[Phase 8 release record](releases/phase-8-attachments-exports.md).
+The implementation reuses Phase 6 authentication/blob lifecycle and adds
+explicit revision-stamped ICS/printable static HTML/versioned JSON snapshots.
+Private attachments remain default-off and unavailable in local-auth mode.
+GCS requires separate authorization and is not implemented; local storage
+remains first-class.
 
-Potential work:
+Remaining separately gated work:
 
-- GCS-backed documents,
-- offline-friendly itinerary export,
-- calendar export,
-- printable/shareable trip summary,
-- reservation document access.
-
-A full offline-sync/mobile architecture is still not implied.
+- Optional GCS-backed documents, after explicit authorization and accepted
+  IAM/region/access policy.
+- Full offline synchronization, service-worker caching of private API traffic,
+  public sharing, or native mobile behavior; none is implied by static
+  downloads or the read-focused travel page.
 
 ## Phase 9 — Operational hardening
 

@@ -1,11 +1,18 @@
 # Phase 8 implementation plan — attachments, exports and travel mode
 
-**Status:** planned; no Phase 8 implementation delivered
-**Date:** 2026-10-03
+**Status:** local implementation delivered; whole-phase exit verification remains open
+**Date:** 2026-10-05
 **Baseline:** reviewed Phase 0–4 commit `56c0cbf`
 **Dependencies:** [Phase 5](phase-5-implementation-plan.md) versions and
 [Phase 6](phase-6-implementation-plan.md) authentication/private blob lifecycle
 **Roadmap:** [phased implementation plan](09-implementation-plan.md)
+
+The current local slice reuses the Phase 6 private store for trip documents,
+adds static HTML, ICS and versioned JSON downloads, and provides a read-focused
+travel route. It is gated on verified Google identity and private storage;
+GCS remains unimplemented pending separate authorization. See the
+[Phase 8 release record](releases/phase-8-attachments-exports.md) for exact
+delivery and open verification items. The whole-phase exit gate remains open.
 
 ## Goal and scope boundary
 

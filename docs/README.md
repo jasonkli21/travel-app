@@ -18,12 +18,13 @@
 | `phase-5-implementation-plan.md` | Versioned proposals plan and local groundwork checkpoint |
 | `phase-6-implementation-plan.md` | Verified identity, private sources, booking extraction, atomic confirmation, and review UX |
 | `phase-7-implementation-plan.md` | Planned typed rich research, constraints and consented preferences |
-| `phase-8-implementation-plan.md` | Planned private attachments, snapshot exports and travel view |
+| `phase-8-implementation-plan.md` | Private attachments, snapshot exports and travel view; local implementation delivered with exit gates open |
 | `phase-9-implementation-plan.md` | Planned security/cost/recovery/release and controlled deployment proof |
 | `reviews/phase-0-4-audit.md` | Comprehensive plan/code findings, remediation and current verification |
 | `decisions/0009-local-boundaries-and-integrity.md` | Local browser boundary, SQL integrity, bounded work and portability qualification |
 | `decisions/0012-phase6-private-source-storage.md` | P6.2 gated local source intake, storage, parser bounds, and cleanup |
 | `decisions/0013-phase6-booking-document-import.md` | Versioned extraction boundary and explicit atomic reservation review |
+| `decisions/0015-phase8-attachments-and-exports.md` | Shared private attachment lifecycle and export privacy/calendar semantics |
 | `decisions/0007-geoapify-maps-and-logistics.md` | Geoapify provider, attribution, and usage decision |
 | `10-codex-handoff.md` | Current state and explicit next tasks |
 | `decisions/` | Architecture decision records |
@@ -36,3 +37,4 @@
 | `releases/phase-6-identity.md` | P6.0/P6.1 verified-identity checkpoint |
 | `releases/phase-6-private-sources.md` | P6.2 secure-source implementation and verification checkpoint |
 | `releases/phase-6-booking-imports.md` | Phase 6 remediation commits, local verification, and external gates |
+| `releases/phase-8-attachments-exports.md` | Phase 8 local delivery, static checks, and open exit gates |

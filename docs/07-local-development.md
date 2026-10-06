@@ -294,7 +294,13 @@ Then run `uv run --locked alembic check` to verify ORM/migration parity.
 Migration `0005` requires an online connection; offline SQL can be generated
 through `0004`, but is not a complete upgrade to head. Migration `0010` adds
 private source/import metadata; migration `0011` retains import replay metadata
-after source deletion and is the current head.
+after source deletion. Migration `0014` extends the source table for trip
+attachments and is the current head. Private trip attachments require
+`PRIVATE_ATTACHMENTS_ENABLED=true`, Google OIDC, and an absolute private source
+directory outside the repository. Keep the gate off in local-auth mode; the
+frontend flag is configured in `frontend/.env.local` as
+`NEXT_PUBLIC_PRIVATE_ATTACHMENTS_ENABLED=true` only when the matching API
+prerequisites are configured.
 
 The private-source cleanup command is bounded to 1–1000 inspected records and
 0.1–60 seconds per pass (defaults: 100 records and 5 seconds). When a cursor is
