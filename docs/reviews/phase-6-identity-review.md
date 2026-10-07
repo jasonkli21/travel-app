@@ -1,7 +1,10 @@
 # Phase 6 identity independent review
 
-Baseline: `9a80ff1`; coordinator independently ran 170 backend tests against
-migrated disposable PostgreSQL, zero skips. Identity stage remains open.
+Historical stage review checkpoint. Final Phase 6 closure is recorded in the
+[combined release](../releases/phase-6-booking-imports.md).
+
+Baseline: `9a80ff1`; independent review ran 170 backend tests against migrated
+disposable PostgreSQL, zero skips. Identity stage remained open at this checkpoint.
 
 ## Local remediation evidence awaiting independent re-review
 
@@ -10,8 +13,8 @@ change set. Full migrated PostgreSQL verification passed 180 tests with zero
 skips; frontend tests passed 30 with lint, typecheck and production build;
 Ruff and mypy passed. The mounted synthetic sign-in/typed CRUD/logout smoke
 passed against the production Next build and migrated disposable database.
-These are implementation-agent results. The coordinator must independently
-review the final commit and decide whether this identity stage can close.
+These were implementation results awaiting independent review at this
+checkpoint; later closure is documented in the combined release.
 
 ## Deadline follow-up (local implementation evidence)
 

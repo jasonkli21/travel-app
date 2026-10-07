@@ -1,5 +1,7 @@
 # Phase 2 implementation plan — reservations and saved places
 
+**Status:** Accepted locally; see [release evidence](releases/phase-2-reservations.md).
+
 ## Review corrections (2026-10-03)
 
 The [Phase 0–4 audit](reviews/phase-0-4-audit.md) extends the original
@@ -324,7 +326,7 @@ layers rather than mirroring every work-package bullet:
 | `feat: expose Phase 2 reservation workflows` | Repositories, services, time/conflict logic, item-link behavior, API routes, and PostgreSQL/API regression coverage. |
 | `feat: build Phase 2 reservation workspace` | Typed client, overview/reservation/saved-place UI, place metadata controls, and responsive/accessibility styling. |
 | `docs: record Phase 2 reservation release` | Delivered-state docs, release evidence, and handoff updates. |
-| `fix: address Phase 2 independent review findings` | Every actionable finding from the independent Luna Max review, with focused tests/docs. |
+| `fix: address Phase 2 independent review findings` | Every actionable finding from the independent review, with focused tests/docs. |
 
 If implementation reveals a separate meaningful architecture decision, add or
 amend an ADR in the relevant implementation commit. Do not create commits for

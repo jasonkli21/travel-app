@@ -9,7 +9,7 @@
 Phase 6 covers verified owner identity and local source lifecycle, bounded
 booking extraction, durable candidate review and recovery, atomic reservation
 confirmation, and the accessible review panel. Travel pins the upstream commit
-above and records it with extraction and confirmation outcomes. The local remediation pass and independent coordinator verification are
+above and records it with extraction and confirmation outcomes. The local remediation pass and independent final verification are
 closed. Travel and upstream feature gates remain off by default; this record
 does not authorize real private-input use or establish hosted readiness.
 
@@ -101,18 +101,19 @@ disabled by default. No live Google OAuth, Cloud Run IAM, production user or
 service identity, Gemini request, cloud project, or real private document was
 used. Provider data-use/retention approval, Firestore TTL configuration,
 deployed service-audience alignment, Linux parser memory enforcement, and
-cloud storage/deployment checks remain unverified. No Phase 7 work was started.
+cloud storage/deployment checks remain unverified. No Phase 7 work was started
+during this Phase 6 delivery.
 
 Read [ADR 0013](../decisions/0013-phase6-booking-document-import.md), the
 [implementation plan](../phase-6-implementation-plan.md), the
-[upstream contract](../../../personal-ai-system/docs/booking-document-extraction-contract.md),
+[upstream contract at the accepted revision](https://github.com/jasonkli21/personal-ai-agent/blob/ebd00a8e2fb2d8b59a5fb5fa3aa44268e5e79b63/docs/booking-document-extraction-contract.md),
 and the historical [identity](phase-6-identity.md) and
-[source-lifecycle](phase-6-private-sources.md) checkpoints. The next action is
-coordinator verification of the whole-phase review findings; stop before Phase 7.
+[source-lifecycle](phase-6-private-sources.md) checkpoints. The whole-phase
+closure below supersedes earlier checkpoint-level pending statements.
 
-## Independent coordinator closure — 2026-10-05
+## Independent whole-phase closure — 2026-10-05
 
-The coordinator reviewed the whole phase against its written plan and the
+The whole phase was reviewed against its written plan and the
 system's ownership, privacy, replay, deterministic confirmation and UI intent.
 All eleven findings were remediated in upstream `ebd00a8` and travel `320201b`.
 The exact upstream code pin is accepted for the local implementation.
@@ -124,11 +125,13 @@ owner reopening each expired import. A PostgreSQL regression proves repeated
 cleanup retains one intent with the extracted-text hash and preserves import
 outcomes. One migration received a formatting-only correction.
 
-Coordinator verification: **231 migrated PostgreSQL tests, zero skips**;
+Final verification: **231 migrated PostgreSQL tests, zero skips**;
 Ruff check and format check across **129 files**, mypy **87 source files**;
 frontend **42 tests**; upstream **561 tests, 12 opt-in skips**. Previous lint,
 typecheck, production build and mounted plaintext/PDF evidence above remains
 valid; final mounted timing limits are stated precisely above. No outstanding
 substantive local review finding remains. All live identity/service/provider,
 retention-policy/Firestore, Linux parser and cloud gates remain as documented.
-Work stops here before Phase 7 by explicit user instruction.
+The Phase 6 task stopped before Phase 7 under the user's instruction at that
+time. Current project status and later phase work are tracked in
+[`current-state.md`](../current-state.md).

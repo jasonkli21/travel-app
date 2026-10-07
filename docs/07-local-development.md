@@ -1,7 +1,7 @@
 # Local development
 
-Status: Phases 1–5 plus locally implemented Phase 6 identity and P6.2 source lifecycle; whole-Phase 6 review pending
-Date: 2026-10-04
+Scope: Local setup, development, verification, and migration guidance.
+Current delivery status: [current-state.md](current-state.md).
 
 ## Prerequisites
 

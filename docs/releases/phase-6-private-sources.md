@@ -1,6 +1,7 @@
 # Phase 6 P6.2 — local private-source lifecycle checkpoint
 
-**Status:** implemented locally; P6.2 remediation is complete and whole-Phase 6 review is pending
+**Record type:** Historical P6.2 checkpoint. Current Phase 6 status and closure evidence are in the [combined release](phase-6-booking-imports.md).
+**Status at checkpoint:** implemented locally; P6.2 remediation complete and whole-Phase 6 review pending
 **Date:** 2026-10-04
 **Scope:** P6.2 storage, upload/read/delete lifecycle, and cleanup
 
@@ -80,4 +81,6 @@ extraction API, Cloud Run IAM, cloud storage, personal inbox, or real private
 source was used. Extraction, reservation confirmation, and import UI were out
 of scope at this checkpoint; those later stages are now recorded in the
 [combined Phase 6 candidate release](phase-6-booking-imports.md). Whole-phase
-review remains pending and the feature gates stay off by default.
+review was pending at this checkpoint; the whole Phase 6 review later closed
+locally as recorded in the [combined release](phase-6-booking-imports.md). The
+feature gates stay off by default.

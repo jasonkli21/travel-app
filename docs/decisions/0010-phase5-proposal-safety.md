@@ -152,5 +152,6 @@ gates.
   import upstream Python packages or storage schemas.
 - The local implementation and its exact verification are recorded in the
   [Phase 5 release record](../releases/phase-5-local-proposals.md). Independent
-  review is pending, and proposal gates remain off by default.
+  local review and remediation are complete; proposal gates remain off by
+  default.
 - Authentication, private booking imports, and deployment remain out of scope.

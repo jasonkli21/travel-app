@@ -1,40 +1,59 @@
-# Documentation index
+# Documentation router
 
-| Document | Purpose |
+For an ordinary task, read this page, then [current state](current-state.md),
+then only the sources routed below.
+
+## Authority and document roles
+
+When sources disagree, use this order:
+
+1. Code, executable schemas/contracts, migrations, and tests define behavior.
+2. Release, review, and verification records show what was implemented and exercised.
+3. Accepted ADRs record durable decisions and supersession history.
+4. Product and architecture documents describe intended boundaries and scope.
+5. Implementation plans describe future or active work; a plan is not delivery evidence or authorization.
+6. Historical and superseded documents provide context only.
+
+`current-state.md` is the single living project-status snapshot. Phase plans
+describe intended work. Release/review records retain evidence and remaining
+gates. Run `make docs-check` to verify local Markdown link targets. The root
+`README.md` is for product users and local setup. If the status summary conflicts
+with code or release evidence, follow the evidence and update the summary.
+
+## Route by task
+
+| Task | Read |
 | --- | --- |
-| `01-product-brief.md` | Product vision, users, scope, principles |
-| `02-product-design.md` | UX direction and major application surfaces |
-| `03-architecture.md` | System boundaries and component topology |
-| `04-data-model.md` | Initial relational vocabulary and invariants |
-| `05-technology-choices.md` | Technology/cloud decisions and tradeoffs |
-| `06-ai-integration.md` | Contract with `personal-ai-system` |
-| `07-local-development.md` | Local setup and commands |
-| `08-cloud-deployment.md` | GCP + Neon deployment direction |
-| `09-implementation-plan.md` | Phased implementation roadmap |
-| `phase-1-implementation-plan.md` | Task-level Phase 1 manual itinerary plan |
-| `phase-2-implementation-plan.md` | Task-level Phase 2 reservations and saved places plan |
-| `phase-3-implementation-plan.md` | Task-level Phase 3 maps and logistics plan |
-| `phase-4-implementation-plan.md` | Task-level bounded AI research consumer plan |
-| `phase-5-implementation-plan.md` | Versioned proposals plan and local groundwork checkpoint |
-| `phase-6-implementation-plan.md` | Verified identity, private sources, booking extraction, atomic confirmation, and review UX |
-| `phase-7-implementation-plan.md` | Planned typed rich research, constraints and consented preferences |
-| `phase-8-implementation-plan.md` | Private attachments, snapshot exports and travel view; local implementation delivered with exit gates open |
-| `phase-9-implementation-plan.md` | Planned security/cost/recovery/release and controlled deployment proof |
-| `reviews/phase-0-4-audit.md` | Comprehensive plan/code findings, remediation and current verification |
-| `decisions/0009-local-boundaries-and-integrity.md` | Local browser boundary, SQL integrity, bounded work and portability qualification |
-| `decisions/0012-phase6-private-source-storage.md` | P6.2 gated local source intake, storage, parser bounds, and cleanup |
-| `decisions/0013-phase6-booking-document-import.md` | Versioned extraction boundary and explicit atomic reservation review |
-| `decisions/0015-phase8-attachments-and-exports.md` | Shared private attachment lifecycle and export privacy/calendar semantics |
-| `decisions/0007-geoapify-maps-and-logistics.md` | Geoapify provider, attribution, and usage decision |
-| `10-codex-handoff.md` | Current state and explicit next tasks |
-| `decisions/` | Architecture decision records |
-| `releases/phase-0-scaffold.md` | Verification actually performed on the bootstrap |
-| `releases/phase-1-itinerary.md` | Phase 1 implementation and verification record |
-| `releases/phase-2-reservations.md` | Phase 2 implementation and verification record |
-| `releases/phase-3-maps-logistics.md` | Phase 3 implementation and verification record |
-| `releases/phase-4-ai-research.md` | Phase 4 implementation and original verification record |
-| `releases/phase-5-groundwork.md` | P5.0–P5.2 groundwork, verification, and remaining gates |
-| `releases/phase-6-identity.md` | P6.0/P6.1 verified-identity checkpoint |
-| `releases/phase-6-private-sources.md` | P6.2 secure-source implementation and verification checkpoint |
-| `releases/phase-6-booking-imports.md` | Phase 6 remediation commits, local verification, and external gates |
-| `releases/phase-8-attachments-exports.md` | Phase 8 local delivery, static checks, and open exit gates |
+| Itinerary, reservation, or place domain | [Product brief](01-product-brief.md), [data model](04-data-model.md), [service workflow map](../backend/src/personal_travel/services/README.md), and relevant ADR |
+| Database, schema, or migration | [Data model](04-data-model.md), relevant ADR, and [local development](07-local-development.md) migration guidance |
+| Personal AI integration or proposal lifecycle | [AI integration](06-ai-integration.md), relevant contract/ADR and release evidence, [current state](current-state.md) |
+| Authentication or private sources | Phase 6 plan, [ADR 0011](decisions/0011-phase6-google-identity-and-ai-auth.md), [ADR 0012](decisions/0012-phase6-private-source-storage.md), [ADR 0013](decisions/0013-phase6-booking-document-import.md), and [Phase 6 evidence](releases/phase-6-booking-imports.md) |
+| Attachments, exports, or travel mode | ADR 0015, [Phase 8 plan](phase-8-implementation-plan.md), and [Phase 8 evidence](releases/phase-8-attachments-exports.md) |
+| Frontend UX | [Product design](02-product-design.md) and the relevant feature contract or release record |
+| Cloud or deployment | [Technology choices](05-technology-choices.md), [cloud deployment](08-cloud-deployment.md), and the relevant operations plan/runbook |
+| Implement a phase | [Current state](current-state.md), that exact phase plan, and predecessor release/review evidence |
+| Historical verification | The specific release or review record needed for the question |
+
+Phase implementation remains subject to the user's current request and the
+repository's gates; the presence of a plan alone does not authorize it.
+
+## Document index
+
+| Document | Role |
+| --- | --- |
+| [Current state](current-state.md) | Accepted slices, open gates, and current planning boundary |
+| [Product brief](01-product-brief.md) | Product purpose, user, scope, and principles |
+| [Product design](02-product-design.md) | UX direction and application surfaces |
+| [Architecture](03-architecture.md) | System boundaries and component topology |
+| [Data model](04-data-model.md) | Relational vocabulary and invariants |
+| [Technology choices](05-technology-choices.md) | Technology and cloud tradeoffs |
+| [AI integration](06-ai-integration.md) | Typed boundary with `personal-ai-system` |
+| [Local development](07-local-development.md) | Local setup, checks, and migration guidance |
+| [Cloud deployment](08-cloud-deployment.md) | Hosted topology and deployment direction |
+| [Phased roadmap](09-implementation-plan.md) | Phase sequencing and intended scope |
+| `phase-1`–`phase-9-implementation-plan.md` | Detailed phase plans, read only for scoped implementation |
+| `decisions/` | Accepted architectural decisions |
+| `releases/` and `reviews/` | Delivery and verification evidence |
+| `runbooks/` | Operational procedures |
+| [Service workflow map](../backend/src/personal_travel/services/README.md) | Entry points and invariants for cross-module backend workflows |
+| `10-codex-handoff.md`, `implementation-coordinator.md` | Superseded entry points with redirects |

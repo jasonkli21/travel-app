@@ -1,6 +1,6 @@
 # ADR 0012 — P6.2 local private-source storage and ingress
 
-**Status:** accepted for the local P6.2 implementation; whole-Phase 6 review pending
+**Status:** accepted for the locally reviewed Phase 6 implementation; private-source gates remain closed
 **Date:** 2026-10-04
 **Scope:** private source intake, storage, authorized access, and cleanup only
 

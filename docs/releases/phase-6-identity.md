@@ -1,6 +1,7 @@
 # Phase 6 identity foundation — local checkpoint
 
-**Status:** P6.0/P6.1 identity review remediation implemented locally; independent re-review pending. This checkpoint records the identity stage only; see the [P6.2 source checkpoint](phase-6-private-sources.md) for the later source lifecycle.
+**Record type:** Historical P6.0/P6.1 checkpoint. Current Phase 6 status and closure evidence are in the [combined release](phase-6-booking-imports.md).
+**Status at checkpoint:** identity review remediation implemented locally; independent re-review pending. This checkpoint records the identity stage only; see the [P6.2 source checkpoint](phase-6-private-sources.md) for the later source lifecycle.
 **Date:** 2026-10-04
 
 ## Delivered identity boundary
@@ -24,7 +25,7 @@ The tests use synthetic signed credentials and fake provider responses. A mounte
 ## Identity review remediation checkpoint
 
 The six findings in [the independent identity review](../reviews/phase-6-identity-review.md)
-have local fixes pending coordinator re-review. The centralized typed web client
+had local fixes pending independent re-review at that checkpoint. The centralized typed web client
 adds session CSRF proof to unsafe writes and rejects duplicate or malformed
 CSRF cookies. Owner migration transfers validated nested proposal snapshot
 owners, rejects foreign references, and marks in-flight remote results failed
@@ -86,4 +87,4 @@ transaction-local statement/lock limits begin after a connection is acquired.
 
 ## Remaining gates
 
-Independent coordinator security review is pending. No Google OAuth client, Cloud Run IAM binding or upstream user-identity deployment was provisioned; no live sign-in, hosted service invocation or private-input test occurred. P6.2 storage/parser is recorded separately. P6.3 extraction, P6.4 confirmation, and P6.5 import review UI have since been implemented as a candidate; see the [combined Phase 6 release record](phase-6-booking-imports.md). Research/proposal and private-import gates stay off by default.
+At this identity-stage checkpoint, independent security review was pending. No Google OAuth client, Cloud Run IAM binding, or upstream user-identity deployment was provisioned; no live sign-in, hosted service invocation, or private-input test occurred. P6.2 storage/parser is recorded separately. P6.3 extraction, P6.4 confirmation, and P6.5 import review UI were later implemented and the whole phase was reviewed; see the [combined Phase 6 release record](phase-6-booking-imports.md) for current local closure evidence. Research/proposal and private-import gates stay off by default.

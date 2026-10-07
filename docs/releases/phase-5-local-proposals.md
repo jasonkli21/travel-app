@@ -167,11 +167,10 @@ The implementation is checkpointed in these commits:
   and the upstream provenance API fields.
 - The final documentation/checkpoint commit follows this release record.
 
-Independent review must assess atomic apply/replay, all mutation revision
-paths, footprint completeness and lock ordering, privacy, and whether the
-default-off gates remain safe. Phase 5 remains pending independent re-review.
+This paragraph records the review scope at the checkpoint before final
+verification. The closure below supersedes that interim status.
 
-## Coordinator closure of Phase 5 local scope
+## Independent closure of Phase 5 local scope
 
 Independent re-review closed all substantive findings. A final small fix prevents
 renewed reconciliation budgets for upstream running results as well as exceptions;
@@ -179,7 +178,7 @@ failed results carry no dangling evidence support. The upstream loop regression
 no longer assumes a platform-specific clock offset (upstream commit `96cf73b`);
 the accepted runtime contract pin remains `6045f004fbdc4887c2bb67da9ae19a571314fc27`.
 
-Coordinator verification: 136 travel PostgreSQL tests passed, zero skips; Ruff
+Final verification: 136 travel PostgreSQL tests passed, zero skips; Ruff
 check/format and mypy passed. Upstream 540 tests passed with 12 existing
 manual/provider skips, and Ruff passed. Frontend 20 tests, ESLint, generated
 types/TypeScript and production build passed. Migration 0008 and repeatable
@@ -188,6 +187,4 @@ remains in the local Phase 5 scope. Default-off provider/capability gates,
 live provider quality, hosted authentication and cloud verification remain
 separate; no live service or deployment was performed.
 
-Next: assess Phase 6 identity, secure source lifecycle and accepted extraction
-prerequisites; delegate one logical stage at a time to fresh Luna Extra High
-agents. Preserve the upstream pre-existing frontend build-info modification.
+The later Phase 6 work is recorded in the [Phase 6 release](phase-6-booking-imports.md).

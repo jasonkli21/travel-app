@@ -1,7 +1,7 @@
 # Data model
 
-Status: Phases 5–6 locally reviewed; Phase 7 exit gate open; Phase 8 local implementation delivered with verification gates open
-Date: 2026-10-05
+Status: Relational model reference; current delivery status is maintained in [current-state.md](current-state.md).
+Date: 2026-10-07
 
 The initial migration implements the core itinerary graph. Phase 1 adds
 application services and ordering constraints; Phase 2 adds manual reservations,
@@ -10,7 +10,8 @@ and retained source attribution for provider-imported places. Phase 4 stores
 manual candidates in these existing tables; AI sessions and evidence remain
 owned by `personal-ai-system` and are not copied into this database. Migrations
 `0010`–`0014` add the authenticated booking-source, durable extraction/review,
-and trip-document lifecycle. Attachments reuse the private source store.
+and trip-document lifecycle; `0015` adds shared provider quota windows.
+Attachments reuse the private source store.
 
 ## Implemented scaffold tables
 

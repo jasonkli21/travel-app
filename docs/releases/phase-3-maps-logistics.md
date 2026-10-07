@@ -74,7 +74,7 @@ public deployment or increased usage.
 
 ## Independent review
 
-An independent Luna Max agent reviewed the implementation plan and code.
+An independent reviewer reviewed the implementation plan and code.
 It reported three gaps:
 
 - Logistics controls allowed day, mode, or buffer changes while a request was

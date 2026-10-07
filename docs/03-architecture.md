@@ -1,7 +1,7 @@
 # Architecture
 
-Status: Phases 0–6 delivered/reviewed locally; Phase 7 and Phase 8 initial local slices implemented; exit and external gates remain open
-Date: 2026-10-05
+Status: Architecture reference; current delivery status is maintained in [current-state.md](current-state.md).
+Date: 2026-10-07
 
 ## System shape
 

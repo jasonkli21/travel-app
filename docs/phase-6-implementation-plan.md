@@ -41,7 +41,7 @@ only the secure storage lifecycle required for its documents.
 | Web session | Use secure HttpOnly sessions, appropriate SameSite/CSRF protection and logout/expiry. The proxy propagates only verified server credentials. API routes all use request-derived identity; service-to-AI credentials are audience-bound and independent of browser identity. |
 | Local mode | Existing unauthenticated local CRUD may remain behind explicit local mode. Private import/upload routes remain disabled there; tests use a verified identity override and synthetic inputs. No silent fallback to local when token verification fails. |
 | Existing owner data | Provide an explicit backed-up local-to-verified-owner migration, with dry run, counts and collision detection. Never auto-claim all local records on first login or derive owners from mutable email addresses. |
-| Extraction contract | Pin the separate versioned `booking-document-extraction-v1` candidate in personal-ai-system, including privacy/retention, bounded input/output, idempotency and durable outcome recovery. Travel pins upstream commit `ebd00a8e2fb2d8b59a5fb5fa3aa44268e5e79b63`; the coordinator accepts this exact revision for local implementation; external enablement remains gated. Phase 4 research-v1 is not an extraction API. |
+| Extraction contract | Pin the separate versioned `booking-document-extraction-v1` capability in personal-ai-system, including privacy/retention, bounded input/output, idempotency and durable outcome recovery. Travel pins upstream commit `ebd00a8e2fb2d8b59a5fb5fa3aa44268e5e79b63` for local implementation; external enablement remains gated. Phase 4 research-v1 is not an extraction API. |
 | Input | Pasted email/plaintext first, then text-bearing PDF. Initial limits: 1 MiB text, 10 MiB PDF, 100 pages and 200,000 extracted characters; finalize against measured parsing and accepted downstream limits. Reject encrypted/unsupported/scanned-only documents clearly. |
 | Output | At most ten typed reservation candidates. Missing or uncertain dates/timezones/provider/confirmation fields remain explicit uncertainties, not guessed facts. Confirmation applies a selected corrected batch atomically. |
 | Storage | Opaque application-generated object keys, outside source/web roots, restrictive local permissions, byte/hash/MIME validation and short-lived authorized reads. Original filenames are display metadata only. P6.2 uses local storage only and stays off by default. |
@@ -301,8 +301,8 @@ is connected merely to verify the phase.
 Implementation and local verification are complete across the identity, source lifecycle,
 upstream contract/capability, typed client, durable import/confirmation, and UI
 stages. See the Phase 6 release record for exact repository commits, checks
-and external gates. Coordinator whole-Phase 6 verification remains the exit
-gate; stop before Phase 7.
+and external gates. Whole-phase local review is complete. External identity,
+provider, and deployment gates remain open; see [current state](current-state.md).
 
 Phase 6 completes only after authenticated ownership, bounded private source
 handling, deterministic review/confirmation and replay/recovery are proven.

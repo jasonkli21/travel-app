@@ -1,3 +1,5 @@
+import ast
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -11,6 +13,39 @@ from personal_travel.api.schemas import ItemCreate, PlaceCreate, PlaceUpdate, Sa
 from personal_travel.main import app
 from personal_travel.services.errors import DomainError
 from personal_travel.services.time_utils import get_zoneinfo
+
+BACKEND_SOURCE = Path(__file__).parents[1] / "src"
+FORBIDDEN_AI_SDKS = (
+    "personal_ai_system",
+    "openai",
+    "anthropic",
+    "vertexai",
+    "google.generativeai",
+    "google.genai",
+    "google.cloud.aiplatform",
+)
+
+
+def test_travel_backend_uses_typed_http_for_ai_capabilities() -> None:
+    for path in BACKEND_SOURCE.rglob("*.py"):
+        module = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(module):
+            if isinstance(node, ast.Import):
+                imported = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module is not None:
+                imported = [
+                    node.module if alias.name == "*" else f"{node.module}.{alias.name}"
+                    for alias in node.names
+                ]
+            else:
+                continue
+
+            for name in imported:
+                if any(name == sdk or name.startswith(f"{sdk}.") for sdk in FORBIDDEN_AI_SDKS):
+                    relative = path.relative_to(BACKEND_SOURCE)
+                    pytest.fail(
+                        f"{relative} imports {name}; use the typed PersonalAIClient boundary"
+                    )
 
 
 def test_invalid_timezone_paths_fail_as_domain_errors() -> None:

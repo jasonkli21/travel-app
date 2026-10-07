@@ -54,7 +54,8 @@ Keep all existing 64KiB JSON behavior and explicit credential allowlists.
 ## Implementation response — local remediation checkpoint
 
 The following changes implement the requested repairs on the local P6.2 branch.
-This records implementation evidence; whole-Phase 6 review remains pending.
+At this remediation checkpoint, whole-Phase 6 review remained pending. It later
+closed locally; see the [combined Phase 6 review](phase-6-whole-review.md).
 
 1. **Replay survives byte deletion.** Migration `0011` makes
    `booking_imports.source_id` nullable with `ON DELETE SET NULL` and stores

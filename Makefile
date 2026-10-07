@@ -1,4 +1,4 @@
-.PHONY: db-up db-down backend-install backend-test backend-lint backend-typecheck migrate api frontend-install frontend-check web
+.PHONY: db-up db-down backend-install backend-test backend-lint backend-typecheck migrate api frontend-install frontend-check web docs-check
 
 db-up:
 	docker compose up -d postgres
@@ -29,6 +29,9 @@ frontend-install:
 
 frontend-check:
 	cd frontend && corepack pnpm lint && corepack pnpm typecheck && corepack pnpm test
+
+docs-check:
+	python3 scripts/check_markdown_links.py
 
 web:
 	cd frontend && corepack pnpm dev --hostname 127.0.0.1

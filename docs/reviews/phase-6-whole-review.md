@@ -1,10 +1,11 @@
 # Phase 6 independent whole-phase review
 
-Reviewed in the coordinator session, 2026-10-05. Travel candidate `d596b1a` /
+Historical review checkpoint from 2026-10-05. Travel candidate `d596b1a` /
 `c036a5b`, source remediation `cf6696b`, identity through `6f0da88`; upstream
 candidate `ece8cfc`. The written Phase 6 plan and broader domain/privacy/recovery
-intent were checked. Implementation is not yet accepted. Fix findings below
-in a fresh Luna Extra High agent, then coordinator verifies and closes locally.
+intent were checked. The findings and interim disposition below are superseded
+by the final verification recorded at the end of this review and in the
+[combined release](../releases/phase-6-booking-imports.md).
 
 ## Findings
 
@@ -117,12 +118,12 @@ No Phase 7, cloud deployment, personal inbox or real private input.
 
 ## Remediation disposition — 2026-10-05
 
-Implementation remediation is committed for coordinator verification. Travel
+Implementation remediation was committed for independent verification. Travel
 commit `320201b` includes the fixes below.
 The exact upstream fix was committed first at
 `ebd00a8e2fb2d8b59a5fb5fa3aa44268e5e79b63`, which is now the travel pin.
-The coordinator still needs to independently verify this report and close
-Phase 6; no Phase 7 work has started.
+At this checkpoint, independent verification and Phase 6 closure were still
+pending; the final verification below closes the local review.
 
 1. **PDF and digest identity — addressed.** Travel retains the original byte
    digest and a separate extracted-text digest, sends the latter upstream,
@@ -199,7 +200,7 @@ feature/provider gates remain off. This remediation has not configured Google
 OAuth, Cloud Run IAM, Gemini, Firestore TTL, Linux parser enforcement, cloud
 storage, or any real private input.
 
-## Coordinator final verification and acceptance
+## Independent final verification and acceptance
 
 2026-10-05: re-reviewed the remediation and accepted upstream code revision
 `ebd00a8e2fb2d8b59a5fb5fa3aa44268e5e79b63` for the local Phase 6 integration.

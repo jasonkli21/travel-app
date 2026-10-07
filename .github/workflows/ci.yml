@@ -5,6 +5,12 @@ on:
   pull_request:
 
 jobs:
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/check_markdown_links.py
+
   backend:
     runs-on: ubuntu-latest
     services:

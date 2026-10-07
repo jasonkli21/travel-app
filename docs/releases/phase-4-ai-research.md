@@ -38,7 +38,7 @@ was not changed.
 
 ## Review and verification
 
-- An independent Luna Max reviewed the plan and implementation and identified
+- An independent reviewer reviewed the plan and implementation and identified
   four issues: nonterminal idempotent replays could look successful, results
   could outlive edited inputs or their expiry, citations did not display each
   raw source URL, and route-level ownership/upstream-error regressions were

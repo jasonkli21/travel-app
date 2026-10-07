@@ -68,7 +68,7 @@ bundled Node runtime:
 
 ## Independent review and fixes
 
-Luna Max reviewed the plan, ADR, implementation commits, tests, and release
+An independent reviewer reviewed the plan, ADR, implementation commits, tests, and release
 claims read-only. The follow-up fixes:
 
 - keep saved-place controls visible below the main workspace at tablet/mobile

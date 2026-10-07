@@ -48,9 +48,9 @@ survives source cleanup.
 
 Travel intake/extraction and upstream extraction/provider gates default off.
 The local fake generator is restricted to explicit synthetic test fixtures.
-The coordinator's final whole-Phase 6 verification and external identity,
-provider data-use, service IAM, Firestore TTL, and deployment checks remain
-prerequisites to sensitive production use.
+Whole-phase local review is complete. External identity, provider data-use,
+service IAM, Firestore TTL, and deployment checks remain prerequisites to
+sensitive production use.
 
 ## Consequences
 
@@ -60,5 +60,5 @@ upstream contract plus durable import/confirmation metadata and an explicit
 review UI. It does not add mailbox access, background ingestion, general
 attachments, or cloud source storage.
 
-See the [upstream contract](../../../personal-ai-system/docs/booking-document-extraction-contract.md)
-and the [combined Phase 6 candidate release](../releases/phase-6-booking-imports.md).
+See the [upstream contract at the accepted revision](https://github.com/jasonkli21/personal-ai-agent/blob/ebd00a8e2fb2d8b59a5fb5fa3aa44268e5e79b63/docs/booking-document-extraction-contract.md)
+and the [combined Phase 6 release](../releases/phase-6-booking-imports.md).

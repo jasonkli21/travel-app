@@ -1,5 +1,7 @@
 # Phase 1 implementation plan — manual itinerary planner
 
+**Status:** Accepted locally; see [release evidence](releases/phase-1-itinerary.md).
+
 ## Review corrections (2026-10-03)
 
 The [Phase 0–4 audit](reviews/phase-0-4-audit.md) and ADR 0009 extend the

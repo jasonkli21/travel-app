@@ -1,5 +1,7 @@
 # Phase 3 implementation plan — maps and travel logistics
 
+**Status:** Accepted locally; see [release evidence](releases/phase-3-maps-logistics.md).
+
 ## Review corrections (2026-10-03)
 
 The [Phase 0–4 audit](reviews/phase-0-4-audit.md) extends acceptance criteria;

@@ -1,5 +1,7 @@
 # Phase 4 implementation plan — personal AI research
 
+**Status:** Accepted locally; see [release evidence](releases/phase-4-ai-research.md).
+
 ## Review corrections (2026-10-03)
 
 The [Phase 0–4 audit](reviews/phase-0-4-audit.md) and ADR 0009 extend the
@@ -185,9 +187,9 @@ run, and external credentials/provider limitations in a Phase 4 release note.
 
 ### P4.R — Independent review remediation
 
-After implementation, ask a separate Luna Max agent to review this plan and
-the complete implementation. Address valid plan, contract, security, and code
-findings, then commit the review fixes together.
+Before accepting implementation, complete an independent review of this plan
+and the code. Address valid plan, contract, security, and code findings, then
+record the review fixes together.
 
 Do not create one commit per checklist item. Keep the plan, backend slice,
 frontend slice, release documentation, and review remediation as coherent
