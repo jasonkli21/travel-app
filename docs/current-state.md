@@ -1,6 +1,6 @@
 # Current state
 
-Updated: 2026-10-07
+Updated: 2026-10-08
 
 This is the single living status snapshot. Read the linked release and review
 records for detailed scope, checks, and limitations; do not infer delivery from
@@ -12,6 +12,9 @@ a plan.
   and Phase 6 verified identity, private-source lifecycle, extraction, and
   reservation confirmation remain default-off where external gates apply.
 - Evidence: [Phase 0–4 audit](reviews/phase-0-4-audit.md), [Phase 5 release](releases/phase-5-local-proposals.md) and [lifecycle review](reviews/phase-5-lifecycle-review.md), [Phase 6 release](releases/phase-6-booking-imports.md) and [whole-phase review](reviews/phase-6-whole-review.md).
+- The post-review Phase 2 frontend workspace cleanup is implemented and
+  locally validated without changing travel capabilities or API contracts.
+  See the [workspace cleanup evidence](releases/post-review-phase-2-workspace-cleanup.md).
 
 ## Implemented, exit gates open
 
