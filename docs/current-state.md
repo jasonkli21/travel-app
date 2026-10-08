@@ -28,8 +28,12 @@ a plan.
   GCS is not implemented. See the [release](releases/phase-8-attachments-exports.md), [ADR 0015](decisions/0015-phase8-attachments-and-exports.md), and [plan](phase-8-implementation-plan.md).
 - **Phase 9:** local operational-hardening slice for provider quotas, hosted
   identity configuration, backup/restore tooling, containers, and CI. The
-  phase is not accepted: recovery, deletion, security-scan, performance, and
-  deployment checks remain open. See the [release](releases/phase-9-operational-hardening.md), [ADR 0016](decisions/0016-phase9-operational-hardening.md), [plan](phase-9-implementation-plan.md), and [operations runbook](runbooks/phase-9-operations.md).
+  phase is not accepted. CI now checks Python dependency advisories, tracked
+  secrets, synthetic encrypted SQL/blob recovery invariants, and bounded pool
+  failure/recovery. A local large-trip benchmark is available for operator
+  evidence. Owner-deletion fencing, full privacy/browser acceptance, image
+  scanning/digest pinning, real recovery objectives, hosted behavior, and
+  deployment gates remain open. See the [readiness inventory](releases/phase-9-operational-hardening.md#post-review-phase-3-readiness-inventory), [ADR 0016](decisions/0016-phase9-operational-hardening.md), [plan](phase-9-implementation-plan.md), and [operations runbook](runbooks/phase-9-operations.md).
 
 ## External gates and boundaries
 

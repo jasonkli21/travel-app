@@ -106,6 +106,80 @@ must inspect and remove only their own `travel-backup-*`, `travel-verify-*`,
 and `travel-restore-*` temporary directories after checking no process is using
 them.
 
+## Reproducible local acceptance checks
+
+From the repository root, run the locked Python advisory scan and repository
+secret check:
+
+```bash
+uv export --project backend --locked --all-groups --format requirements-txt \
+  --no-emit-project --output-file /tmp/travel-python-audit.txt > /dev/null
+uv run --project backend --locked pip-audit \
+  --requirement /tmp/travel-python-audit.txt --require-hashes --disable-pip
+git ls-files -z | xargs -0 uv run --project backend --locked detect-secrets-hook --baseline .secrets.baseline
+```
+
+The secret baseline records existing synthetic test credentials and other
+reviewed findings. Do not update it automatically to silence a new alert; review
+and label the candidate first. Both checks are also part of CI.
+
+The encrypted recovery smoke uses only synthetic records and an age key created
+for that run. It requires two separate disposable PostgreSQL databases: an
+empty current-head source and an empty restore destination. For local use,
+migrate only the source database, set `RECOVERY_SOURCE_DATABASE_URL` and
+`RECOVERY_RESTORE_DATABASE_URL`, and run from `backend/`:
+
+```bash
+DATABASE_URL="$RECOVERY_SOURCE_DATABASE_URL" uv run --locked alembic upgrade head
+uv run --locked python -m scripts.recovery_smoke
+```
+
+The smoke fails if the source has business rows or the destination is not empty.
+It verifies encrypted dump authentication, migration/ORM parity, trip,
+reservation, proposal and booking-import rows, application JSON export behavior,
+and SQL references to both booking-source and trip-attachment bytes. It is
+synthetic local evidence; it does not measure real recovery objectives or prove
+an independent recovery environment.
+
+Measure the documented 366-day trip boundary and a 500-place owner portfolio
+with a bounded local drill. From `backend/`, point it at a disposable local
+PostgreSQL database with schema-creation privileges:
+
+```bash
+BENCHMARK_DATABASE_URL='postgresql+psycopg://travel:travel@localhost:5432/travel' \
+  uv run --locked python -m scripts.benchmark_large_trip \
+  --confirm-disposable-database
+```
+
+The script creates and drops one randomly named schema, seeds synthetic data,
+and reports trip-detail, place-list and JSON-export timing, SQL statement counts,
+response sizes, Python allocation peaks, and serial pool status. It has no hard
+latency threshold and does not prove concurrent pool exhaustion or production
+database behavior. Record the emitted JSON with the machine, PostgreSQL version,
+and Git revision when using it for an acceptance decision.
+
+The PostgreSQL pool failure/recovery behavior has a deterministic CI test. It
+exhausts a one-connection pool, checks that an API read fails with a bounded
+503, then releases the connection and verifies the same read succeeds.
+
+### Local browser privacy and response review
+
+Use synthetic local data and a browser session in local-auth mode. In the
+browser network panel, inspect the app document, API reads, JSON/ICS/HTML
+exports, and a private attachment download. Record the actual response headers;
+for private downloads and exports, verify `Cache-Control: no-store`,
+`X-Content-Type-Options: nosniff`, and attachment disposition where the route
+sets them. Confirm attachment bytes download instead of rendering as active
+content. Note any missing security policy as an open finding rather than
+assuming the browser supplies it.
+
+With a configured local map key, inspect the browser tile requests, visible
+provider attribution, and fallback behavior when tiles are blocked or the key
+is absent. Confirm the key is the intended browser key and does not appear in
+application logs. Record browser/version, origin, routes, observed headers, and
+any findings. Provider-side origin restrictions and spend ceilings, hosted
+TLS/proxy headers, and real OAuth behavior remain operator checks.
+
 ## Bounded operational cleanup
 
 Expired sessions/OAuth attempts and provider quota windows are cleaned in
@@ -172,3 +246,18 @@ Manual trip CRUD should remain usable during provider denial or outage.
 - Stop before hosted deployment until Cloud Run/Neon/IAM/network/secrets,
   provider spend controls, and backup storage/retention are explicitly
   authorized and verified.
+
+## Deletion and historical backup handling
+
+A backup is a point-in-time snapshot. Restoring one made before an owner-data
+deletion can restore that data. The current application has no owner-wide
+deletion ledger or restore-time purge fence, so a successful restore does not
+prove that post-snapshot deletions stayed deleted. Before using an older
+recovery point after a deletion, an authorized operator must reconcile the
+recovery cutoff with the deletion record and the approved disposition of
+upstream AI data, local blobs, downloaded exports, and retained backups.
+End-to-end owner deletion and recovery-resurrection acceptance remains open
+until a supported owner-wide deletion procedure and retention policy exist.
+
+The current CI recovery smoke does not simulate deletion after backup or claim
+to fence older snapshots.

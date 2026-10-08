@@ -11,6 +11,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -155,6 +156,79 @@ def _store_inventory(root: Path) -> list[dict[str, Any]]:
     return files
 
 
+def _private_attachment_references(database_url: str) -> list[dict[str, Any]]:
+    """Read the SQL side of the private-byte lifecycle for snapshot validation."""
+    try:
+        engine = create_engine(database_url, pool_size=1, max_overflow=0)
+        try:
+            with engine.connect() as connection:
+                rows = connection.execute(
+                    text(
+                        "SELECT object_key, sha256, byte_size, state "
+                        "FROM source_attachments ORDER BY object_key"
+                    )
+                )
+                return [
+                    {
+                        "object_key": row.object_key,
+                        "sha256": row.sha256,
+                        "byte_size": int(row.byte_size),
+                        "state": row.state,
+                    }
+                    for row in rows
+                ]
+        finally:
+            engine.dispose()
+    except Exception as exc:
+        raise BackupError("Could not inspect private attachment references.") from exc
+
+
+def _validate_private_reference_inventory(
+    references: list[dict[str, Any]], inventory: list[dict[str, Any]]
+) -> dict[str, int]:
+    """Require ready SQL rows to have matching bytes; validate lifecycle leftovers when present."""
+    objects = {item["path"]: item for item in inventory}
+    referenced_paths: set[str] = set()
+    counts = {"ready": 0, "pending": 0, "deleting": 0}
+    for reference in references:
+        key = reference.get("object_key")
+        state = reference.get("state")
+        if not isinstance(key, str) or re.fullmatch(r"[0-9a-f]{32}", key) is None:
+            raise BackupError("A private attachment has an invalid object key.")
+        if state not in counts:
+            raise BackupError("A private attachment has an unsupported lifecycle state.")
+        expected_size = reference.get("byte_size")
+        expected_hash = reference.get("sha256")
+        if (
+            not isinstance(expected_size, int)
+            or expected_size <= 0
+            or not isinstance(expected_hash, str)
+            or re.fullmatch(r"[0-9a-f]{64}", expected_hash) is None
+        ):
+            raise BackupError("A private attachment has invalid byte metadata.")
+
+        final_object = objects.get(key)
+        temporary_object = objects.get(f"{key}.tmp")
+        if state == "ready":
+            if final_object is None:
+                raise BackupError("A ready private attachment is missing from the byte snapshot.")
+            candidates = [(key, final_object)]
+        else:
+            candidates = []
+            if final_object is not None:
+                candidates.append((key, final_object))
+            if temporary_object is not None:
+                candidates.append((f"{key}.tmp", temporary_object))
+
+        for path, item in candidates:
+            if item["bytes"] != expected_size or item["sha256"] != expected_hash:
+                raise BackupError("Private attachment bytes do not match their SQL metadata.")
+            referenced_paths.add(path)
+        counts[state] += 1
+    counts["unreferenced_objects"] = len(set(objects) - referenced_paths)
+    return counts
+
+
 def _safe_relative_path(value: str) -> PurePosixPath:
     path = PurePosixPath(value)
     if (
@@ -234,6 +308,8 @@ def create_backup(
 
     revision_before = _current_revision(database_url)
     files_before = _store_inventory(store_dir)
+    references_before = _private_attachment_references(database_url)
+    _validate_private_reference_inventory(references_before, files_before)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     backup_id = f"travel-{stamp}-{uuid4().hex[:8]}"
     scratch = Path(tempfile.mkdtemp(prefix="travel-backup-"))
@@ -245,7 +321,13 @@ def create_backup(
         _encrypt_database_dump(database_url, database_ciphertext, recipient)
         revision_after = _current_revision(database_url)
         files_after = _store_inventory(store_dir)
-        if revision_after != revision_before or files_after != files_before:
+        references_after = _private_attachment_references(database_url)
+        _validate_private_reference_inventory(references_after, files_after)
+        if (
+            revision_after != revision_before
+            or files_after != files_before
+            or references_after != references_before
+        ):
             raise BackupError("Database revision or private-store bytes changed during backup.")
         db_size, db_digest = _hash_file(database_ciphertext)
         manifest = {
@@ -585,6 +667,13 @@ def restore_backup(
             _restore_database(database_url, passfile, database_ciphertext, identity)
             counts = _validate_restored_database(database_url, manifest["alembic_revision"])
             _check_alembic_parity(dsn, passfile)
+        restored_inventory = _store_inventory(staged_store)
+        if restored_inventory != manifest["private_objects"]:
+            raise BackupError("Restored private-store bytes differ from the backup manifest.")
+        private_references = _private_attachment_references(database_url)
+        reference_counts = _validate_private_reference_inventory(
+            private_references, restored_inventory
+        )
         revision = _current_revision(database_url)
         os.replace(staged_store, store_destination)
         staged_store = None
@@ -593,6 +682,7 @@ def restore_backup(
             "alembic_revision": revision,
             "row_counts": counts,
             "private_objects": len(manifest["private_objects"]),
+            "private_references": reference_counts,
             "elapsed_seconds": round(time.monotonic() - started, 3),
         }
     finally:

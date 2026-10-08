@@ -11,6 +11,7 @@ from scripts.secure_backup import (
     _postgres_connection,
     _safe_relative_path,
     _store_inventory,
+    _validate_private_reference_inventory,
     create_backup,
 )
 
@@ -71,6 +72,62 @@ def test_private_store_inventory_rejects_symlinks(tmp_path: Path) -> None:
 
     with pytest.raises(BackupError, match="symbolic link"):
         _store_inventory(store)
+
+
+def test_private_reference_inventory_requires_matching_ready_bytes() -> None:
+    data = b"private attachment bytes"
+    reference = {
+        "object_key": "a" * 32,
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "byte_size": len(data),
+        "state": "ready",
+    }
+    inventory = [{"path": "a" * 32, "bytes": len(data), "sha256": reference["sha256"]}]
+
+    assert _validate_private_reference_inventory([reference], inventory) == {
+        "ready": 1,
+        "pending": 0,
+        "deleting": 0,
+        "unreferenced_objects": 0,
+    }
+
+    with pytest.raises(BackupError, match="ready private attachment is missing"):
+        _validate_private_reference_inventory([reference], [])
+    with pytest.raises(BackupError, match="do not match"):
+        _validate_private_reference_inventory(
+            [reference], [{"path": "a" * 32, "bytes": len(data), "sha256": "0" * 64}]
+        )
+
+
+def test_pending_and_deleting_references_allow_recoverable_lifecycle_states() -> None:
+    data = b"recoverable bytes"
+    metadata = {
+        "object_key": "b" * 32,
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "byte_size": len(data),
+    }
+    pending = metadata | {"state": "pending"}
+    deleting = metadata | {"state": "deleting"}
+
+    assert (
+        _validate_private_reference_inventory(
+            [pending],
+            [{"path": f"{'b' * 32}.tmp", "bytes": len(data), "sha256": metadata["sha256"]}],
+        )["pending"]
+        == 1
+    )
+    assert _validate_private_reference_inventory([deleting], []) == {
+        "ready": 0,
+        "pending": 0,
+        "deleting": 1,
+        "unreferenced_objects": 0,
+    }
+    assert (
+        _validate_private_reference_inventory(
+            [], [{"path": "c" * 32, "bytes": 1, "sha256": "1" * 64}]
+        )["unreferenced_objects"]
+        == 1
+    )
 
 
 def test_backup_requires_operator_to_acknowledge_stopped_writers(tmp_path: Path) -> None:

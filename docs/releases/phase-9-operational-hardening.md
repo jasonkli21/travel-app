@@ -97,9 +97,84 @@ provider billing control was created or exercised. Image base tags are not
 registry-digest pinned, and CI build image IDs do not establish deployment
 digests.
 
-Phase 9 remains open for approved recovery objectives, measured SQL/blob
-restore and deletion-isolation drills, owner-wide deletion inventory and
-upstream AI-record disposition, enabled repository vulnerability and secret
-scanning, base-image digest pinning, measured performance and pool exhaustion,
-public tile spend controls, and the separately authorized hosted smoke path.
-Do not admit private hosted data until the release checklist is complete.
+## Post-review Phase 3 readiness inventory
+
+The existing CI baseline listed above remains in place. The post-review work
+adds reproducible repository checks where local evidence is meaningful and
+keeps production acceptance separate.
+
+| Readiness item | Classification | Status and proof boundary |
+| --- | --- | --- |
+| Locked Python dependency advisory scan | CI-automatable | Added to CI. The local locked graph scan reported no known vulnerabilities on 2026-10-08. |
+| Repository secret scan | CI-automatable | Added to CI. Tracked files and new scripts/tests pass against the reviewed baseline. |
+| Synthetic encrypted SQL/private-store backup and restore, including restored application invariants and SQL-to-blob references | CI-automatable | Added to CI and passed locally with separate disposable PostgreSQL databases and an ephemeral age identity. Does not establish real RPO/RTO or independent recovery. |
+| Bounded API behavior when the database pool is exhausted, then released | CI-automatable | Added PostgreSQL test requires a bounded 503 and a successful subsequent read; full backend suite passed. |
+| 366-day trip, owner-place portfolio, request/query/export and memory evidence | Locally executable manual drill | Added and locally ran bounded `backend/scripts/benchmark_large_trip.py`; results are recorded below, with no flaky latency threshold. It does not prove concurrent or hosted load. |
+| Complete auth/privacy and resource-bound route matrix, including multi-owner IDs, stale sessions, CSRF/logout, exports, owner migration, hostile input, and bounded request/output behavior | CI-automatable | Existing focused tests cover important cases; the full route matrix remains open. |
+| Browser security-header and download/map behavior review | Locally executable manual drill | A local synthetic-data browser checklist is in the operations runbook; this observation drill remains open. Hosted TLS/proxy behavior is separate. |
+| Base-image digest pinning, image/runtime vulnerability scanning, graceful shutdown under in-flight requests, and immutable deployable digest evidence | CI-automatable | Open. Dependabot update discovery and container startup smokes do not prove image vulnerability status, graceful shutdown, or deployment digests. |
+| Owner-wide deletion inventory, upstream AI-record disposition, and restoration protection for data deleted after a backup | Production/operator-only | Open. No owner-wide deletion workflow or restore-time deletion fence exists. Retention and upstream disposition require an approved procedure; point-in-time restore can reintroduce later-deleted data. |
+| Approved RPO/RTO, backup cadence/retention, connection/capacity budget, real SQL/blob restore, and independent recovery environment | Production/operator-only | Open. Requires owner approval, real recovery points, measured elapsed time, and a separate recovery environment. |
+| Cloud Run, IAM/least privilege, OAuth, TLS/proxy, service audiences, Neon pooling/load, provider credentials and hard billing ceilings, tile-key restrictions, secret rotation, and rollout/rollback | Production/operator-only | Open. Must be exercised by an authorized operator in the actual hosted environment. Local CI cannot establish these facts. |
+| Multi-instance concurrency, provider cancellation/unknown outcomes, and production dependency/claim/storage telemetry | Production/operator-only | Local shared-PostgreSQL quota and aggregate-write concurrency tests exist, and pool bounds are tested; hosted load and production operational signals remain unproved. |
+
+### Added repository-local gates and drill path
+
+- CI now runs the locked Python advisory scan and tracked-file secret scan.
+- The encrypted recovery smoke restores synthetic trips, reservations,
+  proposals, booking-import outcomes, and both booking-source and trip-attachment
+  bytes; it asserts restored SQL relationships, byte hashes, migration/ORM
+  parity, and application JSON export behavior.
+- Recovery validation now rejects a missing or mismatched blob for a `ready`
+  SQL attachment. `pending` and `deleting` lifecycle states remain recoverable
+  when their object is absent, while any present lifecycle bytes must match SQL.
+- A pool-exhaustion regression test checks a bounded database-unavailable
+  response and recovery after releasing the connection.
+- Operators can run the bounded 366-day trip/500-place benchmark from the
+  [operations runbook](../runbooks/phase-9-operations.md). Record the JSON
+  evidence with host, database version, and revision before setting targets.
+- The same runbook now includes a local browser checklist for observing
+  document, export, attachment-download, and map responses with synthetic data.
+
+Do not mark Phase 9 production accepted from these repository checks. Hosted
+private data remains disabled until durable shared storage exists and all
+production/operator gates are authorized and verified. A backup is a
+point-in-time snapshot; this work does not prevent an older restore from
+reintroducing data deleted after that snapshot.
+
+### Phase 3 validation evidence — 2026-10-08
+
+The repository-local checks were run on a local Apple Silicon macOS host with
+PostgreSQL 16.15. The disposable databases and generated recovery identity used
+synthetic data only.
+
+- Backend: `uv run --locked pytest -q` with `TEST_DATABASE_URL` and
+  `DATABASE_URL` pointed at the disposable PostgreSQL database — **295 passed,
+  0 skipped**. Ruff check and format, mypy for `src`, package build, and Python
+  bytecode compilation passed. Alembic upgraded to head, `alembic check`
+  reported no operations, downgraded to base, and upgraded to head again.
+- Security: locked uv export plus `pip-audit --require-hashes --disable-pip`
+  reported **no known vulnerabilities**. `detect-secrets-hook` passed for
+  tracked files and the new scripts/tests.
+- Recovery: encrypted backup verified and restored at revision `0015`; the
+  restored database contained one trip, reservation, proposal, and booking
+  import, with two ready private objects, two matching SQL references, zero
+  unreferenced objects, and a successful application JSON export.
+- Large-trip drill: 366 trip days/items, 500 owner places, five iterations per
+  request, and a two-connection pool with zero overflow. Trip detail measured
+  111.48 ms median / 179.05 ms p95, six SQL statements, 270,674 response bytes,
+  and 4.63 MB peak traced Python allocation. Owner-place reads measured 23.92
+  ms median / 102.51 ms p95, one statement, 173,501 bytes, and 2.04 MB peak.
+  JSON export measured 1,121.52 ms median / 1,163.72 ms p95, 15 statements,
+  264,541 bytes, and 3.65 MB peak. Pool connections checked out after requests:
+  zero. These are local observations, not production targets.
+- Frontend package scripts passed using the existing dependency tree and the
+  bundled Node v24.19 runtime: 54 Node tests, ESLint, Next route type generation,
+  TypeScript checking, and production build. The bundled pnpm launcher tried
+  to retrieve the repository's pinned package-manager version from npm, which
+  was unavailable locally; frozen install and package-manager audit remain
+  covered by the unchanged CI job.
+
+The container job was not changed. No hosted environment, image registry
+scanner, operator recovery environment, or production acceptance gate was
+exercised by this validation.
