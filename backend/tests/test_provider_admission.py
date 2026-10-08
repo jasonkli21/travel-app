@@ -239,6 +239,54 @@ def test_hosted_settings_require_verified_identity_and_explicit_web_origins(
         Settings(_env_file=None, deployment_mode="local")
 
 
+@pytest.mark.parametrize(
+    ("deployment_mode", "private_imports", "private_attachments", "accepted"),
+    [
+        ("local", True, False, True),
+        ("local", False, True, True),
+        ("hosted", False, False, True),
+        ("hosted", True, False, False),
+        ("hosted", False, True, False),
+        ("hosted", True, True, False),
+    ],
+)
+def test_private_storage_configuration_matrix(
+    tmp_path: Path,
+    deployment_mode: str,
+    private_imports: bool,
+    private_attachments: bool,
+    accepted: bool,
+) -> None:
+    settings = {
+        "deployment_mode": deployment_mode,
+        "travel_auth_mode": "google_oidc",
+        "google_oauth_client_id": "synthetic-client",
+        "google_oauth_client_secret": "synthetic-secret",
+        "google_oauth_redirect_uri": "https://travel.example.test/auth/google/callback",
+        "google_oauth_allowed_email": "owner@gmail.com",
+        "allowed_hosts": "api.example.test",
+        "cors_origins": "https://travel.example.test",
+        "private_imports_enabled": private_imports,
+        "private_attachments_enabled": private_attachments,
+    }
+    if private_imports or private_attachments:
+        settings["private_source_dir"] = str(tmp_path)
+
+    if accepted:
+        configured = Settings(_env_file=None, **settings)
+        assert configured.deployment_mode == deployment_mode
+    else:
+        with pytest.raises(ValueError) as error:
+            Settings(_env_file=None, **settings)
+        message = str(error.value)
+        assert "only private storage implementation is local filesystem storage" in message
+        assert "durable shared object store, which is not implemented" in message
+        if private_imports:
+            assert "PRIVATE_IMPORTS_ENABLED" in message
+        if private_attachments:
+            assert "PRIVATE_ATTACHMENTS_ENABLED" in message
+
+
 def test_http_provider_budget_returns_retry_after_before_route_dispatch(
     quota_factory,
 ) -> None:

@@ -69,6 +69,21 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_identity_configuration(self) -> "Settings":
+        if self.deployment_mode == "hosted" and (
+            self.private_imports_enabled or self.private_attachments_enabled
+        ):
+            enabled_private_features = []
+            if self.private_imports_enabled:
+                enabled_private_features.append("private booking imports (PRIVATE_IMPORTS_ENABLED)")
+            if self.private_attachments_enabled:
+                enabled_private_features.append("private attachments (PRIVATE_ATTACHMENTS_ENABLED)")
+            feature_list = " and ".join(enabled_private_features)
+            raise ValueError(
+                f"Hosted deployment cannot enable {feature_list}: the only private storage "
+                "implementation is local filesystem storage (LocalSourceStore). Disable the "
+                "listed feature flag(s) or use local deployment mode. Hosted private files "
+                "require a supported durable shared object store, which is not implemented."
+            )
         if self.deployment_mode == "hosted":
             hosts = self.allowed_host_list
             origins = self.cors_origin_list

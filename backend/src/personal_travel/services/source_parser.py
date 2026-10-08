@@ -107,6 +107,19 @@ def _send(connection: Connection, code: str, text: str = "") -> None:
     connection.send((code, text))
 
 
+def _receive_result(connection: Connection, failure_code: str) -> tuple[str, str]:
+    try:
+        value = connection.recv()
+    except EOFError as exc:
+        raise SourceParseError(failure_code) from exc
+    if not isinstance(value, tuple) or len(value) != 2:
+        raise SourceParseError(failure_code)
+    code, text = value
+    if not isinstance(code, str) or not isinstance(text, str):
+        raise SourceParseError(failure_code)
+    return code, text
+
+
 def _worker(path: str, connection: Connection, require_text: bool = True) -> None:
     try:
         limits = (
@@ -250,17 +263,7 @@ def parse_pdf(
                     process.terminate()
                     raise SourceParseError("pdf_memory_limit")
             if parent.poll(min(remaining, 0.05)):
-                try:
-                    value = parent.recv()
-                except EOFError as exc:
-                    raise SourceParseError("pdf_parser_failed") from exc
-                if (
-                    not isinstance(value, tuple)
-                    or len(value) != 2
-                    or not all(isinstance(part, str) for part in value)
-                ):
-                    raise SourceParseError("pdf_parser_failed")
-                result = value
+                result = _receive_result(parent, "pdf_parser_failed")
             elif not process.is_alive():
                 raise SourceParseError("pdf_parser_failed")
 
@@ -302,8 +305,8 @@ def validate_image(path: Path, media_type: str, *, wall_time_seconds: float = 5)
         child.close()
         child_closed = True
         deadline = started + wall_time_seconds
-        code: str | None = None
-        while code is None:
+        result: tuple[str, str] | None = None
+        while result is None:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise SourceParseError("image_timeout")
@@ -316,19 +319,10 @@ def validate_image(path: Path, media_type: str, *, wall_time_seconds: float = 5)
                     process.terminate()
                     raise SourceParseError("image_memory_limit")
             if parent.poll(min(remaining, 0.05)):
-                try:
-                    value = parent.recv()
-                except EOFError as exc:
-                    raise SourceParseError("image_parser_failed") from exc
-                if (
-                    not isinstance(value, tuple)
-                    or len(value) != 2
-                    or not all(isinstance(part, str) for part in value)
-                ):
-                    raise SourceParseError("image_parser_failed")
-                code = value[0]
+                result = _receive_result(parent, "image_parser_failed")
             elif not process.is_alive():
                 raise SourceParseError("image_parser_failed")
+        code, _ = result
         if code != "ok":
             raise SourceParseError(code)
     except SourceParseError:
