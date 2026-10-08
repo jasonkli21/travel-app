@@ -127,7 +127,9 @@ def _current_revision(database_url: str) -> str:
 def _store_inventory(root: Path) -> list[dict[str, Any]]:
     if root.is_symlink() or not root.is_dir():
         raise BackupError("The private store must be an existing real directory.")
-    files: list[dict[str, Any]] = []
+    records: list[tuple[str, os.stat_result]] = []
+    by_inode: dict[tuple[int, int], list[str]] = {}
+    inode_info: dict[tuple[int, int], os.stat_result] = {}
     for path in sorted(root.rglob("*")):
         try:
             info = path.lstat()
@@ -137,16 +139,49 @@ def _store_inventory(root: Path) -> list[dict[str, Any]]:
             raise BackupError("The private store contains a symbolic link.")
         if stat.S_ISDIR(info.st_mode):
             continue
-        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+        if not stat.S_ISREG(info.st_mode):
             raise BackupError("The private store contains an unsupported file type.")
-        if path.name.endswith(".lock"):
-            continue
         relative = path.relative_to(root).as_posix()
         _safe_relative_path(relative)
+        records.append((relative, info))
+        inode = (info.st_dev, info.st_ino)
+        inode_info[inode] = info
+        by_inode.setdefault(inode, []).append(relative)
+
+    # Promotion links `<key>.tmp` to `<key>` before unlinking the temporary
+    # name. If the process stops in that window, the pair is one verified file
+    # with two in-store names. Snapshot only the final name; an external link or
+    # any other hard-link shape is still rejected.
+    redundant_temporary_names: set[str] = set()
+    for inode, names in by_inode.items():
+        info = inode_info[inode]
+        if info.st_nlink == 1 and len(names) == 1:
+            continue
+        if info.st_nlink != 2 or len(names) != 2:
+            raise BackupError("The private store contains an unsupported file type.")
+        final_name = next(
+            (name for name in names if re.fullmatch(r"[0-9a-f]{32}", Path(name).name)),
+            None,
+        )
+        temporary_name = next(
+            (name for name in names if re.fullmatch(r"[0-9a-f]{32}\.tmp", Path(name).name)),
+            None,
+        )
+        if final_name is None or temporary_name is None:
+            raise BackupError("The private store contains an unsupported file type.")
+        final_path = PurePosixPath(final_name)
+        if final_path.parent != PurePosixPath(temporary_name).parent:
+            raise BackupError("The private store contains an unsupported file type.")
+        redundant_temporary_names.add(temporary_name)
+
+    files: list[dict[str, Any]] = []
+    for relative, _info in records:
+        if relative.endswith(".lock") or relative in redundant_temporary_names:
+            continue
         digest = hashlib.sha256()
         size = 0
         try:
-            with path.open("rb") as stream:
+            with (root / _safe_relative_path(relative)).open("rb") as stream:
                 while block := stream.read(CHUNK_BYTES):
                     size += len(block)
                     digest.update(block)
@@ -212,16 +247,22 @@ def _validate_private_reference_inventory(
         if state == "ready":
             if final_object is None:
                 raise BackupError("A ready private attachment is missing from the byte snapshot.")
-            candidates = [(key, final_object)]
+            candidates = [(key, final_object, True)]
         else:
             candidates = []
             if final_object is not None:
-                candidates.append((key, final_object))
+                candidates.append((key, final_object, True))
             if temporary_object is not None:
-                candidates.append((f"{key}.tmp", temporary_object))
+                # A pending upload can be interrupted during its temporary-file
+                # write. Preserve and hash those bytes in the snapshot, but do
+                # not require them to match the complete SQL payload until the
+                # upload replay verifies and promotes the final object.
+                candidates.append((f"{key}.tmp", temporary_object, state != "pending"))
 
-        for path, item in candidates:
-            if item["bytes"] != expected_size or item["sha256"] != expected_hash:
+        for path, item, verify_complete_payload in candidates:
+            if verify_complete_payload and (
+                item["bytes"] != expected_size or item["sha256"] != expected_hash
+            ):
                 raise BackupError("Private attachment bytes do not match their SQL metadata.")
             referenced_paths.add(path)
         counts[state] += 1

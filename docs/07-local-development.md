@@ -35,6 +35,12 @@ Set `TRAVEL_API_URL` in `frontend/.env.local` to change the proxy's backend addr
 it remains server-only. Environment variables supplied by the shell/container
 take precedence over environment files.
 
+Use `TRAVEL_DEPLOYMENT_MODE=local` for development and
+`TRAVEL_DEPLOYMENT_MODE=hosted` for the hosted configuration guard. The
+unprefixed `DEPLOYMENT_MODE` spelling remains a compatibility alias. When both
+are set, `TRAVEL_DEPLOYMENT_MODE` takes precedence. Cloud Run's `K_SERVICE`
+environment requires hosted mode.
+
 Geoapify features are optional. To enable submitted place search and route
 estimates, set `GEOAPIFY_API_KEY` in the root `.env`; this key is read only by
 the backend. To enable map tiles, set `NEXT_PUBLIC_GEOAPIFY_API_KEY` in

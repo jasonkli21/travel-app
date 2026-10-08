@@ -75,11 +75,11 @@ export default function ItinerarySection({
                       <button className="iconButton dangerText" type="button" onClick={() => { if (window.confirm(`Delete ${item.title}?`)) void runMutation(`delete-${item.id}`, async () => { await travelApi.deleteItem(trip.id, item.id, trip.revision); }); }} disabled={disabled} aria-label={`Delete ${item.title}`}>Delete</button>
                     </div>
                   </div>
-                  {editingItem === item.id ? <ItemForm key={`${editorGeneration}-${item.id}`} trip={trip} dayId={day.id} places={places} reservations={reservations} initial={item} pending={pending === `item-${item.id}`} disabled={disabled} onSubmit={async (input) => { const saved = await runMutation(`item-${item.id}`, async () => { await travelApi.updateItem(trip.id, item.id, input, trip.revision); }); if (saved) setEditingItem(null); return saved; }} onCreatePlace={onCreatePlace} onCancel={() => setEditingItem(null)} /> : null}
+                  {editingItem === item.id ? <ItemForm key={`${editorGeneration}-${item.id}`} trip={trip} dayId={day.id} places={places} reservations={reservations} initial={item} pending={pending === `item-${item.id}`} disabled={disabled} onSubmit={async (input, expectedTripRevision) => { const saved = await runMutation(`item-${item.id}`, async () => { await travelApi.updateItem(trip.id, item.id, input, expectedTripRevision); }); if (saved) setEditingItem(null); return saved; }} onCreatePlace={onCreatePlace} onCancel={() => setEditingItem(null)} /> : null}
                 </div>
               ))}
             </div>
-            {addingDay === day.id ? <ItemForm key={`${editorGeneration}-new-${day.id}`} trip={trip} dayId={day.id} places={places} reservations={reservations} pending={pending === `add-${day.id}`} disabled={disabled} onSubmit={async (input) => { const saved = await runMutation(`add-${day.id}`, async () => { await travelApi.createItem(trip.id, day.id, input as CreateItemInput, trip.revision); }); if (saved) setAddingDay(null); return saved; }} onCreatePlace={onCreatePlace} /> : null}
+            {addingDay === day.id ? <ItemForm key={`${editorGeneration}-new-${day.id}`} trip={trip} dayId={day.id} places={places} reservations={reservations} pending={pending === `add-${day.id}`} disabled={disabled} onSubmit={async (input, expectedTripRevision) => { const saved = await runMutation(`add-${day.id}`, async () => { await travelApi.createItem(trip.id, day.id, input as CreateItemInput, expectedTripRevision); }); if (saved) setAddingDay(null); return saved; }} onCreatePlace={onCreatePlace} onCancel={() => setAddingDay(null)} /> : null}
           </article>
         ))}
       </div>

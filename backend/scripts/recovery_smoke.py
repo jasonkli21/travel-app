@@ -12,6 +12,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import tempfile
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -20,6 +21,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import Session, sessionmaker
 
+from personal_travel.api.routes.attachments import _promote_or_recover
 from personal_travel.api.schemas.attachments import TripExportRequest
 from personal_travel.models import (
     BookingImport,
@@ -31,6 +33,8 @@ from personal_travel.models import (
     Trip,
     TripDay,
 )
+from personal_travel.services.attachments import AttachmentService
+from personal_travel.services.source_store import LocalSourceStore
 from personal_travel.services.trip_exports import build_export, render_export
 from scripts.secure_backup import (
     BackupError,
@@ -47,6 +51,9 @@ TRIP_TITLE = "Synthetic recovery smoke trip"
 ITEM_TITLE = "Synthetic recovery itinerary item"
 ATTACHMENT_BYTES = b"synthetic trip attachment for recovery"
 BOOKING_BYTES = b"synthetic booking source for recovery"
+PENDING_PROMOTION_BYTES = b"complete upload interrupted after link promotion"
+PENDING_PARTIAL_BYTES = b"partial upload bytes"
+PENDING_UPLOAD_BYTES = b"complete upload interrupted during temporary write"
 
 
 def _database_has_business_data(database_url: str) -> bool:
@@ -72,10 +79,15 @@ def _database_has_business_data(database_url: str) -> bool:
 def _seed_source(database_url: str, store_dir: Path) -> tuple[str, dict[str, str]]:
     attachment_key = uuid4().hex
     booking_key = uuid4().hex
+    pending_promotion_key = uuid4().hex
+    pending_partial_key = uuid4().hex
     attachment_hash = hashlib.sha256(ATTACHMENT_BYTES).hexdigest()
     booking_hash = hashlib.sha256(BOOKING_BYTES).hexdigest()
     (store_dir / attachment_key).write_bytes(ATTACHMENT_BYTES)
     (store_dir / booking_key).write_bytes(BOOKING_BYTES)
+    (store_dir / pending_promotion_key).with_suffix(".tmp").write_bytes(PENDING_PROMOTION_BYTES)
+    (store_dir / f"{pending_promotion_key}.tmp").hardlink_to(store_dir / pending_promotion_key)
+    (store_dir / f"{pending_partial_key}.tmp").write_bytes(PENDING_PARTIAL_BYTES)
 
     engine = create_engine(database_url, pool_size=1, max_overflow=0)
     try:
@@ -137,7 +149,31 @@ def _seed_source(database_url: str, store_dir: Path) -> tuple[str, dict[str, str
                 display_filename="synthetic-booking.txt",
                 state="ready",
             )
-            session.add_all([attachment, booking_source])
+            pending_promotion = SourceAttachment(
+                owner_id=OWNER_ID,
+                trip_id=trip.id,
+                reservation_id=reservation.id,
+                purpose="trip_attachment",
+                object_key=pending_promotion_key,
+                sha256=hashlib.sha256(PENDING_PROMOTION_BYTES).hexdigest(),
+                media_type="text/plain",
+                byte_size=len(PENDING_PROMOTION_BYTES),
+                display_filename="synthetic-promoted-pending.txt",
+                state="pending",
+            )
+            pending_partial = SourceAttachment(
+                owner_id=OWNER_ID,
+                trip_id=trip.id,
+                reservation_id=reservation.id,
+                purpose="trip_attachment",
+                object_key=pending_partial_key,
+                sha256=hashlib.sha256(PENDING_UPLOAD_BYTES).hexdigest(),
+                media_type="text/plain",
+                byte_size=len(PENDING_UPLOAD_BYTES),
+                display_filename="synthetic-partial-pending.txt",
+                state="pending",
+            )
+            session.add_all([attachment, booking_source, pending_promotion, pending_partial])
             session.flush()
             session.add(
                 BookingImport(
@@ -179,7 +215,12 @@ def _seed_source(database_url: str, store_dir: Path) -> tuple[str, dict[str, str
             trip_id = str(trip.id)
     finally:
         engine.dispose()
-    return trip_id, {"attachment": attachment_key, "booking": booking_key}
+    return trip_id, {
+        "attachment": attachment_key,
+        "booking": booking_key,
+        "pending_promotion": pending_promotion_key,
+        "pending_partial": pending_partial_key,
+    }
 
 
 def _age_recipient(identity: Path) -> str:
@@ -258,12 +299,63 @@ def _assert_restored_invariants(
                 for key, data in (
                     (keys["attachment"], ATTACHMENT_BYTES),
                     (keys["booking"], BOOKING_BYTES),
+                    (f"{keys['pending_partial']}.tmp", PENDING_PARTIAL_BYTES),
+                    (keys["pending_promotion"], PENDING_PROMOTION_BYTES),
                 )
             ],
         )
-        assert consistency["ready"] == 2 and consistency["unreferenced_objects"] == 0
+        assert consistency == {
+            "ready": 2,
+            "pending": 2,
+            "deleting": 0,
+            "unreferenced_objects": 0,
+        }
         assert (store_dir / keys["attachment"]).read_bytes() == ATTACHMENT_BYTES
         assert (store_dir / keys["booking"]).read_bytes() == BOOKING_BYTES
+        assert (store_dir / f"{keys['pending_partial']}.tmp").read_bytes() == PENDING_PARTIAL_BYTES
+        assert (store_dir / keys["pending_promotion"]).read_bytes() == PENDING_PROMOTION_BYTES
+        assert not (store_dir / f"{keys['pending_promotion']}.tmp").exists()
+
+        with Session(engine) as session:
+            pending_by_key = {
+                item.object_key: item
+                for item in session.scalars(
+                    select(SourceAttachment).where(
+                        SourceAttachment.trip_id == UUID(trip_id),
+                        SourceAttachment.state == "pending",
+                    )
+                )
+            }
+        assert set(pending_by_key) == {keys["pending_partial"], keys["pending_promotion"]}
+        assert all(item.state == "pending" for item in pending_by_key.values())
+        listed = AttachmentService(factory).list(OWNER_ID, UUID(trip_id))
+        assert all(
+            item["state"] != "ready" for item in listed if item["_object_key"] in pending_by_key
+        )
+
+        store = LocalSourceStore(store_dir)
+        try:
+            for key, payload in (
+                (keys["pending_partial"], PENDING_UPLOAD_BYTES),
+                (keys["pending_promotion"], PENDING_PROMOTION_BYTES),
+            ):
+                source = pending_by_key[key]
+                state, metadata = _promote_or_recover(
+                    store,
+                    key,
+                    payload,
+                    hashlib.sha256(payload).hexdigest(),
+                    len(payload),
+                    AttachmentService(factory),
+                    OWNER_ID,
+                    UUID(trip_id),
+                    source.id,
+                )
+                assert state == "ready" and metadata is not None
+                assert store.read(key) == payload
+                assert store.entry_stat(key + ".tmp") is None
+        finally:
+            store.close()
 
         projection = build_export(
             factory,
@@ -343,7 +435,7 @@ def main() -> int:
                 {"error_type": type(exc).__name__, "error": "Recovery smoke did not complete."},
                 sort_keys=True,
             ),
-            file=os.sys.stderr,
+            file=sys.stderr,
         )
         return 2
 

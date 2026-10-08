@@ -15,9 +15,11 @@ export default function PlaceForm({
   initial?: PlaceSummary;
   pending: boolean;
   disabled: boolean;
-  onSubmit: (input: CreatePlaceInput | UpdatePlaceInput) => Promise<boolean>;
+  onSubmit: (input: CreatePlaceInput | UpdatePlaceInput, expectedPlaceRevision?: number) => Promise<boolean>;
   onCancel?: () => void;
 }) {
+  const [draftRevision] = useState(initial?.revision);
+  const draftStale = initial !== undefined && draftRevision !== initial.revision;
   const [name, setName] = useState(initial?.name ?? "");
   const [category, setCategory] = useState(initial?.category ?? "");
   const [address, setAddress] = useState(initial?.address ?? "");
@@ -29,6 +31,10 @@ export default function PlaceForm({
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (draftStale) {
+      setFormError("This place changed after the draft opened. Close and reopen the editor before saving.");
+      return;
+    }
     if (!name.trim()) {
       setFormError("Give the place a name.");
       return;
@@ -43,7 +49,7 @@ export default function PlaceForm({
         address: address.trim() || null,
         phone: phone.trim() || null,
         website_url: websiteUrl.trim() || null,
-      });
+      }, draftRevision);
       if (!saved) setFormError("Review the workspace message before retrying this place.");
     } catch (error) {
       setFormError(errorMessage(error));
@@ -52,7 +58,7 @@ export default function PlaceForm({
 
   return (
     <form className="placeForm" onSubmit={submit}>
-      <fieldset disabled={disabled || pending}>
+      <fieldset disabled={disabled || pending || draftStale}>
         <label>Name<input value={name} onChange={(event) => setName(event.target.value)} maxLength={240} required /></label>
         <div className="formGrid">
           <label>Category<input value={category} onChange={(event) => setCategory(event.target.value)} maxLength={120} placeholder="Museum, hotel, restaurant…" /></label>
@@ -65,11 +71,12 @@ export default function PlaceForm({
         <p className="formHint">Enter both coordinates to show this place on the map, or clear both.</p>
         <label>Address<input value={address} onChange={(event) => setAddress(event.target.value)} maxLength={500} /></label>
         <label>Website<input type="url" value={websiteUrl} onChange={(event) => setWebsiteUrl(event.target.value)} maxLength={500} placeholder="https://…" /></label>
-        <div className="formActions">
-          <button className="primary" type="submit">{pending ? "Saving…" : initial ? "Save place" : "Add place"}</button>
-          {onCancel ? <button className="secondary" type="button" onClick={onCancel}>Cancel</button> : null}
-        </div>
       </fieldset>
+      {draftStale ? <p className="formError" role="status">This place changed after the draft opened. Your edits are preserved. Close the editor and reopen it to review current values before saving.</p> : null}
+      <div className="formActions">
+        <button className="primary" type="submit" disabled={disabled || pending || draftStale}>{pending ? "Saving…" : initial ? "Save place" : "Add place"}</button>
+        {onCancel ? <button className="secondary" type="button" onClick={onCancel} disabled={disabled || pending}>Cancel</button> : null}
+      </div>
       {formError ? <p className="formError" role="alert">{formError}</p> : null}
     </form>
   );

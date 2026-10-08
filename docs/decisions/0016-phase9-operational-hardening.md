@@ -75,6 +75,12 @@ backups retained seven days, and encrypted weekly backups retained four weeks.
 These values must be explicitly approved and then measured in a restore drill;
 the app does not schedule or expire backups automatically.
 
+Owner-wide deletion and restore-time deletion fencing are also open engineering
+gates. The inventory/workflow, fence, and synthetic recovery regression need
+implementation and CI coverage. Owner-approved retention and upstream-data
+disposition, followed by a real older-backup reconciliation drill, remain
+separate owner/operator gates.
+
 The target topology remains the previously documented private API / web
 frontend / managed PostgreSQL direction. No IAM roles, network policy, secrets,
 storage bucket, provider spend cap, or service instance cap is established
@@ -89,8 +95,8 @@ database/storage remain release gates.
 - PostgreSQL stores pseudonymous owner hashes and short-lived quota counters.
 - Backup operation requires local `pg_dump`, `pg_restore`, `age`, and a
   protected age identity. Operators must quiesce all writers themselves.
-- Backups are not per-owner deletable. Deletion reports must disclose copies
-  still within the approved backup retention window and upstream deletion
-  outcomes.
+- Backups are not per-owner deletable. A future owner-deletion workflow must
+  disclose copies still within the approved backup retention window and
+  upstream deletion outcomes.
 - This ADR establishes local safeguards. It does not claim Phase 9 complete or
   authorize provisioning/deployment.

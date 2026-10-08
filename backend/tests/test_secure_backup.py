@@ -74,6 +74,35 @@ def test_private_store_inventory_rejects_symlinks(tmp_path: Path) -> None:
         _store_inventory(store)
 
 
+def test_private_store_inventory_normalizes_interrupted_promotion_hard_link(
+    tmp_path: Path,
+) -> None:
+    store = tmp_path / "private"
+    store.mkdir()
+    key = "d" * 32
+    (store / key).write_bytes(b"complete promoted bytes")
+    (store / f"{key}.tmp").hardlink_to(store / key)
+
+    assert _store_inventory(store) == [
+        {
+            "path": key,
+            "bytes": len(b"complete promoted bytes"),
+            "sha256": hashlib.sha256(b"complete promoted bytes").hexdigest(),
+        }
+    ]
+
+
+def test_private_store_inventory_rejects_external_hard_links(tmp_path: Path) -> None:
+    store = tmp_path / "private"
+    store.mkdir()
+    object_path = store / ("e" * 32)
+    object_path.write_bytes(b"private bytes")
+    (tmp_path / "outside-link").hardlink_to(object_path)
+
+    with pytest.raises(BackupError, match="unsupported file type"):
+        _store_inventory(store)
+
+
 def test_private_reference_inventory_requires_matching_ready_bytes() -> None:
     data = b"private attachment bytes"
     reference = {
@@ -128,6 +157,43 @@ def test_pending_and_deleting_references_allow_recoverable_lifecycle_states() ->
         )["unreferenced_objects"]
         == 1
     )
+
+
+def test_partial_pending_temp_is_snapshotted_with_unrelated_ready_object() -> None:
+    ready_data = b"verified ready attachment"
+    intended_pending_data = b"complete upload that was interrupted"
+    partial_pending_data = b"partial upload"
+    ready = {
+        "object_key": "f" * 32,
+        "sha256": hashlib.sha256(ready_data).hexdigest(),
+        "byte_size": len(ready_data),
+        "state": "ready",
+    }
+    pending = {
+        "object_key": "0" * 32,
+        "sha256": hashlib.sha256(intended_pending_data).hexdigest(),
+        "byte_size": len(intended_pending_data),
+        "state": "pending",
+    }
+    inventory = [
+        {
+            "path": ready["object_key"],
+            "bytes": len(ready_data),
+            "sha256": ready["sha256"],
+        },
+        {
+            "path": f"{pending['object_key']}.tmp",
+            "bytes": len(partial_pending_data),
+            "sha256": hashlib.sha256(partial_pending_data).hexdigest(),
+        },
+    ]
+
+    assert _validate_private_reference_inventory([ready, pending], inventory) == {
+        "ready": 1,
+        "pending": 1,
+        "deleting": 0,
+        "unreferenced_objects": 0,
+    }
 
 
 def test_backup_requires_operator_to_acknowledge_stopped_writers(tmp_path: Path) -> None:

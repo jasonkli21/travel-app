@@ -15,7 +15,7 @@ type ItemFormProps = {
   initial?: ItineraryItem;
   pending: boolean;
   disabled: boolean;
-  onSubmit: (input: CreateItemInput | UpdateItemInput) => Promise<boolean>;
+  onSubmit: (input: CreateItemInput | UpdateItemInput, expectedTripRevision: number) => Promise<boolean>;
   onCreatePlace: (name: string) => Promise<PlaceSummary>;
   onCancel?: () => void;
 };
@@ -32,6 +32,8 @@ export default function ItemForm({
   onCreatePlace,
   onCancel,
 }: ItemFormProps) {
+  const [draftRevision] = useState(trip.revision);
+  const draftStale = draftRevision !== trip.revision;
   const [title, setTitle] = useState(initial?.title ?? "");
   const [itemType, setItemType] = useState<ItemType>(initial?.item_type ?? "activity");
   const [status, setStatus] = useState<ItemStatus>(initial?.status ?? "tentative");
@@ -61,6 +63,10 @@ export default function ItemForm({
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (draftStale) {
+      setFormError("The trip changed after this draft opened. Close and reopen the editor before saving.");
+      return;
+    }
     if (!title.trim()) {
       setFormError("Give this itinerary item a title.");
       return;
@@ -76,7 +82,7 @@ export default function ItemForm({
         status,
         place_id: placeId || null,
         reservation_id: reservationId || null,
-      });
+      }, draftRevision);
       if (!saved) {
         setFormError("Review the workspace message before retrying this change.");
       }
@@ -89,7 +95,7 @@ export default function ItemForm({
 
   return (
     <form className="itemForm" onSubmit={submit}>
-      <fieldset className="itemFields" disabled={disabled || pending || placePending}>
+      <fieldset className="itemFields" disabled={disabled || pending || placePending || draftStale}>
         <div className="formGrid">
           <label>
             Title
@@ -147,13 +153,14 @@ export default function ItemForm({
             {placePending ? "Adding…" : "Add place"}
           </button>
         </div>
-        <div className="formActions">
-          <button className="primary" type="submit">
-            {pending ? "Saving…" : initial ? "Save item" : `Add to day ${dayNumber ?? ""}`}
-          </button>
-          {onCancel ? <button className="secondary" type="button" onClick={onCancel}>Cancel</button> : null}
-        </div>
       </fieldset>
+      {draftStale ? <p className="formError" role="status">The trip changed after this draft opened. Your edits are preserved. Close the editor and reopen it to review current values before saving.</p> : null}
+      <div className="formActions">
+        <button className="primary" type="submit" disabled={disabled || pending || placePending || draftStale}>
+          {pending ? "Saving…" : initial ? "Save item" : `Add to day ${dayNumber ?? ""}`}
+        </button>
+        {onCancel ? <button className="secondary" type="button" onClick={onCancel} disabled={disabled || pending || placePending}>Cancel</button> : null}
+      </div>
       {formError ? <p className="formError" role="alert">{formError}</p> : null}
     </form>
   );

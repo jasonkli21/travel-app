@@ -48,8 +48,12 @@ that output, the current Git revision, database revision, operator, and start/
 finish time in the protected operations log. The artifact contains an encrypted
 custom-format PostgreSQL dump, an encrypted tar of private-store bytes, and an
 inventory with per-object size/hash and the Alembic revision. Coordination
-`.lock` files are excluded; temporary and other regular source-store files are
-included. Symbolic links and unsupported file types stop the backup.
+`.lock` files are excluded. Regular `.tmp` files are included with their
+snapshot hashes even when a pending upload was interrupted partway through its
+write. If promotion stopped after creating the final hard link, the verified
+in-store `<key>` / `<key>.tmp` pair is snapshotted once under `<key>`; external
+hard links and other hard-link shapes stop the backup. Symbolic links and
+unsupported file types also stop the backup.
 
 Verify the exact artifact before relying on it:
 
@@ -256,8 +260,11 @@ prove that post-snapshot deletions stayed deleted. Before using an older
 recovery point after a deletion, an authorized operator must reconcile the
 recovery cutoff with the deletion record and the approved disposition of
 upstream AI data, local blobs, downloaded exports, and retained backups.
-End-to-end owner deletion and recovery-resurrection acceptance remains open
-until a supported owner-wide deletion procedure and retention policy exist.
+The owner-wide deletion ledger/workflow and restore-time purge fence are
+unimplemented engineering work with CI-testable behavior. Retention approval,
+upstream disposition, and real reconciliation against older recovery points
+are separate owner/operator gates. End-to-end owner deletion and
+recovery-resurrection acceptance remains open until both layers are complete.
 
-The current CI recovery smoke does not simulate deletion after backup or claim
-to fence older snapshots.
+The current CI recovery smoke does not yet simulate deletion after backup or
+claim to fence older snapshots.

@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import AnyHttpUrl, Field, SecretStr, model_validator
+from pydantic import AliasChoices, AnyHttpUrl, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,9 +13,15 @@ class Settings(BaseSettings):
         env_file=("../.env", ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
+        populate_by_name=True,
     )
 
-    deployment_mode: Literal["local", "hosted"] = "local"
+    # Keep the field-name spelling as a deliberate legacy alias. The documented
+    # TRAVEL_ name takes precedence if both are present.
+    deployment_mode: Literal["local", "hosted"] = Field(
+        default="local",
+        validation_alias=AliasChoices("TRAVEL_DEPLOYMENT_MODE", "DEPLOYMENT_MODE"),
+    )
     owner_id: str = Field(default="local", min_length=1, max_length=128)
     travel_auth_mode: Literal["local", "google_oidc"] = "local"
     google_oauth_client_id: str = Field(default="", max_length=255)

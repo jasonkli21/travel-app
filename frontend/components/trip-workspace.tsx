@@ -29,6 +29,7 @@ import BookingImportPanel from "./trip-workspace/booking-import-panel";
 import { errorMessage } from "../lib/errors";
 import { uncertainMutationError } from "../lib/mutation-outcome.mjs";
 import { revisionConflictRecovery } from "../lib/revision-conflict.mjs";
+import { reloadWorkspaceSnapshot, runWorkspaceMutation } from "../lib/workspace-mutation";
 import { safeHttpUrl } from "../lib/urls.mjs";
 import ReservationForm from "./trip-workspace/reservation-form";
 import PlaceForm from "./trip-workspace/place-form";
@@ -115,7 +116,7 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
   }, [refresh]);
 
   const reloadWorkspace = () => {
-    void refresh({ resetDrafts: true });
+    void reloadWorkspaceSnapshot(refresh);
   };
 
   const setProposalPending = (isPending: boolean) => {
@@ -128,25 +129,27 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
     operation: () => Promise<void>,
     options: { refreshAfter?: boolean } = {},
   ): Promise<boolean> => {
-    if (mutationInFlight.current || stale) return false;
-    mutationInFlight.current = true;
-    setPending(key);
-    setError(null);
-    try {
-      await operation();
-      if (options.refreshAfter !== false && !await refresh()) {
+    return runWorkspaceMutation({
+      canStart: () => !mutationInFlight.current && !stale,
+      start: () => {
+        mutationInFlight.current = true;
+        setPending(key);
+        setError(null);
+      },
+      operation,
+      refresh: () => refresh(),
+      refreshAfter: options.refreshAfter !== false,
+      onRefreshFailure: () => {
+        // A committed write succeeded even if its follow-up read failed.
+        // Close create forms so retrying cannot create a duplicate record.
         setError("The change was saved, but the workspace could not be refreshed. Reload before editing again. Reloading clears open editors.");
-      }
-      // A committed write succeeded even if its follow-up read failed. Keeping
-      // the create form open invites duplicate reservations/items on retry.
-      return true;
-    } catch (nextError) {
-      mutationError(nextError);
-      return false;
-    } finally {
-      mutationInFlight.current = false;
-      setPending(null);
-    }
+      },
+      onMutationError: mutationError,
+      finish: () => {
+        mutationInFlight.current = false;
+        setPending(null);
+      },
+    });
   };
 
   const mutationError = (nextError: unknown) => {
@@ -263,12 +266,17 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
     return saved;
   };
 
-  const savePlace = async (input: CreatePlaceInput | UpdatePlaceInput, placeId?: string) => {
+  const savePlace = async (
+    input: CreatePlaceInput | UpdatePlaceInput,
+    placeId?: string,
+    expectedPlaceRevision?: number,
+  ) => {
     const saved = await run(`place-${placeId ?? "new"}`, async () => {
       if (placeId) {
-        const place = places.find((candidate) => candidate.id === placeId);
-        if (!place) throw new Error("The place is no longer available in this workspace.");
-        await travelApi.updatePlace(placeId, input as UpdatePlaceInput, place.revision);
+        if (expectedPlaceRevision === undefined) {
+          throw new Error("Reopen this place editor to review the latest version before saving.");
+        }
+        await travelApi.updatePlace(placeId, input as UpdatePlaceInput, expectedPlaceRevision);
       }
       else await travelApi.createPlace(input as CreatePlaceInput);
     });
@@ -470,7 +478,7 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
           <button className="secondary" type="button" onClick={() => { setShowPlaceForm((current) => !current); setEditingPlace(null); }} disabled={(pending !== null || stale)}>{showPlaceForm ? "Close place form" : "+ Add place"}</button>
         </div>
         {showPlaceForm ? <PlaceForm key={`${editorGeneration}-new`} pending={pending === "place-new"} disabled={(pending !== null || stale)} onSubmit={(input) => savePlace(input)} onCancel={() => setShowPlaceForm(false)} /> : null}
-        {editingPlace ? <PlaceForm key={`${editorGeneration}-${editingPlace}`} initial={places.find((place) => place.id === editingPlace)} pending={pending === `place-${editingPlace}`} disabled={(pending !== null || stale)} onSubmit={(input) => savePlace(input, editingPlace)} onCancel={() => setEditingPlace(null)} /> : null}
+        {editingPlace ? <PlaceForm key={`${editorGeneration}-${editingPlace}`} initial={places.find((place) => place.id === editingPlace)} pending={pending === `place-${editingPlace}`} disabled={(pending !== null || stale)} onSubmit={(input, expectedRevision) => savePlace(input, editingPlace, expectedRevision)} onCancel={() => setEditingPlace(null)} /> : null}
         <div className="placeGroup">
           <p className="sectionLabel">All places</p>
           <div className="placeList">

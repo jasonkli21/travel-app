@@ -36,10 +36,15 @@ a plan.
   implemented and locally validated; **Phase 9 is not accepted**. CI checks
   Python dependency advisories, tracked secrets, synthetic encrypted SQL/blob
   recovery invariants, and bounded pool failure/recovery. A local large-trip
-  benchmark is available for operator evidence. Owner-deletion fencing, full
-  privacy/browser acceptance, image scanning/digest pinning, real recovery
-  objectives, hosted behavior, and deployment gates remain open. See the
+  benchmark is available for operator evidence. The owner-wide deletion
+  workflow and restore-time deletion fence remain unimplemented engineering
+  gates; approved deletion disposition, full privacy/browser acceptance, image
+  scanning/digest pinning, real recovery objectives, hosted behavior, and
+  deployment gates also remain open. See the
   [readiness inventory](releases/phase-9-operational-hardening.md#post-review-phase-3-readiness-inventory), [ADR 0016](decisions/0016-phase9-operational-hardening.md), [plan](phase-9-implementation-plan.md), and [operations runbook](runbooks/phase-9-operations.md).
+  The October 8 post-implementation fixes for hosted-mode binding, CI fixture
+  isolation, stale item/place drafts, interrupted backup states, and readiness
+  classification are recorded in the [review follow-up](releases/phase-9-operational-hardening.md#post-implementation-review-fixes-2026-10-08).
 
 ## Local and hosted capability matrix
 

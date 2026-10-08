@@ -17,6 +17,7 @@ import json
 import os
 import time
 from datetime import UTC, datetime, timedelta
+from urllib.parse import unquote, urlsplit
 
 import uvicorn
 from cryptography import x509
@@ -31,8 +32,29 @@ from sqlalchemy.orm import sessionmaker
 if os.environ.get("SYNTHETIC_IDENTITY_FIXTURE") != "1":
     raise SystemExit("Synthetic identity fixture must be explicitly enabled.")
 database_url = os.environ.get("TEST_DATABASE_URL", "")
-if "test" not in database_url or "127.0.0.1" not in database_url:
+
+
+def _is_disposable_test_database_url(value: str) -> bool:
+    try:
+        parsed = urlsplit(value)
+        database = unquote(parsed.path.removeprefix("/"))
+        port = parsed.port
+    except ValueError:
+        return False
+    return (
+        parsed.scheme in {"postgresql", "postgresql+psycopg"}
+        and parsed.hostname == "127.0.0.1"
+        and port in {None, 5432}
+        and not parsed.query
+        and not parsed.fragment
+        and (database.startswith("test_") or database.endswith("_test"))
+    )
+
+
+if not _is_disposable_test_database_url(database_url):
     raise SystemExit("A disposable local TEST_DATABASE_URL is required.")
+if os.environ.get("SYNTHETIC_IDENTITY_FIXTURE_VALIDATE_ONLY") == "1":
+    raise SystemExit(0)
 os.environ["DATABASE_URL"] = database_url
 synthetic_booking_import = os.environ.get("SYNTHETIC_BOOKING_IMPORT_FIXTURE") == "1"
 if synthetic_booking_import and os.environ.get("APP_ENVIRONMENT") not in {"local", "test"}:
