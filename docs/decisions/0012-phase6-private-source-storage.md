@@ -8,11 +8,14 @@
 
 P6.1 establishes a verified owner before private input. P6.2 needs a durable
 source lifecycle that can survive request retries, trip deletion, partial SQL
-or filesystem failure, and bounded parser failure. No accepted
-`personal-ai-system` extraction API or data-retention contract exists. P6.2
-therefore stores source bytes locally and does not send them to an AI provider.
-The source feature remains disabled by default, and no real private input is
-used in local verification.
+or filesystem failure, and bounded parser failure. At the time of this ADR
+(2026-10-04), no accepted `personal-ai-system` extraction API or data-retention
+contract existed. P6.2 therefore stored source bytes locally and did not send
+them to an AI provider. The separate extraction contract was accepted later in
+Phase 6 and is recorded in [ADR 0013](0013-phase6-booking-document-import.md)
+and the [Phase 6 release](../releases/phase-6-booking-imports.md). The source
+feature remains disabled by default, and no real private input was used in
+local verification.
 
 ## Decisions
 

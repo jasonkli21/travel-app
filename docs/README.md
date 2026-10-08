@@ -3,22 +3,37 @@
 For an ordinary task, read this page, then [current state](current-state.md),
 then only the sources routed below.
 
-## Authority and document roles
+## Reading hierarchy
 
-When sources disagree, use this order:
+Use these documents in this order to understand project context:
+
+1. [`current-state.md`](current-state.md) is the single living status snapshot
+   for factual current implementation, acceptance status, and open gates.
+2. Architecture documents state durable responsibilities and invariants.
+3. ADRs explain decisions in their historical context and record supersession.
+4. Phase plans record historical implementation intent and constraints; they
+   are not current status or authorization.
+5. Release documents describe what a phase delivered and what was exercised.
+
+This is a reading hierarchy, not a substitute for executable evidence. Code,
+schemas/contracts, migrations, and tests define behavior. When a status summary
+conflicts with implementation or release evidence, follow the evidence and
+update `current-state.md`. Keep historical plans intact rather than rewriting
+them as current architecture. Run `make docs-check` to verify local Markdown
+link targets. The root `README.md` is for product users and local setup.
+
+## Authority for claims
+
+When sources disagree about behavior or delivery, use this order:
 
 1. Code, executable schemas/contracts, migrations, and tests define behavior.
-2. Release, review, and verification records show what was implemented and exercised.
-3. Accepted ADRs record durable decisions and supersession history.
-4. Product and architecture documents describe intended boundaries and scope.
-5. Implementation plans describe future or active work; a plan is not delivery evidence or authorization.
+2. Current release, review, and verification records show what was implemented
+   and exercised.
+3. Applicable ADRs record accepted decisions and supersession history.
+4. Product and architecture documents describe durable boundaries and scope.
+5. Phase plans describe historical or active intent, not delivery or
+   authorization.
 6. Historical and superseded documents provide context only.
-
-`current-state.md` is the single living project-status snapshot. Phase plans
-describe intended work. Release/review records retain evidence and remaining
-gates. Run `make docs-check` to verify local Markdown link targets. The root
-`README.md` is for product users and local setup. If the status summary conflicts
-with code or release evidence, follow the evidence and update the summary.
 
 ## Route by task
 
@@ -41,7 +56,7 @@ repository's gates; the presence of a plan alone does not authorize it.
 
 | Document | Role |
 | --- | --- |
-| [Current state](current-state.md) | Accepted slices, open gates, and current planning boundary |
+| [Current state](current-state.md) | Factual current implementation, acceptance status, and open gates |
 | [Product brief](01-product-brief.md) | Product purpose, user, scope, and principles |
 | [Product design](02-product-design.md) | UX direction and application surfaces |
 | [Architecture](03-architecture.md) | System boundaries and component topology |
@@ -51,9 +66,9 @@ repository's gates; the presence of a plan alone does not authorize it.
 | [Local development](07-local-development.md) | Local setup, checks, and migration guidance |
 | [Cloud deployment](08-cloud-deployment.md) | Hosted topology and deployment direction |
 | [Phased roadmap](09-implementation-plan.md) | Phase sequencing and intended scope |
-| `phase-1`–`phase-9-implementation-plan.md` | Detailed phase plans, read only for scoped implementation |
-| `decisions/` | Accepted architectural decisions |
-| `releases/` and `reviews/` | Delivery and verification evidence |
+| `phase-1`–`phase-9-implementation-plan.md` | Historical implementation intent; read only for scoped implementation |
+| `decisions/` | Decisions, historical rationale, and supersession records |
+| `releases/` and `reviews/` | What a phase delivered, what was exercised, and remaining limits |
 | `runbooks/` | Operational procedures |
 | [Service workflow map](../backend/src/personal_travel/services/README.md) | Entry points and invariants for cross-module backend workflows |
 | `10-codex-handoff.md`, `implementation-coordinator.md` | Superseded entry points with redirects |

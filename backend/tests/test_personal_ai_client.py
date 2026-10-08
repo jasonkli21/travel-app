@@ -48,7 +48,7 @@ def test_personal_ai_health_returns_typed_response(monkeypatch: pytest.MonkeyPat
     assert result == PersonalAIHealth(status="ok", service="personal-ai-api")
 
 
-def test_personal_ai_outbound_identity_keeps_user_and_transport_tokens_separate(
+def test_personal_ai_outbound_headers_omit_application_scope_and_separate_tokens(
     caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -80,6 +80,9 @@ def test_personal_ai_outbound_identity_keeps_user_and_transport_tokens_separate(
         "Authorization": f"Bearer {service_token}",
         "X-User-ID-Token": user_token,
     }
+    # The currently consumed direct capability endpoints require standalone
+    # Personal AI scope; the Travel registry entry is not a request header.
+    assert "X-Application-ID" not in headers
     assert user_token != headers["Authorization"].removeprefix("Bearer ")
     assert all(user_token not in record.getMessage() for record in caplog.records)
     assert all(service_token not in record.getMessage() for record in caplog.records)
@@ -389,9 +392,11 @@ def test_personal_ai_extraction_recovers_running_with_same_key() -> None:
     key = uuid4()
     source_sha256 = "a" * 64
     methods: list[tuple[str, str]] = []
+    requests: list[httpx.Request] = []
 
     def handle(request: httpx.Request) -> httpx.Response:
         methods.append((request.method, request.url.path))
+        requests.append(request)
         if request.method == "POST":
             assert json.loads(request.content)["source_sha256"] == source_sha256
             return httpx.Response(
@@ -425,6 +430,7 @@ def test_personal_ai_extraction_recovers_running_with_same_key() -> None:
         ("POST", "/v1/travel/booking-extractions"),
         ("GET", f"/v1/travel/booking-extractions/by-key/{key}"),
     ]
+    assert all("X-Application-ID" not in request.headers for request in requests)
 
 
 def test_personal_ai_extraction_never_retries_after_ambiguous_post() -> None:

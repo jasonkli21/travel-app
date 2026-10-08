@@ -1,7 +1,7 @@
 # Technology choices
 
 Status: accepted scaffold choices  
-Date: 2026-10-02
+Date: 2026-10-08
 
 ## Summary
 
@@ -14,7 +14,7 @@ Date: 2026-10-02
 | Local database | PostgreSQL 16 |
 | Cloud database | Neon Postgres free tier initially |
 | Compute | Google Cloud Run |
-| Blob storage | local filesystem -> GCS when needed |
+| Private files | local `LocalSourceStore`; hosted shared storage not implemented |
 | AI integration | HTTP client to `personal-ai-system` |
 | Python tooling | `uv`, `pytest`, `ruff`, `mypy` |
 | JS tooling | `pnpm`, TypeScript, ESLint |
@@ -140,11 +140,21 @@ Preserve a portable subset:
 
 Do not maintain two production implementations until an actual migration/learning objective exists.
 
-## Blob storage
+## Private file storage
 
-No blob service is required for Phase 0/1.
+Booking-source imports and trip/reservation attachments now use
+`LocalSourceStore` on a separately configured local filesystem path. SQL stores
+metadata and opaque object references; private file bytes stay outside SQL.
+This local store is not suitable for hosted multi-instance durability.
 
-When attachments arrive:
+Hosted configuration rejects enabling private imports or attachments while
+this is the only implementation. GCS is a possible future shared store for the
+Cloud Run direction, but it is not implemented or authorized. Add hosted object
+storage only when hosted private-data support is explicitly in scope and its
+permissions, retention, backup, deletion, and migration behavior are accepted.
+
+One possible future layout, subject to an explicit hosted-private-data decision,
+is:
 
 ```text
 local: filesystem

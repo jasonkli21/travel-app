@@ -1,7 +1,7 @@
 # Architecture
 
 Status: Architecture reference; current delivery status is maintained in [current-state.md](current-state.md).
-Date: 2026-10-07
+Date: 2026-10-08
 
 ## System shape
 
@@ -22,7 +22,7 @@ FastAPI travel API
   v
 PostgreSQL 16
 
-private source and trip-document blobs -> opaque local filesystem store
+private booking sources and trip-document blobs -> LocalSourceStore on local filesystem
 
 
 INITIAL CLOUD
@@ -38,7 +38,7 @@ Cloud Run: travel-api
   v
 Neon Postgres
 
-Google Cloud Storage -> separately authorized and not implemented
+Google Cloud Storage -> not implemented; hosted private-file features fail closed
 ```
 
 ## Repository shape
@@ -88,13 +88,12 @@ Does not:
 
 Owns:
 
-- authoritative travel-domain rules,
-- validation,
-- transactions,
-- persistence,
-- future authorization,
-- AI-client orchestration,
-- applying validated proposed actions.
+- canonical trips, itinerary state and ordering, bookings/reservations, and
+  travel-domain validation;
+- request authorization and owner-scoped access;
+- travel persistence and transaction boundaries;
+- final mutation/application of reviewed travel changes;
+- AI-client orchestration.
 
 ### PostgreSQL
 
@@ -113,21 +112,38 @@ revalidates operations and projection integrity in one transaction.
 
 ### `personal-ai-system`
 
-External dependency that owns shared AI intelligence:
+External dependency that owns reusable AI-platform capabilities:
 
-- memory,
-- search/research,
-- external evidence,
-- model orchestration,
-- shared research/entity/ranking behavior.
+- model/provider access and reusable orchestration;
+- evidence, context, memory, and retrieval machinery;
+- shared research, decision, and comparison capabilities.
 
-The travel app must not import internal `personal-ai-system` packages.
+It returns evidence, recommendations, or typed proposals. It does not own
+canonical Travel records, Travel authorization, or Travel persistence; Travel
+rechecks ownership and current state, applies travel rules, previews changes,
+and performs final canonical writes. The travel app must not import internal
+`personal-ai-system` packages.
 
-### Future blob store
+Personal AI has a registered Travel application definition and registry
+metadata. The direct capability endpoints currently called by Travel still
+require standalone Personal AI application scope. Travel omits
+`X-Application-ID: travel` from these calls. Registry metadata does not itself
+make the direct research, extraction, proposal, or comparison endpoints
+application-scoped. Migrate only after Personal AI exposes those capabilities
+through its supported application-integration contract; no workspace identity
+or `workspace_id = trip_id` mapping is defined.
 
-Owns large binary objects/attachments.
+### Private source and attachment storage
 
-The SQL database stores metadata and object references, not large binary payloads.
+Travel stores booking-source and trip/reservation attachment bytes in
+`LocalSourceStore`, on a separately configured local filesystem path. SQL owns
+their metadata, lifecycle, authorization links, hashes, and opaque object
+references; it does not store large binary payloads.
+
+The local filesystem is the only implemented private-object store. GCS or any
+other durable shared cloud store is not implemented. Hosted configuration
+rejects enabling private imports or attachments until a supported shared
+object store is available and accepted.
 
 ## Ownership rule
 
@@ -175,6 +191,33 @@ identifiers, notes, or reservation details are sent as context. Research does
 not mutate itinerary state. Saving a candidate is a separate user-authored
 transaction using the existing place and saved-place tables.
 
+The current `research-v1` direct endpoint call uses standalone Personal AI
+application scope and sends no `X-Application-ID: travel` header. The registered
+Travel application definition is not the scope for this direct interface.
+
+### Phase 6 booking-document extraction and import
+
+```text
+verified owner uploads a bounded text/PDF source
+ -> Travel stores original bytes and metadata in LocalSourceStore and parses
+    bounded UTF-8 text
+ -> explicit submit sends the text, source-text digest, and stable idempotency
+    key to booking-document-extraction-v1
+ -> Personal AI returns bounded candidates with literal source spans and
+    uncertainty fields
+ -> Travel validates source/import/trip ownership, digest, and candidate data
+ -> traveler reviews fields and explicitly confirms one reservation batch
+ -> Travel writes canonical reservations atomically; outcomes are replayable
+```
+
+The upstream receives only the text explicitly submitted for extraction; it
+does not receive Travel identifiers, access Travel persistence, or write
+reservations. Its output remains advisory. Travel owns the review, uncertainty
+resolution, authorization, travel-time interpretation, validation, and final
+reservation writes. Intake, extraction, upstream provider use, and retention
+are separately gated. Local private storage requires verified Google identity;
+hosted private-file features are rejected while only local storage exists.
+
 ### Phase 7 domain comparison
 
 ```text
@@ -194,6 +237,9 @@ source and expiry are supported; dates, prices, hours, accessibility,
 availability, travel duration, and preference retrieval are unavailable. A
 saved place reuses the existing owner-scoped `places` and `saved_places`
 records and keeps verified OpenStreetMap attribution.
+
+The direct comparison endpoints use standalone Personal AI application scope.
+Travel does not retrieve shared memory preferences as part of this flow.
 
 ### Gated proposed itinerary edit
 
@@ -225,6 +271,10 @@ deadline is converted to a remaining duration at async timeout boundaries; the
 local fake HTTP flow passes with Uvicorn's `auto` (uvloop here) and `asyncio`
 loops. Proposal gates remain off by default after independent local review.
 
+The direct proposal endpoints also use standalone Personal AI application
+scope. A returned proposal cannot mutate Travel state until Travel validates
+and previews it and the traveler explicitly applies it.
+
 ## Async work
 
 No queue/background worker in the scaffold.
@@ -237,7 +287,8 @@ at 30 seconds and 50 eligible transfers. No locks span external waits.
 
 Introduce asynchronous infrastructure only for a concrete requirement such as:
 
-- email/document ingestion,
+- mailbox ingestion or a broader ingestion flow beyond the existing bounded
+  booking-source import,
 - expensive batch import,
 - long-running research that exceeds request-owned streaming,
 - scheduled reservation refresh.
@@ -292,16 +343,20 @@ verified target identity exists; it never runs during first sign-in.
 `TRAVEL_AUTH_MODE=local` remains the default and keeps local CRUD
 unauthenticated behind configured local host/origin checks. Live Google OAuth,
 upstream user-audience alignment, and Cloud Run service IAM remain separate
-enablement gates. The locally reviewed implementation adds a Google-session-only, off-by-default
-source lifecycle with opaque files outside the application tree; local mode
-cannot upload or read these sources. With explicit submission, bounded extracted
-text is sent to the separately gated `booking-document-extraction-v1` HTTP
-capability. Validated candidates remain suggestions until the owner corrects
-uncertainties and commits one atomic reservation batch. Source bytes, excerpts,
-and result retention follow explicit deletion/expiry rules. General attachments
-remain unimplemented. See [ADR 0011](decisions/0011-phase6-google-identity-and-ai-auth.md),
-[ADR 0012](decisions/0012-phase6-private-source-storage.md), and
-[ADR 0013](decisions/0013-phase6-booking-document-import.md).
+enablement gates. Booking-source intake and trip/reservation attachments are
+implemented behind separate default-off switches and require verified Google
+identity; local-auth mode cannot upload or read private files. Source and
+attachment bytes use `LocalSourceStore` outside the application tree. With
+explicit submission, bounded extracted text is sent to the separately gated
+`booking-document-extraction-v1` HTTP capability. Validated candidates remain
+suggestions until the owner resolves uncertainties and commits one atomic
+reservation batch. Source bytes, excerpts, and extraction results follow
+explicit deletion/expiry rules. Hosted configuration rejects either private
+feature while local filesystem storage is the only implementation. See
+[ADR 0011](decisions/0011-phase6-google-identity-and-ai-auth.md),
+[ADR 0012](decisions/0012-phase6-private-source-storage.md),
+[ADR 0013](decisions/0013-phase6-booking-document-import.md), and
+[ADR 0015](decisions/0015-phase8-attachments-and-exports.md).
 
 Local API/web host and browser-origin allowlists plus loopback bindings protect
 against unintended browser access in local mode. Local clients without Origin
@@ -311,4 +366,5 @@ route has separate streamed 1 MiB text and 10 MiB PDF limits and a 30-second
 receive deadline. Safe error envelopes, request IDs, route-template/status/
 duration logs and bounded SQL waits remain in place. `/health` and `/ready`
 remain public probes; non-mutating OpenAPI documentation also remains public.
-Hosted metrics and quotas remain later-phase work.
+Provider quotas are implemented; hosted metrics and multi-instance quota
+behavior remain unverified production gates.

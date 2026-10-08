@@ -1,7 +1,12 @@
 # Cloud deployment
 
-Status: target architecture; not implemented in scaffold  
-Date: 2026-10-02
+Status: hosted target architecture; deployment is not provisioned or verified
+Date: 2026-10-08
+
+Hosted identity/configuration guards and production containers are implemented
+locally. Their presence does not establish a deployed Cloud Run environment or
+production acceptance. See [current state](current-state.md) for the local and
+hosted capability matrix.
 
 ## Initial target
 
@@ -27,7 +32,8 @@ travel-api ---> Google Cloud Storage
 - Cloud Run matches the existing personal AI deployment model.
 - Neon preserves real PostgreSQL semantics from local development.
 - The travel domain avoids adopting Firestore solely for cloud symmetry.
-- GCS is only introduced when binary/document storage exists.
+- GCS remains a future hosted private-storage option; the existing local
+  source/attachment store does not provide hosted durability.
 
 ## Cloud Run defaults
 
@@ -85,20 +91,30 @@ If the application later requires stronger private networking, re-evaluate datab
 
 ## Object storage
 
-When required, prefer a single-region GCS bucket in an Always Free-eligible region if practical.
+`LocalSourceStore` on the local filesystem is the only implemented private
+source/blob store. Hosted configuration rejects startup when either private
+booking imports or trip attachments are enabled, because instance-local files
+are not durable shared storage. Keep both features disabled in hosted mode
+until a supported shared object store is implemented and accepted.
+
+When hosted private-file support is authorized, evaluate a single-region GCS
+bucket in an eligible region or another supported durable shared store.
 
 Store object key, size, media type, hash, and ownership/reference metadata in PostgreSQL.
+
+GCS is not implemented or authorized. This restriction is enforced by the
+hosted settings validator, not just by this deployment guidance.
 
 ## Authentication prerequisite
 
 The app may be developed locally with `owner_id=local`.
 
-Before a public cloud deployment stores real trip reservations, imported email, or private documents:
+Before a public cloud deployment stores real trip reservations, imported
+booking material, or private documents, provision and verify:
 
-- implement user authentication,
-- derive owner identity server-side,
-- secure travel API ingress/session,
-- authenticate travel -> personal-ai calls,
+- Google OIDC identity and server-owned owner derivation,
+- secure travel API ingress/session and CSRF/origin policy,
+- travel-to-Personal-AI service authentication and user-audience alignment,
 - review external provider data-use policies.
 
 Do not treat Cloud Run being reachable only through an obscure URL as security.

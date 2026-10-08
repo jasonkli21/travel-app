@@ -1,7 +1,7 @@
 # Data model
 
 Status: Relational model reference; current delivery status is maintained in [current-state.md](current-state.md).
-Date: 2026-10-07
+Date: 2026-10-08
 
 The initial migration implements the core itinerary graph. Phase 1 adds
 application services and ordering constraints; Phase 2 adds manual reservations,
@@ -219,7 +219,10 @@ There is no first-login claim path and the tool has not been run on user data.
 ## Private-source, booking-import, and trip-attachment records — migrations `0010`–`0014`
 
 The local source gate defaults off and requires Google OIDC plus an absolute
-private storage directory outside the application tree. Byte objects use
+private storage directory outside the application tree. `LocalSourceStore` is
+the only implemented private-object store. Hosted settings reject enabling
+private imports or attachments until a durable shared object store exists; GCS
+is not implemented or authorized. Byte objects use
 random opaque keys under a mode-0700 directory, with mode-0600 regular files.
 The database stores hashes and metadata, never raw source text. Sources expire
 after seven days unless explicitly deleted sooner. Extracted text is submitted

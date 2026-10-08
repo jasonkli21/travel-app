@@ -9,9 +9,10 @@
 The existing `owner_id="local"` value is a development seam, not proof of
 identity. Phase 6 must establish verified single-owner identity before any
 private booking source is accepted. Travel and `personal-ai-system` have
-separate authorities and credentials. No accepted booking/document extraction
-contract exists in `personal-ai-system`, so this decision does not define an
-extraction payload, storage lifecycle, or import route.
+separate authorities and credentials. At the time of this identity-stage
+decision (2026-10-04), no accepted booking/document extraction contract existed
+in `personal-ai-system`, so this decision did not define an extraction payload,
+storage lifecycle, or import route.
 
 Google's server-side OpenID Connect flow requires anti-forgery `state`, a
 one-time `nonce`, server-side ID-token validation, and stable `sub`-based
@@ -98,13 +99,14 @@ headers. Cloud Run IAM is transport identity only and does not establish the
 travel owner. Live service identity, audience alignment, upstream identity
 directory readiness, and provider operation remain separate external gates.
 
-There is currently no accepted booking/document extraction capability or
-retention contract. `research-v1` and `itinerary-proposal-v1` do not satisfy
-that prerequisite. This identity ADR does not enable source ingestion. ADR
-0012 later defines an off-by-default, local-only P6.2 source lifecycle; it does
-not send source bytes to an AI provider or authorize live private-input use.
-Extraction and hosted private-input use still require separately accepted
-upstream and deployment gates.
+At the time of this identity-stage checkpoint, no accepted booking/document
+extraction capability or retention contract existed. `research-v1` and
+`itinerary-proposal-v1` did not satisfy that prerequisite, and this identity
+ADR did not enable source ingestion. The separate extraction contract and
+import flow were accepted later in Phase 6; see [ADR 0013](0013-phase6-booking-document-import.md)
+and the [Phase 6 release](../releases/phase-6-booking-imports.md). Private
+intake and extraction remain default-off and live identity/provider/deployment
+gates remain external.
 
 ## Local-owner migration
 

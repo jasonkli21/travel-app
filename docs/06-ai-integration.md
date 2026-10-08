@@ -1,13 +1,37 @@
 # `personal-ai-system` integration
 
-Status: Phase 4 delivered; Phase 5 proposals and the initial Phase 7 comparison slice are implemented locally and gated off
-Date: 2026-10-05
+Status: research, proposals, booking extraction/import, and travel comparison are implemented locally; optional AI features remain gated off
+Date: 2026-10-08
 
 ## Rule
 
 `personal-travel-app` is a client of `personal-ai-system`. Keep the boundary
 typed and HTTP-based. Do not import `personal_ai.*` Python modules or couple
 this repository to Firestore schemas.
+
+## Ownership and application scope
+
+Travel owns canonical trips, itinerary ordering/state, bookings and
+reservations, travel-domain validation, authorization, persistence, and final
+mutation/application. Personal AI owns reusable model/provider access,
+evidence/context machinery, memory/retrieval infrastructure, shared
+research/decision capabilities, and reusable orchestration. Personal AI returns
+evidence, recommendations, or typed proposals. Travel remains responsible for
+authorization, validation against current Travel state, preview, and final
+canonical writes.
+
+Personal AI now has a first-class Travel application definition and registry
+metadata. The current direct capability endpoints consumed by Travel still
+require **standalone Personal AI application scope**. Calls for research,
+booking-document extraction, itinerary proposals, and travel comparison omit
+`X-Application-ID: travel`; do not add that header as a cleanup. Registry
+metadata does not itself make those direct endpoints application-scoped or
+expose them through the supported application-integration contract.
+
+Migrate those calls to Travel application scope only when Personal AI exposes
+the relevant capabilities through that supported integration contract and the
+migration has an accepted compatibility design. This phase does not define a
+Travel workspace identity or a `workspace_id = trip_id` mapping.
 
 ## Accepted Phase 4 contract
 
@@ -86,12 +110,35 @@ boundaries. The service identity is transport authentication, not the travel
 owner. This integration does not claim that live service IAM or upstream user
 audience alignment has been provisioned or exercised.
 
-The current local default uses `TRAVEL_AUTH_MODE=local`, and private AI imports
-remain disabled. No accepted upstream booking/document extraction contract or
-retention policy exists; the research and proposal contracts do not satisfy
-that prerequisite. Do not send private booking/document input or create an
-extraction endpoint until its separate HTTP/authentication/retention contract
-is accepted.
+The current local default uses `TRAVEL_AUTH_MODE=local`; private imports and
+attachments require verified Google identity and remain disabled by default.
+Hosted configuration rejects either private-file feature while
+`LocalSourceStore` is the only storage implementation. Live identity, provider
+data-use/retention, service-IAM, and deployment gates remain unverified.
+
+## Booking extraction and reservation import
+
+Phase 6 accepts the separately versioned upstream
+`booking-document-extraction-v1` HTTP contract, pinned in ADR 0013 and recorded
+in the [Phase 6 release](releases/phase-6-booking-imports.md). Travel receives
+bounded plain-text or PDF input, stores original bytes in its local private
+store, and parses bounded UTF-8 text. Only an explicit user submission sends
+that text, its digest, and a stable idempotency key to Personal AI; the original
+file bytes and Travel identifiers are not sent.
+
+Personal AI returns a bounded set of candidate fields with literal source
+spans and explicit uncertainty. Travel validates the response and its owner,
+trip, source, and digest correlation, persists a recoverable candidate
+snapshot, and asks the traveler to correct uncertain fields. The candidates
+remain advisory. Travel owns timezone/schedule interpretation, reservation
+validation, the explicit create/link/skip choices, and the atomic canonical
+reservation batch. Retries reconcile the same extraction and confirmation keys
+so they do not create duplicate bookings.
+
+Private source retention and deletion are explicit; booking material is not
+automatically ingested into shared memory. General trip attachments use the
+Travel-owned attachment lifecycle and are not automatically submitted for AI
+processing.
 
 ## Accepted itinerary-proposal contract
 
@@ -132,6 +179,11 @@ HTTP flow passed under both Uvicorn `auto` (uvloop on this host) and `asyncio`.
 Proposal gates still default off and require separate upstream capability,
 storage and provider configuration. See the [Phase 5 release
 record](releases/phase-5-local-proposals.md).
+
+The proposal endpoints use standalone Personal AI application scope under the
+current direct-call contract. Proposal output remains advisory until Travel
+revalidates it against current state, displays a preview, and applies it only
+after explicit traveler action.
 
 ## Accepted Phase 7 travel comparison contract
 
@@ -178,6 +230,11 @@ No live Nominatim policy approval, provider, OAuth, service-IAM, or deployment
 configuration was performed. Phase 7 category fixture coverage and its full
 exit gate remain open. See [ADR 0014](decisions/0014-phase7-travel-comparison.md)
 and the [Phase 7 release record](releases/phase-7-travel-comparison.md).
+
+These direct travel-comparison endpoints also use standalone Personal AI
+application scope. Travel keeps comparison output transient, rechecks source
+and trip/place revisions before saving a reviewed candidate, and does not
+retrieve shared memory preferences for this flow.
 
 ## Future AI work
 
