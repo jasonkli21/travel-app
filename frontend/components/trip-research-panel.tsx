@@ -53,10 +53,12 @@ export default function TripResearchPanel({
   trip,
   pending,
   onSaveCandidate,
+  onUseResearch,
 }: {
   trip: TripDetail;
   pending: boolean;
   onSaveCandidate: (input: CreateManualSavedPlaceInput) => Promise<boolean>;
+  onUseResearch?: (sessionId: string, dayId: string) => void;
 }) {
   const [selectedDayId, setDayId] = useState(trip.days[0]?.id ?? "");
   const dayId = trip.days.some((day) => day.id === selectedDayId) ? selectedDayId : trip.days[0]?.id ?? "";
@@ -249,6 +251,7 @@ export default function TripResearchPanel({
                 })}
               </ol>
               <p className="formHint">Sources are observations with an expiry time. They are not permanent facts in your trip.</p>
+              {onUseResearch && !resultExpired ? <button className="secondary" type="button" onClick={() => onUseResearch(displayedResult.session_id, dayId)}>Use this cited research in Personal AI</button> : null}
               <form className="researchCandidateForm" onSubmit={saveCandidate}>
                 <h3>Save a manual place candidate</h3>
                 <p className="formHint">Enter the place details yourself. Research text is never parsed into a saved place.</p>

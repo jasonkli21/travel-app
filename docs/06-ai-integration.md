@@ -1,7 +1,7 @@
 # `personal-ai-system` integration
 
-Status: research, proposals, booking extraction/import, and travel comparison are implemented locally; optional AI features remain gated off
-Date: 2026-10-08
+Status: research, proposals, booking extraction/import, travel comparison, and the read-only Personal AI context sidecar are implemented locally; optional AI features remain gated off
+Date: 2026-10-11
 
 ## Rule
 
@@ -32,6 +32,20 @@ Migrate those calls to Travel application scope only when Personal AI exposes
 the relevant capabilities through that supported integration contract and the
 migration has an accepted compatibility design. This phase does not define a
 Travel workspace identity or a `workspace_id = trip_id` mapping.
+
+## Phase 26 read-only context and sidecar
+
+The new Application Integration Contract is separate from the accepted direct capability APIs below. Travel exposes `POST /v1/integrations/personal-ai/context` using the versioned `travel-context-read-v1` schema. Requests are limited to `application_id="travel"`, `workspace_id=null`, a registered read operation, up to 16 selected entity references, 32 fields, 50 results, and 64 KiB. Travel independently authorizes the active session owner against the selected trip before returning data; browser-provided owner IDs and service identity do not grant access.
+
+The provider returns requested projections of current trip state, selected days, itinerary items, and places. It can return selected completed Travel research only when the answer and every citation are unexpired and valid. Research remains external evidence. Reservation context is a short summary, is included only when the planner requests its field for a selected trip/entity, and is marked sensitive. Original booking documents, confirmation codes, reservation notes, and private source material are not returned. Records include source/version identity, content fingerprints, observed/freshness facts, and a trip-revision permission dependency. Personal AI rechecks that dependency against Travel before reusing the record or a derived assistant turn.
+
+The shared Personal AI sidecar opens from trip, day, and place views. Its preview shows selected context categories and fields; travelers can narrow source classes before a turn. The browser sends stable conversation and turn idempotency keys through the same-origin proxy. The sidecar offers Copy and draft insertion only. Travel owns every canonical write, and this generic response path has no itinerary, reservation, or saved-place mutation.
+
+The sidecar uses the shared Personal AI conversation, planner, provider runtime, policy, assembler, and preview. Shared profile/preferences, conversation history, and eligible AI memory use their existing Personal AI providers; Travel does not own duplicate copies of those records. The Travel context provider does not assume that trip IDs are workspaces, and every request and response keeps `workspace_id` null.
+
+Three independent default-off gates control this path: Personal AI `TRAVEL_CONTEXT_ENABLED`, Travel backend `PERSONAL_AI_CONTEXT_ENABLED`, and the frontend launch gate `NEXT_PUBLIC_PERSONAL_AI_CONTEXT_ENABLED`. Hosted setup also requires `PERSONAL_AI_AUTH_MODE=google_cloud_run_iam` and separate service-audience/account and user-token-audience configuration. Travel verifies the signed-in user's Google identity and trip ownership. Separately, Personal AI verifies the Cloud Run service ID token as transport identity and forwards/verifies the Google user ID token as the owner assertion. A service account or application/workspace label is never the Travel owner. Local development uses only the explicit local/test identity mode.
+
+The existing direct integrations later in this guide remain on standalone Personal AI application scope and retain their accepted contracts: `research-v1`, `booking-document-extraction-v1`, `itinerary-proposal-v1`, and the travel-comparison API set (`domain-lookup-v1`, `domain-comparison-v1`, `domain-module-v1`, `travel-comparison-v1`, `travel-features-v2`, and `travel-sources-v1`). The Travel comparison response remains `travel-research-comparison-v1`. Phase 26 does not migrate or re-key their idempotent calls.
 
 ## Accepted Phase 4 contract
 

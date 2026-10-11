@@ -16,6 +16,7 @@ from personal_travel.clients.personal_ai import (
     PersonalAIExtractionUnknown,
     PersonalAIHealth,
     PersonalAIProposalUnknown,
+    PersonalAISidecarUnknown,
 )
 from personal_travel.config import Settings
 
@@ -123,6 +124,22 @@ def test_personal_ai_health_reports_invalid_json(monkeypatch: pytest.MonkeyPatch
 
     with pytest.raises(PersonalAIError, match="invalid health JSON"):
         asyncio.run(client.health())
+
+
+def test_sidecar_malformed_completed_event_is_an_unknown_retryable_outcome(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(
+            200,
+            content="event: response.completed\ndata: []\n\n",
+            request=request,
+        )
+    )
+    client = _client_with_transport(monkeypatch, transport)
+
+    with pytest.raises(PersonalAISidecarUnknown, match="retry with the same request key"):
+        asyncio.run(client.continue_sidecar_turn(conversation_id=uuid4(), payload={}))
 
 
 @pytest.mark.parametrize("token_result", ["raises", "empty", "oversized"])

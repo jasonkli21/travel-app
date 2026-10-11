@@ -281,6 +281,43 @@ def _claims(token: str, audience: str) -> dict[str, Any]:
     return verified
 
 
+def verify_google_service_token(
+    token: str, *, audience: str, expected_service_account: str
+) -> None:
+    """Verify a caller's Cloud Run transport identity without assigning owner authority."""
+    if (
+        not token
+        or len(token) > 8192
+        or any(character.isspace() for character in token)
+        or not audience.startswith("https://")
+        or not expected_service_account.strip()
+    ):
+        raise InvalidIdentityToken
+    claims = _claims(token, audience)
+    issuer = claims.get("iss")
+    account = claims.get("email")
+    subject = claims.get("sub")
+    authorized_party = claims.get("azp")
+    issued_at = claims.get("iat")
+    expires_at = claims.get("exp")
+    now = int(time.time())
+    if (
+        issuer not in GOOGLE_ISSUERS
+        or not isinstance(account, str)
+        or account.strip().lower() != expected_service_account.strip().lower()
+        or claims.get("email_verified") is not True
+        or not isinstance(subject, str)
+        or not subject.isdecimal()
+        or authorized_party != subject
+        or not _is_finite_number(issued_at)
+        or issued_at > now + 60
+        or not _is_finite_number(expires_at)
+        or expires_at <= issued_at
+        or expires_at <= now + TOKEN_CACHE_MARGIN_SECONDS
+    ):
+        raise InvalidIdentityToken
+
+
 def principal_from_google_token(token: str, settings: Settings) -> VerifiedPrincipal:
     """Verify a Google ID token and derive the upstream-compatible stable owner."""
     if (

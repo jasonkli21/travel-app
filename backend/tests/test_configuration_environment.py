@@ -37,6 +37,26 @@ ENVIRONMENT_KEYS = (
 )
 
 
+def test_context_capability_defaults_off_and_hosted_enablement_requires_both_identities():
+    assert Settings(_env_file=None).personal_ai_context_enabled is False
+
+    with pytest.raises(
+        ValueError, match="independently verified user and Personal AI service identities"
+    ):
+        Settings(
+            _env_file=None,
+            deployment_mode="hosted",
+            travel_auth_mode="google_oidc",
+            google_oauth_client_id="synthetic-client",
+            google_oauth_client_secret="synthetic-credential",
+            google_oauth_redirect_uri="https://travel.example.test/auth/google/callback",
+            google_oauth_allowed_email="owner@gmail.com",
+            allowed_hosts="api.example.test",
+            cors_origins="https://travel.example.test",
+            personal_ai_context_enabled=True,
+        )
+
+
 def _clear_relevant_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     for key in ENVIRONMENT_KEYS:
         monkeypatch.delenv(key, raising=False)

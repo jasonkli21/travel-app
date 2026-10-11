@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     auth_oauth_flow_cookie_name: str = Field(default="__Host-travel_oauth_flow", max_length=64)
     auth_ai_token_cookie_name: str = Field(default="__Host-travel_ai_token", max_length=64)
     personal_ai_auth_mode: Literal["none", "google_cloud_run_iam"] = "none"
+    personal_ai_context_enabled: bool = False
+    personal_ai_context_service_iam_audience: str = Field(default="", max_length=500)
+    personal_ai_context_service_account: str = Field(default="", max_length=320)
     personal_ai_user_id_token_audience: str = Field(default="", max_length=500)
     personal_ai_service_iam_audience: str = Field(default="", max_length=500)
     personal_ai_allow_custom_service_audience: bool = False
@@ -226,6 +229,28 @@ class Settings(BaseSettings):
                 )
         if self.personal_ai_extractions_enabled and not self.private_imports_enabled:
             raise ValueError("Booking extraction requires private source intake to be enabled.")
+        if self.personal_ai_context_enabled and self.deployment_mode == "hosted":
+            context_audience = urlsplit(self.personal_ai_context_service_iam_audience)
+            context_account = self.personal_ai_context_service_account.strip().lower()
+            account_name, separator, account_domain = context_account.partition("@")
+            if (
+                self.travel_auth_mode != "google_oidc"
+                or self.personal_ai_auth_mode != "google_cloud_run_iam"
+                or context_audience.scheme != "https"
+                or not context_audience.hostname
+                or context_audience.username is not None
+                or context_audience.password is not None
+                or context_audience.query
+                or context_audience.fragment
+                or not separator
+                or not account_name
+                or not account_domain.endswith(".iam.gserviceaccount.com")
+                or any(character.isspace() for character in context_account)
+            ):
+                raise ValueError(
+                    "Hosted Travel context requires independently verified user and "
+                    "Personal AI service identities."
+                )
         if (
             self.travel_auth_mode == "google_oidc"
             and (
@@ -233,6 +258,7 @@ class Settings(BaseSettings):
                 or self.personal_ai_comparisons_enabled
                 or self.personal_ai_proposals_enabled
                 or self.personal_ai_extractions_enabled
+                or self.personal_ai_context_enabled
             )
             and self.personal_ai_auth_mode == "none"
         ):

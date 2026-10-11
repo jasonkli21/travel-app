@@ -330,8 +330,17 @@ export async function proxyRequest(request, path, {
       || path[4] === "source" && request.method === "DELETE");
   const isDeletionRetry = path.length === 2 && path[0] === "private-import-deletion-intents"
     && path[1] === "retry" && request.method === "POST";
+  const isTravelAssistant = path[0] === "trips" && UUID_PATH_RE.test(path[1] ?? "")
+    && path[2] === "assistant" && (
+      (path.length === 4 && path[3] === "conversations" && method === "POST")
+      || (path.length === 5 && path[3] === "conversations"
+        && UUID_PATH_RE.test(path[4] ?? "") && method === "GET")
+      || (path.length === 6 && path[3] === "conversations"
+        && UUID_PATH_RE.test(path[4] ?? "")
+        && ["preview", "continue"].includes(path[5] ?? "") && method === "POST")
+    );
   const aiCall = path.some((part) => part === "research" || part === "proposals")
-    || isBookingExtraction || isImportCleanup || isDeletionRetry;
+    || isBookingExtraction || isImportCleanup || isDeletionRetry || isTravelAssistant;
   const aiUserToken = cookies.get(AI_USER_TOKEN_COOKIE);
   if (aiCall && typeof aiUserToken === "string" && aiUserToken) {
     headers.set("x-user-id-token", aiUserToken);

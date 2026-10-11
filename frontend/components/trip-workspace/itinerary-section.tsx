@@ -19,6 +19,7 @@ export default function ItinerarySection({
   editorGeneration,
   runMutation,
   onCreatePlace,
+  onAskAssistant,
 }: {
   trip: TripDetail;
   places: PlaceSummary[];
@@ -28,6 +29,7 @@ export default function ItinerarySection({
   editorGeneration: number;
   runMutation: RunWorkspaceMutation;
   onCreatePlace: (name: string) => Promise<PlaceSummary>;
+  onAskAssistant?: (dayId: string) => void;
 }) {
   const [editingItem, setEditingItem] = useState<string | null>(null);
   const [addingDay, setAddingDay] = useState<string | null>(null);
@@ -54,6 +56,7 @@ export default function ItinerarySection({
                 />
               </div>
               <button className="secondary compact" type="button" onClick={() => setAddingDay((current) => current === day.id ? null : day.id)} disabled={disabled}>{addingDay === day.id ? "Close form" : "+ Add item"}</button>
+              {onAskAssistant ? <button className="secondary compact" type="button" onClick={() => onAskAssistant(day.id)} disabled={disabled}>Ask AI about this day</button> : null}
             </div>
             <div className="items">
               {day.items.length === 0 ? <p className="emptyText">Nothing planned yet.</p> : null}

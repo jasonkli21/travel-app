@@ -21,6 +21,12 @@ from personal_travel.config import get_settings
 from personal_travel.domain.types import ResearchState
 from personal_travel.domain.upstream_comparisons import UpstreamTravelComparison
 from personal_travel.domain.upstream_extractions import UpstreamBookingExtractionResult
+from personal_travel.domain.upstream_personal_ai_context import (
+    PersonalAISidecarConversation,
+    PersonalAISidecarHistory,
+    PersonalAISidecarMessage,
+    PersonalAISidecarPreview,
+)
 from personal_travel.domain.upstream_proposals import UpstreamProposalResult
 from personal_travel.domain.urls import validate_http_url
 
@@ -37,6 +43,14 @@ MAX_COMPARISON_RESPONSE_BYTES = 256 * 1024
 
 class PersonalAIError(RuntimeError):
     pass
+
+
+class PersonalAISidecarError(PersonalAIError):
+    """Safe error for the optional, read-only Travel assistant."""
+
+
+class PersonalAISidecarUnknown(PersonalAISidecarError):
+    """The durable turn outcome is uncertain; retry with the same idempotency key."""
 
 
 @dataclass(frozen=True)
@@ -77,6 +91,7 @@ class _ResearchSession(BaseModel):
     id: UUID
     state: ResearchState
     expires_at: datetime
+    revision: int = Field(default=0, ge=0)
     failure_code: str | None = Field(default=None, max_length=80, pattern=r"^[a-z0-9_]+$")
     answer: str | None = Field(default=None, max_length=20_000)
     citations: list[_ResearchCitation] = Field(default_factory=list, max_length=144)
@@ -211,6 +226,231 @@ class PersonalAIClient:
             raise PersonalAIError("personal-ai-system returned an invalid health response")
 
         return PersonalAIHealth(status=status, service=service)
+
+    async def get_research_context(self, session_id: UUID) -> _ResearchSession:
+        """Read one owner-scoped standalone research session for explicit Travel selection."""
+        try:
+            async with asyncio.timeout(self._timeout):
+                headers = await self._outbound_headers()
+                async with httpx.AsyncClient(
+                    timeout=self._timeout, transport=self._transport
+                ) as client:
+                    async with client.stream(
+                        "GET",
+                        f"{self._base_url}/v1/research/{session_id}",
+                        headers=headers,
+                    ) as response:
+                        response.raise_for_status()
+                        result = _ResearchSession.model_validate(await _bounded_json(response))
+        except (
+            httpx.HTTPError,
+            TimeoutError,
+            InvalidUpstreamResponse,
+            ValidationError,
+            ValueError,
+        ):
+            raise PersonalAISidecarError("The selected research session is unavailable.") from None
+        if result.id != session_id:
+            raise PersonalAISidecarError("The selected research session is unavailable.")
+        return result
+
+    async def create_sidecar_conversation(self, *, title: str, idempotency_key: UUID) -> UUID:
+        try:
+            async with asyncio.timeout(self._timeout):
+                headers = await self._outbound_headers()
+                headers["X-Application-ID"] = "travel"
+                async with httpx.AsyncClient(
+                    timeout=self._timeout, transport=self._transport
+                ) as client:
+                    async with client.stream(
+                        "POST",
+                        f"{self._base_url}/v1/conversations",
+                        headers=headers,
+                        json={"title": title, "idempotency_key": str(idempotency_key)},
+                    ) as response:
+                        response.raise_for_status()
+                        raw = await read_json(response, max_bytes=16_384)
+                result = PersonalAISidecarConversation.model_validate(raw)
+        except (
+            httpx.HTTPError,
+            TimeoutError,
+            InvalidUpstreamResponse,
+            ValidationError,
+            ValueError,
+        ):
+            raise PersonalAISidecarError("The Travel assistant is unavailable.") from None
+        if result.application_id != "travel" or result.workspace_id is not None:
+            raise PersonalAISidecarError("The Travel assistant returned an invalid conversation.")
+        return result.id
+
+    async def get_sidecar_conversation(self, conversation_id: UUID) -> PersonalAISidecarHistory:
+        try:
+            async with asyncio.timeout(self._timeout):
+                headers = await self._outbound_headers()
+                headers["X-Application-ID"] = "travel"
+                async with httpx.AsyncClient(
+                    timeout=self._timeout, transport=self._transport
+                ) as client:
+                    async with client.stream(
+                        "GET",
+                        f"{self._base_url}/v1/conversations/{conversation_id}",
+                        headers=headers,
+                    ) as response:
+                        response.raise_for_status()
+                        raw = await read_json(response, max_bytes=256 * 1024)
+            if not isinstance(raw, dict):
+                raise InvalidUpstreamResponse("invalid conversation response")
+            conversation = raw.get("conversation")
+            messages = raw.get("messages")
+            if (
+                not isinstance(conversation, dict)
+                or str(conversation.get("id")) != str(conversation_id)
+                or conversation.get("application_id") != "travel"
+                or conversation.get("workspace_id") is not None
+                or not isinstance(messages, list)
+            ):
+                raise InvalidUpstreamResponse("conversation scope mismatch")
+            projected: list[PersonalAISidecarMessage] = []
+            for message in messages[-40:]:
+                if not isinstance(message, dict):
+                    raise InvalidUpstreamResponse("invalid conversation message")
+                role, status = message.get("role"), message.get("status")
+                if role not in {"user", "assistant"} or status not in {"completed", "failed"}:
+                    continue
+                projected.append(
+                    PersonalAISidecarMessage.model_validate(
+                        {
+                            "id": message.get("id"),
+                            "role": role,
+                            "content": message.get("content"),
+                            "status": status,
+                        }
+                    )
+                )
+            return PersonalAISidecarHistory(
+                id=conversation_id,
+                application_id="travel",
+                messages=tuple(projected),
+            )
+        except (
+            httpx.HTTPError,
+            TimeoutError,
+            InvalidUpstreamResponse,
+            ValidationError,
+            ValueError,
+        ):
+            raise PersonalAISidecarError(
+                "The Travel assistant conversation is unavailable."
+            ) from None
+
+    async def preview_sidecar_context(
+        self, *, conversation_id: UUID, payload: dict[str, object]
+    ) -> PersonalAISidecarPreview:
+        try:
+            async with asyncio.timeout(self._timeout):
+                headers = await self._outbound_headers()
+                headers["X-Application-ID"] = "travel"
+                async with httpx.AsyncClient(
+                    timeout=self._timeout, transport=self._transport
+                ) as client:
+                    async with client.stream(
+                        "POST",
+                        f"{self._base_url}/v1/conversations/{conversation_id}/context-preview",
+                        headers=headers,
+                        json=payload,
+                    ) as response:
+                        response.raise_for_status()
+                        raw = await read_json(response, max_bytes=32_768)
+                return PersonalAISidecarPreview.model_validate(raw)
+        except (
+            httpx.HTTPError,
+            TimeoutError,
+            InvalidUpstreamResponse,
+            ValidationError,
+            ValueError,
+        ):
+            raise PersonalAISidecarError("Travel context preview is unavailable.") from None
+
+    async def continue_sidecar_turn(
+        self, *, conversation_id: UUID, payload: dict[str, object]
+    ) -> tuple[UUID, str]:
+        """Consume the shared conversation SSE stream without creating a Travel write path."""
+        event_name: str | None = None
+        data_lines: list[str] = []
+        total_events = 0
+        terminal: tuple[UUID, str] | None = None
+        try:
+            async with asyncio.timeout(self._timeout):
+                headers = await self._outbound_headers()
+                headers["X-Application-ID"] = "travel"
+                async with httpx.AsyncClient(
+                    timeout=self._timeout, transport=self._transport
+                ) as client:
+                    async with client.stream(
+                        "POST",
+                        f"{self._base_url}/v1/conversations/{conversation_id}/continue",
+                        headers=headers,
+                        json=payload,
+                    ) as response:
+                        response.raise_for_status()
+                        async for line in sse_lines(
+                            response, max_bytes=256 * 1024, max_line_bytes=32 * 1024
+                        ):
+                            if line == "":
+                                if event_name is None and not data_lines:
+                                    continue
+                                total_events += 1
+                                if total_events > 256:
+                                    raise InvalidUpstreamResponse("too many conversation events")
+                                raw = json.loads(chr(10).join(data_lines))
+                                if not isinstance(raw, dict):
+                                    raise InvalidUpstreamResponse("invalid conversation event")
+                                if event_name == "response.completed":
+                                    message = raw.get("message")
+                                    if (
+                                        not isinstance(message, dict)
+                                        or message.get("role") != "assistant"
+                                        or message.get("status") != "completed"
+                                        or not isinstance(message.get("content"), str)
+                                        or not message["content"].strip()
+                                    ):
+                                        raise InvalidUpstreamResponse("invalid completed message")
+                                    terminal = (UUID(str(message["id"])), message["content"])
+                                elif event_name == "response.error":
+                                    raise PersonalAISidecarError(
+                                        "The Travel assistant could not complete this turn."
+                                    )
+                                event_name, data_lines = None, []
+                                if terminal is not None:
+                                    break
+                                continue
+                            if line.startswith(":"):
+                                continue
+                            field, separator, value = line.partition(":")
+                            if separator and value.startswith(" "):
+                                value = value[1:]
+                            if field == "event":
+                                if event_name is not None:
+                                    raise InvalidUpstreamResponse("invalid conversation event")
+                                event_name = value
+                            elif field == "data":
+                                data_lines.append(value)
+            if terminal is None:
+                raise InvalidUpstreamResponse("conversation ended without a completed message")
+            return terminal
+        except PersonalAISidecarError:
+            raise
+        except (
+            httpx.HTTPError,
+            TimeoutError,
+            InvalidUpstreamResponse,
+            ValueError,
+            TypeError,
+            RecursionError,
+        ):
+            raise PersonalAISidecarUnknown(
+                "The Travel assistant turn outcome is unknown; retry with the same request key."
+            ) from None
 
     async def research(
         self,

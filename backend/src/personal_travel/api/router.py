@@ -8,6 +8,7 @@ from personal_travel.api.routes import (
     imports,
     itinerary,
     location,
+    personal_ai_context,
     places,
     private_deletions,
     proposals,
@@ -34,3 +35,4 @@ api_router.include_router(saved_places.router, prefix="/v1")
 api_router.include_router(research.router, prefix="/v1")
 api_router.include_router(proposals.router, prefix="/v1")
 api_router.include_router(location.router, prefix="/v1")
+api_router.include_router(personal_ai_context.router)

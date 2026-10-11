@@ -1,6 +1,6 @@
 # Current state
 
-Updated: 2026-10-08
+Updated: 2026-10-11
 
 This is the single living status snapshot. Read the linked release and review
 records for detailed scope, checks, and limitations; do not infer delivery from
@@ -52,6 +52,7 @@ a plan.
 | --- | --- | --- |
 | Canonical trips, itinerary, reservations, and places | Implemented. Local-owner mode is the development default; verified Google OIDC is also implemented. | Hosted identity and configuration guards are implemented, but no deployment or production behavior has been provisioned or verified. |
 | Research, proposal generation/apply, and travel comparison | Typed clients and Travel-side validation are implemented. Travel and upstream feature/provider gates default off. Current direct capability calls use standalone Personal AI scope. | Hosted service identity, provider behavior, and deployment are unverified. Application-scope migration is not implemented. |
+| Personal AI context sidecar | Implemented as an optional read-only trip/day/place assistant using typed Travel context reads and shared Personal AI conversation/preview APIs. Travel, Personal AI backend, and frontend gates default off. See the [Phase 26 release](releases/phase-26-personal-ai-context.md). | Cloud Run service IAM, live user assertions, provider/data-use approval, deployed revision checks, and browser acceptance are unverified. |
 | Booking-source import and extraction | Implemented behind default-off gates with verified Google identity and local private storage. Local-auth mode cannot access private input. | Startup rejects private imports because only local filesystem storage exists. |
 | Trip and reservation attachments | Implemented behind a default-off gate with verified Google identity and local private storage. Local-auth mode cannot access private attachments. | Startup rejects private attachments because only local filesystem storage exists. |
 | Private blob storage | `LocalSourceStore` stores opaque objects on a separately configured local filesystem path. | No durable shared object store is implemented. GCS is not implemented or authorized. |
@@ -72,6 +73,8 @@ a plan.
 
 ## Personal AI boundary
 
+Phase 26 adds a separately gated `travel-context-read-v1` projection at `POST /v1/integrations/personal-ai/context`. It returns only requested, bounded trip/day/itinerary/place fields and selected completed, cited, unexpired Travel research. Reservation summaries are minimized, explicitly selected, and marked sensitive. Every Travel record carries a trip revision, source fingerprint, and owner-scoped permission dependency; Personal AI rechecks source authority before derived history is reused. The shared sidecar shows its planned context and supports narrowing, Copy, and non-authoritative draft insertion. It has no generic itinerary or booking mutation operation. The new path uses `application_id="travel"` and `workspace_id=null`; no trip-to-workspace mapping exists. Existing standalone capability contracts remain unchanged.
+
 Travel owns canonical trips, itinerary ordering/state, bookings and
 reservations, travel validation, authorization, persistence, and final
 mutation/application. Personal AI owns reusable model/provider access,
@@ -89,6 +92,8 @@ application-integration contract. No workspace identity or trip/workspace
 mapping is defined.
 
 ## Current work boundary
+
+Phase 26 is locally implemented behind default-off gates. The root README and [integration contract](06-ai-integration.md) describe the optional capability; local checks do not establish live cloud identity, provider approval, deployment, or browser acceptance.
 
 Phase 9 remains the latest unfinished product phase. Phase plans are historical
 implementation intent and do not authorize new work. Any further feature or

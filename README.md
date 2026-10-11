@@ -21,6 +21,7 @@ Core functionality includes:
 - private trip attachments;
 - static HTML, ICS, and versioned JSON exports;
 - a read-focused travel view for use during a trip.
+- an optional, read-only Personal AI sidecar on trip, day, and place views, with context preview, narrowing, Copy, and draft insertion;
 
 AI features are deliberately separated from authoritative application state. Research and generation can propose or summarize information, but travel state changes remain explicit, validated application operations.
 

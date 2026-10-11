@@ -22,6 +22,7 @@ from personal_travel.auth.google_oidc import (
     IdentityProviderUnavailable,
     InvalidIdentityToken,
     principal_from_google_token,
+    verify_google_service_token,
 )
 from personal_travel.auth.sessions import ActiveSession, load_active_session, matches_digest
 from personal_travel.config import Settings, get_settings
@@ -44,6 +45,10 @@ COMPARISON_PATH = re.compile(
 )
 TRIP_RESEARCH_PATH = re.compile(rf"^/v1/trips/{UUID_PATH}/research$")
 TRIP_PROPOSAL_PATH = re.compile(rf"^/v1/trips/{UUID_PATH}/proposals$")
+PERSONAL_AI_CONTEXT_PATH = "/v1/integrations/personal-ai/context"
+PERSONAL_AI_SIDECAR_PATH = re.compile(
+    rf"^/v1/trips/{UUID_PATH}/assistant(?:/conversations(?:/{UUID_PATH}(?:/(?:preview|continue))?)?)?$"
+)
 UPLOAD_SECONDS = 30
 
 
@@ -148,6 +153,15 @@ class LocalBoundaryMiddleware:
             request = Request(scope)
             path = scope.get("path", "")
             method = scope.get("method", "GET").upper()
+            is_context_read = path == PERSONAL_AI_CONTEXT_PATH and method == "POST"
+            if is_context_read and not settings.personal_ai_context_enabled:
+                await reject(404, "not_found", "The requested resource was not found.")
+                return
+            service_context_request = (
+                is_context_read
+                and settings.personal_ai_context_enabled
+                and settings.travel_auth_mode == "google_oidc"
+            )
             session_cookie = request.cookies.get(settings.auth_session_cookie_name)
             supplied_authorization = headers.get("authorization")
             supplied_user_token = headers.get("x-user-id-token")
@@ -160,7 +174,68 @@ class LocalBoundaryMiddleware:
                 await self.app(scope, receive, send_response)
                 return
 
-            if settings.travel_auth_mode == "local":
+            if service_context_request:
+                service_token = (
+                    supplied_authorization[7:].strip()
+                    if supplied_authorization and supplied_authorization.startswith("Bearer ")
+                    else ""
+                )
+                user_token = supplied_user_token or ""
+                if not service_token or not user_token:
+                    await reject(
+                        401,
+                        "ai_identity_required",
+                        "Verified Personal AI service and user identities are required.",
+                    )
+                    return
+                try:
+                    async with asyncio.timeout(4):
+                        await run_sync(
+                            partial(
+                                verify_google_service_token,
+                                service_token,
+                                audience=settings.personal_ai_context_service_iam_audience,
+                                expected_service_account=settings.personal_ai_context_service_account,
+                            ),
+                            abandon_on_cancel=True,
+                        )
+                        user_principal = await run_sync(
+                            principal_from_google_token,
+                            user_token,
+                            settings,
+                            abandon_on_cancel=True,
+                        )
+                except TimeoutError:
+                    await reject(
+                        503,
+                        "identity_provider_unavailable",
+                        "Google identity verification is temporarily unavailable.",
+                    )
+                    return
+                except IdentityProviderUnavailable:
+                    await reject(
+                        503,
+                        "identity_provider_unavailable",
+                        "Google identity verification is temporarily unavailable.",
+                    )
+                    return
+                except InvalidIdentityToken:
+                    await reject(
+                        401,
+                        "invalid_ai_identity",
+                        "The Personal AI caller identity could not be verified.",
+                    )
+                    return
+                scope["principal"] = user_principal
+                scope["auth_session"] = None
+                scope["ai_user_id_token"] = user_token
+                if settings.personal_ai_auth_mode == "google_cloud_run_iam":
+                    scope["personal_ai_auth_context"] = PersonalAIAuthContext(
+                        user_id_token=user_token,
+                        service_audience=settings.personal_ai_service_iam_audience,
+                        service_account=settings.personal_ai_service_account,
+                    )
+            elif settings.travel_auth_mode == "local":
                 if (
                     supplied_authorization is not None
                     or supplied_user_token is not None
@@ -294,6 +369,10 @@ class LocalBoundaryMiddleware:
                     )
                     or (is_proposal_operation and settings.personal_ai_proposals_enabled)
                     or (is_extraction_operation and settings.personal_ai_extractions_enabled)
+                    or (
+                        PERSONAL_AI_SIDECAR_PATH.fullmatch(path) is not None
+                        and settings.personal_ai_context_enabled
+                    )
                     or is_import_cleanup_operation
                     or is_deletion_retry_operation
                 )

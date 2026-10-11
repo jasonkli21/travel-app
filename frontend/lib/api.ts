@@ -399,6 +399,60 @@ export interface ProposalApplyOutcome {
   preview: ProposalPreview;
 }
 
+export type PersonalAIContextSourceClass =
+  | "global_profile" | "domain_profile" | "domain_current" | "domain_history"
+  | "ai_memory" | "external_research" | "conversation" | "client_context" | "tool_result";
+
+export interface PersonalAIContextEntityReference {
+  entity_type: string;
+  entity_id: string;
+  application_id: "travel";
+  workspace_id: null;
+}
+
+export interface PersonalAISidecarTurnInput {
+  content: string;
+  idempotency_key: string;
+  entity_refs: PersonalAIContextEntityReference[];
+  view_id: "travel.trip" | "travel.day" | "travel.place";
+  excluded_source_classes: PersonalAIContextSourceClass[];
+}
+
+export interface PersonalAISidecarPreview {
+  selected_message_count: number;
+  planned_sources: {
+    category: string;
+    source_class: PersonalAIContextSourceClass | null;
+    operation: string;
+    fields: string[];
+    max_results: number;
+    max_tokens: number | null;
+  }[];
+  excluded_sources: { category: string; reason: string }[];
+}
+
+export interface PersonalAISidecarReply {
+  message_id: string;
+  answer: string;
+}
+
+export interface PersonalAISidecarMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  status: "completed" | "failed";
+}
+
+export interface PersonalAISidecarHistory {
+  id: string;
+  application_id: "travel";
+  workspace_id: null;
+  messages: PersonalAISidecarMessage[];
+}
+
+export const personalAiContextEnabled =
+  process.env.NEXT_PUBLIC_PERSONAL_AI_CONTEXT_ENABLED === "true";
+
 export interface CreateProposalInput {
   idempotency_key: string;
   instruction: string;
@@ -534,6 +588,32 @@ const expectedRevision = (revision: number) => ({
 });
 
 export const travelApi = {
+  createAssistantConversation: (tripId: string, idempotencyKey: string) =>
+    request<{ id: string; application_id: "travel"; workspace_id: null }>(
+      `/trips/${tripId}/assistant/conversations`,
+      {
+        method: "POST",
+        body: JSON.stringify({ title: "Travel assistant", idempotency_key: idempotencyKey }),
+      },
+    ),
+  getAssistantConversation: (tripId: string, conversationId: string) =>
+    request<PersonalAISidecarHistory>(
+      `/trips/${tripId}/assistant/conversations/${conversationId}`,
+    ),
+  previewAssistantContext: (
+    tripId: string, conversationId: string, input: PersonalAISidecarTurnInput,
+  ) =>
+    request<PersonalAISidecarPreview>(
+      `/trips/${tripId}/assistant/conversations/${conversationId}/preview`,
+      { method: "POST", body: JSON.stringify(input) },
+    ),
+  continueAssistantTurn: (
+    tripId: string, conversationId: string, input: PersonalAISidecarTurnInput,
+  ) =>
+    request<PersonalAISidecarReply>(
+      `/trips/${tripId}/assistant/conversations/${conversationId}/continue`,
+      { method: "POST", body: JSON.stringify(input) },
+    ),
   listTrips: () => request<TripSummary[]>("/trips"),
   createTrip: (input: CreateTripInput) =>
     request<TripDetail>("/trips", { method: "POST", body: JSON.stringify(input) }),

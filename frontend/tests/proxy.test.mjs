@@ -228,6 +228,45 @@ test("proxy adds the AI user token only for exact capability path segments", asy
   assert.equal(forwarded.get("x-user-id-token"), null);
 });
 
+test("proxy forwards the AI user token for exact assistant conversation routes only", async () => {
+  let forwarded;
+  const fetchImpl = async (_upstream, options) => {
+    forwarded = options.headers;
+    return Response.json({ ok: true });
+  };
+  const request = new Request(url, {
+    headers: {
+      host: "localhost:3000",
+      origin: "http://localhost:3000",
+      cookie: "__Host-travel_ai_token=signed-user-token",
+    },
+  });
+  const tripId = "00000000-0000-4000-8000-000000000001";
+  const conversationId = "00000000-0000-4000-8000-000000000002";
+  const allowed = [
+    { method: "POST", path: ["trips", tripId, "assistant", "conversations"] },
+    { method: "GET", path: ["trips", tripId, "assistant", "conversations", conversationId] },
+    { method: "POST", path: ["trips", tripId, "assistant", "conversations", conversationId, "preview"] },
+    { method: "POST", path: ["trips", tripId, "assistant", "conversations", conversationId, "continue"] },
+  ];
+  for (const item of allowed) {
+    const current = new Request(url, { method: item.method, headers: request.headers, body: item.method === "POST" ? "{}" : undefined });
+    await proxyRequest(current, item.path, { fetchImpl });
+    assert.equal(forwarded.get("x-user-id-token"), "signed-user-token");
+  }
+
+  for (const item of [
+    { method: "POST", path: ["trips", tripId, "assistant", "delete"] },
+    { method: "GET", path: ["trips", tripId, "assistant", "conversations", "not-a-uuid"] },
+    { method: "POST", path: ["trips", tripId, "assistant", "conversations", conversationId, "delete"] },
+    { method: "GET", path: ["trips", tripId, "assistant", "conversations"] },
+  ]) {
+    const current = new Request(url, { method: item.method, headers: request.headers, body: item.method === "POST" ? "{}" : undefined });
+    await proxyRequest(current, item.path, { fetchImpl });
+    assert.equal(forwarded.get("x-user-id-token"), null);
+  }
+});
+
 test("proxy forwards the AI user token only for privacy cleanup operations", async () => {
   let forwarded;
   const fetchImpl = async (_upstream, options) => {

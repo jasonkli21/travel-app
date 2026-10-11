@@ -12,6 +12,8 @@ import {
   type LogisticsMode,
   type PlaceSummary,
   type PlaceSearchResult,
+  type PersonalAIContextEntityReference,
+  type PersonalAISidecarTurnInput,
   type Reservation,
   type SavedPlace,
   type SaveTravelComparisonCandidateInput,
@@ -21,6 +23,7 @@ import {
   type UpdateTripInput,
   travelApi,
   tripAttachmentsEnabled,
+  personalAiContextEnabled,
 } from "../lib/api";
 import TripResearchPanel from "./trip-research-panel";
 import TripComparisonPanel from "./trip-comparison-panel";
@@ -39,6 +42,27 @@ import PlaceAttribution from "./trip-workspace/place-attribution";
 import ItinerarySection from "./trip-workspace/itinerary-section";
 import PlaceMapSection from "./trip-workspace/place-map-section";
 import TripOverviewSection from "./trip-workspace/trip-overview-section";
+import TravelAssistant from "./trip-workspace/travel-assistant";
+
+type AssistantReference = {
+  reference: PersonalAIContextEntityReference;
+  label: string;
+};
+
+type AssistantLaunch = {
+  viewId: PersonalAISidecarTurnInput["view_id"];
+  references: AssistantReference[];
+  note?: string;
+};
+
+function travelReference(entityType: string, entityId: string): PersonalAIContextEntityReference {
+  return {
+    entity_type: entityType,
+    entity_id: entityId,
+    application_id: "travel",
+    workspace_id: null,
+  };
+}
 
 function reservationSchedule(reservation: Reservation): string {
   if (!reservation.start_date || !reservation.start_time) return "No schedule yet";
@@ -65,6 +89,10 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
   const [editingPlace, setEditingPlace] = useState<string | null>(null);
   const [showPlaceForm, setShowPlaceForm] = useState(false);
   const [proposalSuggestion, setProposalSuggestion] = useState<{ key: string; instruction: string } | null>(null);
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistantLaunch, setAssistantLaunch] = useState<AssistantLaunch>({
+    viewId: "travel.trip", references: [],
+  });
 
   const refresh = useCallback(async (
     { resetDrafts = false }: { resetDrafts?: boolean } = {},
@@ -317,6 +345,60 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
     document.getElementById("proposals")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
+  const openTripAssistant = () => {
+    setAssistantLaunch({ viewId: "travel.trip", references: [] });
+    setAssistantOpen(true);
+  };
+
+  const openDayAssistant = (dayId: string, researchSessionId?: string) => {
+    const day = trip.days.find((item) => item.id === dayId);
+    if (!day) return;
+    const references: AssistantReference[] = [{
+      reference: travelReference("day", day.id),
+      label: `Day ${day.day_index} · ${day.date}`,
+    }];
+    const selectedItems = day.items.slice(0, 6);
+    const selectedPlaceIds = new Set<string>();
+    for (const item of selectedItems) {
+      references.push({
+        reference: travelReference("itinerary_item", item.id),
+        label: `Itinerary · ${item.title}`,
+      });
+      if (item.place && !selectedPlaceIds.has(item.place.id) && selectedPlaceIds.size < 6) {
+        selectedPlaceIds.add(item.place.id);
+        references.push({
+          reference: travelReference("place", item.place.id),
+          label: `Place · ${item.place.name}`,
+        });
+      }
+    }
+    if (researchSessionId) {
+      references.push({
+        reference: travelReference("research_session", researchSessionId),
+        label: "Selected cited research",
+      });
+    }
+    setAssistantLaunch({
+      viewId: "travel.day",
+      references,
+      note: day.items.length > selectedItems.length
+        ? `The day selection includes its first ${selectedItems.length} itinerary items. Select a place separately for a narrower question.`
+        : undefined,
+    });
+    setAssistantOpen(true);
+  };
+
+  const openPlaceAssistant = (place: PlaceSummary) => {
+    setAssistantLaunch({
+      viewId: "travel.place",
+      references: [{
+        reference: travelReference("place", place.id),
+        label: `Place · ${place.name}`,
+      }],
+    });
+    setAssistantOpen(true);
+  };
+
   const workspacePlaceFootprint = places
     .map((place) => `${place.id}:${place.revision}`)
     .sort()
@@ -330,6 +412,7 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
           <Link className="backLink" href="/">← All trips</Link>
           <h1>{trip.title}</h1>
           <p className="muted">{trip.start_date} → {trip.end_date}</p>
+          {personalAiContextEnabled ? <button className="secondary" type="button" onClick={openTripAssistant}>Ask Personal AI about this trip</button> : null}
         </div>
         <nav className="nav" aria-label="Trip navigation">
           <a href="#overview">Overview</a>
@@ -381,6 +464,9 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
           trip={trip}
           pending={(pending !== null || stale)}
           onSaveCandidate={saveResearchCandidate}
+          onUseResearch={personalAiContextEnabled
+            ? (sessionId, dayId) => openDayAssistant(dayId, sessionId)
+            : undefined}
         />
 
         <TripComparisonPanel
@@ -435,6 +521,7 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
           editorGeneration={editorGeneration}
           runMutation={run}
           onCreatePlace={createPlace}
+          onAskAssistant={personalAiContextEnabled ? (dayId) => openDayAssistant(dayId) : undefined}
         />
 
         <section className="reservationSection" id="reservations">
@@ -484,7 +571,7 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
           <div className="placeList">
             {places.length === 0 ? <p className="emptyText">No places yet.</p> : places.map((place) => {
               const saved = savedPlaceIds.has(place.id);
-              return <div className="placeRow" key={place.id}><strong>{place.name}</strong>{place.category || place.address ? <span>{[place.category, place.address].filter(Boolean).join(" · ")}</span> : null}<PlaceAttribution place={place} />{place.phone || place.website_url ? <span>{[place.phone, place.website_url].filter(Boolean).join(" · ")}</span> : null}<div className="placeActions"><button className="iconButton" type="button" onClick={() => { setEditingPlace((current) => current === place.id ? null : place.id); setShowPlaceForm(false); }} disabled={(pending !== null || stale)}>{editingPlace === place.id ? "Close" : "Edit"}</button><button className="iconButton" type="button" onClick={() => void run(`save-place-${place.id}`, async () => { if (!saved) await travelApi.createSavedPlace(trip.id, { place_id: place.id, note: null }, trip.revision); })} disabled={(pending !== null || stale) || saved}>{saved ? "Saved" : "Save"}</button></div></div>;
+              return <div className="placeRow" key={place.id}><strong>{place.name}</strong>{place.category || place.address ? <span>{[place.category, place.address].filter(Boolean).join(" · ")}</span> : null}<PlaceAttribution place={place} />{place.phone || place.website_url ? <span>{[place.phone, place.website_url].filter(Boolean).join(" · ")}</span> : null}<div className="placeActions">{personalAiContextEnabled ? <button className="iconButton" type="button" onClick={() => openPlaceAssistant(place)}>Ask AI</button> : null}<button className="iconButton" type="button" onClick={() => { setEditingPlace((current) => current === place.id ? null : place.id); setShowPlaceForm(false); }} disabled={(pending !== null || stale)}>{editingPlace === place.id ? "Close" : "Edit"}</button><button className="iconButton" type="button" onClick={() => void run(`save-place-${place.id}`, async () => { if (!saved) await travelApi.createSavedPlace(trip.id, { place_id: place.id, note: null }, trip.revision); })} disabled={(pending !== null || stale) || saved}>{saved ? "Saved" : "Save"}</button></div></div>;
             })}
           </div>
         </div>
@@ -496,6 +583,21 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
         </div>
         <div className="aiBoundary"><span>Optional research</span><code>travel-api → personal-ai-system</code><p>Research and provider evidence remain separate from these authoritative manual records.</p></div>
       </aside>
+      {personalAiContextEnabled ? (
+        <TravelAssistant
+          key={trip.id}
+          trip={trip}
+          open={assistantOpen}
+          onClose={() => setAssistantOpen(false)}
+          viewId={assistantLaunch.viewId}
+          references={assistantLaunch.references}
+          selectionNote={assistantLaunch.note}
+          onRemoveReference={(index) => setAssistantLaunch((current) => ({
+            ...current,
+            references: current.references.filter((_, itemIndex) => itemIndex !== index),
+          }))}
+        />
+      ) : null}
     </main>
   );
 }
