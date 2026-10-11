@@ -22,6 +22,7 @@ from personal_travel.domain.types import ResearchState
 from personal_travel.domain.upstream_comparisons import UpstreamTravelComparison
 from personal_travel.domain.upstream_extractions import UpstreamBookingExtractionResult
 from personal_travel.domain.upstream_personal_ai_context import (
+    PersonalAISidecarActionPolicy,
     PersonalAISidecarConversation,
     PersonalAISidecarHistory,
     PersonalAISidecarMessage,
@@ -227,33 +228,6 @@ class PersonalAIClient:
 
         return PersonalAIHealth(status=status, service=service)
 
-    async def get_research_context(self, session_id: UUID) -> _ResearchSession:
-        """Read one owner-scoped standalone research session for explicit Travel selection."""
-        try:
-            async with asyncio.timeout(self._timeout):
-                headers = await self._outbound_headers()
-                async with httpx.AsyncClient(
-                    timeout=self._timeout, transport=self._transport
-                ) as client:
-                    async with client.stream(
-                        "GET",
-                        f"{self._base_url}/v1/research/{session_id}",
-                        headers=headers,
-                    ) as response:
-                        response.raise_for_status()
-                        result = _ResearchSession.model_validate(await _bounded_json(response))
-        except (
-            httpx.HTTPError,
-            TimeoutError,
-            InvalidUpstreamResponse,
-            ValidationError,
-            ValueError,
-        ):
-            raise PersonalAISidecarError("The selected research session is unavailable.") from None
-        if result.id != session_id:
-            raise PersonalAISidecarError("The selected research session is unavailable.")
-        return result
-
     async def create_sidecar_conversation(self, *, title: str, idempotency_key: UUID) -> UUID:
         try:
             async with asyncio.timeout(self._timeout):
@@ -282,6 +256,41 @@ class PersonalAIClient:
         if result.application_id != "travel" or result.workspace_id is not None:
             raise PersonalAISidecarError("The Travel assistant returned an invalid conversation.")
         return result.id
+
+    async def get_sidecar_action_policy(self) -> PersonalAISidecarActionPolicy:
+        """Read application-scoped action authority from Personal AI."""
+        try:
+            async with asyncio.timeout(self._timeout):
+                headers = await self._outbound_headers()
+                headers["X-Application-ID"] = "travel"
+                async with httpx.AsyncClient(
+                    timeout=self._timeout, transport=self._transport
+                ) as client:
+                    async with client.stream(
+                        "GET",
+                        f"{self._base_url}/v1/conversations/execution-options",
+                        headers=headers,
+                    ) as response:
+                        response.raise_for_status()
+                        raw = await read_json(response, max_bytes=32_768)
+            if not isinstance(raw, dict) or not isinstance(raw.get("sidecar"), dict):
+                raise InvalidUpstreamResponse("invalid execution options")
+            sidecar = raw["sidecar"]
+            result = PersonalAISidecarActionPolicy.model_validate(
+                {
+                    "copy_allowed": sidecar.get("copy_allowed"),
+                    "draft_insert_target_ids": sidecar.get("draft_insert_target_ids", ()),
+                }
+            )
+            return result
+        except (
+            httpx.HTTPError,
+            TimeoutError,
+            InvalidUpstreamResponse,
+            ValidationError,
+            ValueError,
+        ):
+            raise PersonalAISidecarError("The Travel assistant policy is unavailable.") from None
 
     async def get_sidecar_conversation(self, conversation_id: UUID) -> PersonalAISidecarHistory:
         try:

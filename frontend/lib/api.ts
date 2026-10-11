@@ -450,6 +450,18 @@ export interface PersonalAISidecarHistory {
   messages: PersonalAISidecarMessage[];
 }
 
+export interface PersonalAISidecarActionPolicy {
+  copy_allowed: boolean;
+  draft_insert_target_ids: string[];
+}
+
+export function travelSidecarActions(policy: PersonalAISidecarActionPolicy | null) {
+  return {
+    copy: policy?.copy_allowed === true,
+    draft: policy?.draft_insert_target_ids.includes("travel.message_composer") === true,
+  };
+}
+
 export const personalAiContextEnabled =
   process.env.NEXT_PUBLIC_PERSONAL_AI_CONTEXT_ENABLED === "true";
 
@@ -588,6 +600,10 @@ const expectedRevision = (revision: number) => ({
 });
 
 export const travelApi = {
+  getAssistantActionPolicy: (tripId: string) =>
+    request<PersonalAISidecarActionPolicy>(
+      `/trips/${tripId}/assistant/execution-options`,
+    ),
   createAssistantConversation: (tripId: string, idempotencyKey: string) =>
     request<{ id: string; application_id: "travel"; workspace_id: null }>(
       `/trips/${tripId}/assistant/conversations`,

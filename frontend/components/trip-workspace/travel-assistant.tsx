@@ -5,9 +5,11 @@ import {
   type PersonalAIContextEntityReference,
   type PersonalAIContextSourceClass,
   type PersonalAISidecarMessage,
+  type PersonalAISidecarActionPolicy,
   type PersonalAISidecarPreview,
   type PersonalAISidecarTurnInput,
   type TripDetail,
+  travelSidecarActions,
   travelApi,
 } from "../../lib/api";
 import { errorMessage } from "../../lib/errors";
@@ -83,6 +85,10 @@ export default function TravelAssistant({
   const [attempt, setAttempt] = useState<Attempt | null>(null);
   const [preview, setPreview] = useState<PersonalAISidecarPreview | null>(null);
   const [previewSignature, setPreviewSignature] = useState<string | null>(null);
+  const [actionPolicyState, setActionPolicyState] = useState<{
+    tripId: string;
+    policy: PersonalAISidecarActionPolicy;
+  } | null>(null);
   const [busy, setBusy] = useState<"preview" | "continue" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -103,6 +109,21 @@ export default function TravelAssistant({
   }), [draft, excludedSources, selectedReferenceList, viewId]);
   const currentSignature = attemptSignature(sourceSelection);
   const previewIsCurrent = preview !== null && previewSignature === currentSignature;
+  const actionPolicy = actionPolicyState?.tripId === trip.id ? actionPolicyState.policy : null;
+  const actions = travelSidecarActions(actionPolicy);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    void travelApi.getAssistantActionPolicy(trip.id)
+      .then((policy) => {
+        if (!cancelled) setActionPolicyState({ tripId: trip.id, policy });
+      })
+      .catch((failure: unknown) => {
+        if (!cancelled) setError(errorMessage(failure));
+      });
+    return () => { cancelled = true; };
+  }, [open, trip.id]);
 
   useEffect(() => {
     const savedConversation = window.sessionStorage.getItem(storageKey(trip.id, "conversation"));
@@ -340,10 +361,11 @@ export default function TravelAssistant({
             <article className={message.role === "assistant" ? styles.assistantMessage : styles.userMessage} key={message.id}>
               <p className={styles.messageRole}>{message.role === "assistant" ? "Personal AI" : "You"}</p>
               <p className={styles.messageText}>{message.content}</p>
-              {message.role === "assistant" && message.status === "completed" ? (
+              {message.role === "assistant" && message.status === "completed"
+                && (actions.copy || actions.draft) ? (
                 <div className={styles.messageActions}>
-                  <button className="secondary compact" type="button" onClick={() => void copyAnswer(message)}>{copyMessageId === message.id ? "Copied" : "Copy"}</button>
-                  <button className="secondary compact" type="button" onClick={() => insertIntoDraft(message)}>Use in prompt draft</button>
+                  {actions.copy ? <button className="secondary compact" type="button" onClick={() => void copyAnswer(message)}>{copyMessageId === message.id ? "Copied" : "Copy"}</button> : null}
+                  {actions.draft ? <button className="secondary compact" type="button" onClick={() => insertIntoDraft(message)}>Use in prompt draft</button> : null}
                 </div>
               ) : null}
             </article>

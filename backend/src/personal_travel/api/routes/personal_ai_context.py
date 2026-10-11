@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 from collections.abc import Mapping
@@ -11,6 +10,8 @@ from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 from personal_travel.api.dependencies import OwnerDependency, SessionDependency
 from personal_travel.api.schemas.personal_ai_context import (
@@ -20,7 +21,9 @@ from personal_travel.api.schemas.personal_ai_context import (
     ContextReadRecord,
     ContextReadRequest,
     ContextReadResponse,
+    ContextSelectionBinding,
     ContextSourceReference,
+    SidecarActionPolicyResponse,
     SidecarConversationResponse,
     SidecarCreateRequest,
     SidecarHistoryResponse,
@@ -39,6 +42,7 @@ from personal_travel.domain.upstream_personal_ai_context import PersonalAISideca
 from personal_travel.models.itinerary import ItineraryItem
 from personal_travel.models.place import Place
 from personal_travel.models.reservation import Reservation
+from personal_travel.models.sidecar_anchor import PersonalAISidecarAnchor
 from personal_travel.models.trip import Trip
 from personal_travel.services.errors import DomainError, not_found
 from personal_travel.services.trips import TripService
@@ -51,7 +55,6 @@ ContextPayload = dict[str, ContextPayloadValue]
 TRIP_FIELDS = frozenset(
     {
         "trip_title",
-        "destination",
         "start_date",
         "end_date",
         "timezone",
@@ -75,7 +78,6 @@ ENTITY_FIELDS = TRIP_FIELDS | frozenset(
         "reservation_summary",
     }
 )
-RESEARCH_FIELDS = frozenset({"passage", "observed_at", "expires_at", "citations"})
 
 
 def _opaque(kind: str, identifier: str) -> str:
@@ -114,6 +116,7 @@ def _record(
     observed_at: datetime | None = None,
     sensitivity: Literal["public", "personal", "sensitive", "restricted", "unknown"] = "sensitive",
     extra_refs: tuple[ContextSourceReference, ...] = (),
+    selection_binding: ContextSelectionBinding | None = None,
 ) -> ContextReadRecord:
     identifier = str(entity_id)
     opaque = _opaque(entity_type, identifier)
@@ -136,6 +139,7 @@ def _record(
             *extra_refs,
         ),
         permission_dependencies=(_trip_permission(trip),),
+        selection_binding=selection_binding,
         field_sensitivity=tuple(
             ContextFieldSensitivity(field=name, sensitivity=sensitivity)
             for name, value in payload.items()
@@ -176,7 +180,7 @@ def _place_record(trip: Trip, place: Place, fields: tuple[str, ...]) -> ContextR
         fields,
     )
     refs: tuple[ContextSourceReference, ...] = ()
-    authority: Literal["user_asserted", "external"] = "user_asserted"
+    authority: Literal["user_asserted"] = "user_asserted"
     if place.provider_source_url:
         from personal_travel.domain.urls import validate_http_url
 
@@ -193,7 +197,6 @@ def _place_record(trip: Trip, place: Place, fields: tuple[str, ...]) -> ContextR
                     fingerprint=_fingerprint(payload),
                 ),
             )
-            authority = "external"
     return _record(
         trip,
         entity_type="place",
@@ -246,7 +249,6 @@ def _context_records(trip: Trip, request: ContextReadRequest) -> tuple[ContextRe
         raise HTTPException(status_code=422, detail="context_fields_not_allowed")
     trip_source = {
         "trip_title": trip.title,
-        "destination": None,
         "start_date": trip.start_date.isoformat(),
         "end_date": trip.end_date.isoformat(),
         "timezone": trip.timezone,
@@ -353,27 +355,39 @@ def _context_records(trip: Trip, request: ContextReadRequest) -> tuple[ContextRe
     for reservation in trip.reservations:
         key = ("reservation", str(reservation.id))
         selected_reservation = key in selected
-        linked_to_selected = (
-            (reservation.place_id is not None and ("place", str(reservation.place_id)) in selected)
-            or any(
-                ("day", str(day.id)) in selected
-                and any(item.reservation_id == reservation.id for item in day.items)
-                for day in trip.days
-            )
-            or any(
-                ("itinerary_item", str(item.id)) in selected
-                and item.reservation_id == reservation.id
-                for day in trip.days
-                for item in day.items
-            )
-        )
         if selected_reservation:
             found.add(key)
-        if (
-            selected_reservation
-            or (include_reservations and linked_to_selected)
-            or (include_reservations and ("trip", str(trip.id)) in selected)
-        ):
+        anchor: tuple[str, str, str] | None = None
+        if not selected_reservation and include_reservations:
+            if (
+                reservation.place_id is not None
+                and ("place", str(reservation.place_id)) in selected
+            ):
+                anchor = ("place", str(reservation.place_id), "place_reservation_summary")
+            else:
+                for day in trip.days:
+                    for item in day.items:
+                        if (
+                            "itinerary_item",
+                            str(item.id),
+                        ) in selected and item.reservation_id == reservation.id:
+                            anchor = (
+                                "itinerary_item",
+                                str(item.id),
+                                "itinerary_item_reservation_summary",
+                            )
+                            break
+                    if (
+                        anchor is None
+                        and ("day", str(day.id)) in selected
+                        and any(item.reservation_id == reservation.id for item in day.items)
+                    ):
+                        anchor = ("day", str(day.id), "day_reservation_summary")
+                    if anchor is not None:
+                        break
+                if anchor is None and ("trip", str(trip.id)) in selected:
+                    anchor = ("trip", str(trip.id), "trip_reservation_summary")
+        if selected_reservation or anchor is not None:
             records.append(
                 _record(
                     trip,
@@ -388,6 +402,13 @@ def _context_records(trip: Trip, request: ContextReadRequest) -> tuple[ContextRe
                     ),
                     observed_at=reservation.updated_at,
                     sensitivity="sensitive",
+                    selection_binding=(
+                        ContextSelectionBinding(
+                            entity_type=anchor[0], entity_id=anchor[1], relationship=anchor[2]
+                        )
+                        if anchor is not None
+                        else None
+                    ),
                 )
             )
     if selected - found:
@@ -400,9 +421,64 @@ def _context_client(request: Request, *, timeout_seconds: float | None = None) -
     return PersonalAIClient(auth_context=auth, timeout_seconds=timeout_seconds)
 
 
+def _bind_sidecar_conversation(
+    session: Session, *, owner_id: str, trip_id: UUID, conversation_id: UUID
+) -> None:
+    current = session.get(PersonalAISidecarAnchor, conversation_id)
+    if current is not None:
+        if current.owner_id != owner_id or current.trip_id != trip_id:
+            raise not_found("sidecar conversation")
+        return
+    session.add(
+        PersonalAISidecarAnchor(
+            conversation_id=conversation_id,
+            owner_id=owner_id,
+            trip_id=trip_id,
+        )
+    )
+    try:
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        current = session.get(PersonalAISidecarAnchor, conversation_id)
+        if current is None or current.owner_id != owner_id or current.trip_id != trip_id:
+            raise not_found("sidecar conversation") from None
+
+
+def _require_sidecar_anchor(
+    session: Session, *, owner_id: str, trip_id: UUID, conversation_id: UUID
+) -> None:
+    current = session.get(PersonalAISidecarAnchor, conversation_id)
+    if current is None or current.owner_id != owner_id or current.trip_id != trip_id:
+        raise not_found("sidecar conversation")
+
+
 def _require_enabled(settings: Settings) -> None:
     if not settings.personal_ai_context_enabled:
         raise HTTPException(status_code=404, detail="not_found")
+
+
+@router.get(
+    "/trips/{trip_id}/assistant/execution-options",
+    response_model=SidecarActionPolicyResponse,
+)
+async def get_sidecar_action_policy(
+    trip_id: UUID,
+    request: Request,
+    session: SessionDependency,
+    owner_id: OwnerDependency,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> SidecarActionPolicyResponse:
+    _require_enabled(settings)
+    TripService(session, owner_id).get(trip_id)
+    try:
+        return await _context_client(request).get_sidecar_action_policy()
+    except PersonalAISidecarError as error:
+        raise DomainError(
+            "personal_ai_unavailable",
+            "The assistant policy could not be loaded.",
+            status_code=503,
+        ) from error
 
 
 def _launch_context(
@@ -470,94 +546,11 @@ async def read_personal_ai_context(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> ContextReadResponse:
     _require_enabled(settings)
-    if payload.operation == "search":
-        if not payload.entity_refs or any(
-            ref.entity_type != "research_session" for ref in payload.entity_refs
-        ):
-            raise HTTPException(status_code=422, detail="research_session_reference_required")
-        if not set(payload.fields).issubset(RESEARCH_FIELDS):
-            raise HTTPException(status_code=422, detail="context_fields_not_allowed")
-        client = _context_client(request, timeout_seconds=3.5)
-        now = datetime.now(UTC)
-        records = []
-        selected = payload.entity_refs[: min(payload.max_results, 3)]
-        try:
-            async with asyncio.timeout(4):
-                research_results = await asyncio.gather(
-                    *(client.get_research_context(UUID(ref.entity_id)) for ref in selected)
-                )
-        except (PersonalAISidecarError, TimeoutError) as error:
-            raise HTTPException(status_code=503, detail="selected_research_unavailable") from error
-        for result in research_results:
-            if (
-                result.state != "completed"
-                or not result.answer
-                or not result.citations
-                or result.expires_at <= now
-                or any(citation.expires_at <= now for citation in result.citations)
-            ):
-                continue
-            expiry = min(result.expires_at, *(item.expires_at for item in result.citations))
-            observed = min(item.observed_at for item in result.citations)
-            citations = [
-                {
-                    "title": item.title,
-                    "url": item.url,
-                    "observed_at": item.observed_at.isoformat(),
-                    "expires_at": item.expires_at.isoformat(),
-                }
-                for item in result.citations[:12]
-            ]
-            refs = tuple(
-                ContextSourceReference(
-                    kind="url",
-                    reference_id=f"research-citation:{_opaque('url', item.url)}",
-                    uri=item.url,
-                    fingerprint=_fingerprint(
-                        {
-                            "title": item.title,
-                            "observed_at": item.observed_at.isoformat(),
-                            "expires_at": item.expires_at.isoformat(),
-                        }
-                    ),
-                )
-                for item in result.citations[:12]
-            )
-            records.append(
-                ContextReadRecord(
-                    entity_type="research_session",
-                    entity_id=str(result.id),
-                    source_id=f"travel-research:{_opaque('research_session', str(result.id))}",
-                    source_version=f"research-v1:{result.revision}",
-                    authority="external",
-                    observed_at=observed.isoformat(),
-                    expires_at=expiry.isoformat(),
-                    sensitivity="public",
-                    payload=_project(
-                        {
-                            "passage": result.answer[:8_000],
-                            "observed_at": observed.isoformat(),
-                            "expires_at": expiry.isoformat(),
-                            "citations": json.dumps(
-                                citations, ensure_ascii=False, separators=(",", ":")
-                            )[:8_000],
-                        },
-                        payload.fields,
-                    ),
-                    source_refs=refs,
-                    field_sensitivity=tuple(
-                        ContextFieldSensitivity(field=name, sensitivity="public")
-                        for name in payload.fields
-                    ),
-                )
-            )
-        response = ContextReadResponse(items=tuple(records))
-    else:
-        if payload.workspace_id is not None:
-            raise HTTPException(status_code=400, detail="context_workspace_unsupported")
-        trip_id = _selected_trip(payload)
-        trip = TripService(session, owner_id).get(trip_id)
-        response = ContextReadResponse(items=_context_records(trip, payload))
+    if payload.workspace_id is not None:
+        raise HTTPException(status_code=400, detail="context_workspace_unsupported")
+    trip_id = _selected_trip(payload)
+    trip = TripService(session, owner_id).get(trip_id)
+    response = ContextReadResponse(items=_context_records(trip, payload))
     if len(response.items) > payload.max_results:
         raise HTTPException(status_code=413, detail="context_result_limit_exceeded")
     if len(response.model_dump_json().encode("utf-8")) > payload.max_bytes:
@@ -583,6 +576,9 @@ async def create_sidecar_conversation(
     conversation_id = await _context_client(request).create_sidecar_conversation(
         title=payload.title, idempotency_key=payload.idempotency_key
     )
+    _bind_sidecar_conversation(
+        session, owner_id=owner_id, trip_id=trip_id, conversation_id=conversation_id
+    )
     return PersonalAISidecarConversation(id=conversation_id, application_id="travel")
 
 
@@ -600,6 +596,9 @@ async def get_sidecar_conversation(
 ) -> SidecarHistoryResponse:
     _require_enabled(settings)
     TripService(session, owner_id).get(trip_id)
+    _require_sidecar_anchor(
+        session, owner_id=owner_id, trip_id=trip_id, conversation_id=conversation_id
+    )
     try:
         return await _context_client(request).get_sidecar_conversation(conversation_id)
     except PersonalAISidecarError as error:
@@ -625,6 +624,9 @@ async def preview_sidecar_context(
 ) -> SidecarPreviewResponse:
     _require_enabled(settings)
     trip = TripService(session, owner_id).get(trip_id)
+    _require_sidecar_anchor(
+        session, owner_id=owner_id, trip_id=trip_id, conversation_id=conversation_id
+    )
     return await _context_client(request).preview_sidecar_context(
         conversation_id=conversation_id,
         payload=_turn_payload(trip, conversation_id, turn),
@@ -646,6 +648,9 @@ async def continue_sidecar_turn(
 ) -> SidecarTurnResponse:
     _require_enabled(settings)
     trip = TripService(session, owner_id).get(trip_id)
+    _require_sidecar_anchor(
+        session, owner_id=owner_id, trip_id=trip_id, conversation_id=conversation_id
+    )
     try:
         message_id, answer = await _context_client(request).continue_sidecar_turn(
             conversation_id=conversation_id,

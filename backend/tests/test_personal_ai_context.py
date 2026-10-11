@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, timedelta
-from types import SimpleNamespace
-from uuid import uuid4
+import json
+from datetime import UTC, date, datetime
+from pathlib import Path
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -13,13 +14,18 @@ from personal_travel.api.routes import personal_ai_context as context_routes
 from personal_travel.api.schemas.personal_ai_context import (
     ContextEntityReference,
     ContextReadRequest,
+    ContextReadResponse,
+    PersonalAISidecarActionPolicy,
 )
 from personal_travel.auth.contracts import VerifiedPrincipal
 from personal_travel.config import Settings, get_settings
 from personal_travel.main import app
 from personal_travel.models.itinerary import ItineraryItem
-from personal_travel.models.reservation import Reservation
+from personal_travel.models.place import Place
+from personal_travel.models.reservation import Reservation, SavedPlace
+from personal_travel.models.sidecar_anchor import PersonalAISidecarAnchor
 from personal_travel.models.trip import Trip, TripDay
+from personal_travel.services.errors import DomainError
 
 
 def _trip(*, days: list[TripDay] | None = None) -> Trip:
@@ -152,12 +158,123 @@ def test_selected_itinerary_context_uses_minimal_booking_summary_and_omits_priva
     reservation_record = next(item for item in records if item.entity_type == "reservation")
 
     assert reservation_record.sensitivity == "sensitive"
+    assert reservation_record.selection_binding is not None
+    assert reservation_record.selection_binding.entity_type == "itinerary_item"
+    assert reservation_record.selection_binding.entity_id == str(item.id)
+    assert reservation_record.selection_binding.relationship == "itinerary_item_reservation_summary"
     assert "Sample Air" in reservation_record.payload["reservation_summary"]
     assert "confirmed" in reservation_record.payload["reservation_summary"]
     assert "PRIVATE-CONFIRMATION-123" not in serialized
     assert "private-mailbox-reference" not in serialized
     assert "Private booking notes" not in serialized
     assert "Private itinerary notes" not in serialized
+
+
+@pytest.mark.parametrize(
+    ("anchor_type", "expected_relationship"),
+    (
+        ("trip", "trip_reservation_summary"),
+        ("day", "day_reservation_summary"),
+        ("itinerary_item", "itinerary_item_reservation_summary"),
+        ("place", "place_reservation_summary"),
+        ("reservation", None),
+    ),
+)
+def test_reservation_expansion_is_bound_to_each_selected_anchor(
+    anchor_type: str, expected_relationship: str | None
+):
+    now = datetime.now(UTC)
+    trip = _trip()
+    reservation = Reservation(
+        id=uuid4(),
+        owner_id=trip.owner_id,
+        trip_id=trip.id,
+        reservation_type="lodging",
+        status="confirmed",
+        provider_name="Example Stay",
+        created_at=now,
+        updated_at=now,
+    )
+    anchor_id: UUID | None = None
+    if anchor_type in {"day", "itinerary_item"}:
+        item = ItineraryItem(
+            id=uuid4(),
+            trip_day_id=uuid4(),
+            reservation_id=reservation.id,
+            item_type="lodging",
+            title="Hotel",
+            status="booked",
+            notes=None,
+            starts_at=None,
+            ends_at=None,
+            sort_order=0,
+            created_at=now,
+            updated_at=now,
+            reservation=reservation,
+        )
+        day = _day(items=[item])
+        item.trip_day = day
+        item.trip_day_id = day.id
+        trip.days = [day]
+        anchor_id = day.id if anchor_type == "day" else item.id
+    elif anchor_type == "place":
+        place = Place(
+            id=uuid4(),
+            owner_id=trip.owner_id,
+            name="Example Hotel",
+            created_at=now,
+            updated_at=now,
+        )
+        reservation.place = place
+        reservation.place_id = place.id
+        anchor_id = place.id
+    trip.reservations = [reservation]
+
+    references = [
+        ContextEntityReference(entity_type="trip", entity_id=str(trip.id), application_id="travel")
+    ]
+    if anchor_type != "trip":
+        references.append(
+            ContextEntityReference(
+                entity_type=anchor_type,
+                entity_id=str(reservation.id if anchor_type == "reservation" else anchor_id),
+                application_id="travel",
+            )
+        )
+    request = _context_request(
+        refs=tuple(references),
+        fields=("reservation_summary",),
+    )
+
+    records = context_routes._context_records(trip, request)
+    summary = next(record for record in records if record.entity_type == "reservation")
+
+    assert summary.sensitivity == "sensitive"
+    if expected_relationship is None:
+        assert summary.selection_binding is None
+    else:
+        assert summary.selection_binding is not None
+        assert summary.selection_binding.entity_type == anchor_type
+        expected_anchor_id = trip.id if anchor_type == "trip" else anchor_id
+        assert summary.selection_binding.entity_id == str(expected_anchor_id)
+        assert summary.selection_binding.relationship == expected_relationship
+
+
+def test_travel_writer_emits_shared_v2_reservation_binding_fixture():
+    fixture = json.loads(
+        (Path(__file__).parent / "fixtures/travel-context-read-v2-reservation.json").read_text()
+    )
+    response = ContextReadResponse.model_validate(fixture)
+    record = response.items[0]
+
+    assert response.schema_version == "travel-context-read-v2"
+    assert record.entity_type == "reservation"
+    assert record.payload == {"reservation_summary": "lodging · Example Stay · confirmed"}
+    assert record.sensitivity == "sensitive"
+    assert record.selection_binding is not None
+    assert record.selection_binding.entity_type == "day"
+    assert record.selection_binding.relationship == "day_reservation_summary"
+    assert "destination" not in context_routes.TRIP_FIELDS
 
 
 @pytest.fixture
@@ -230,76 +347,136 @@ def test_context_route_reuses_owner_scoped_trip_service_and_enforces_response_by
     assert seen_owners == [settings.owner_id, settings.owner_id]
 
 
-def test_research_context_marks_fresh_citations_external_and_omits_expired_evidence(
+def test_sidecar_anchor_rejects_using_trip_a_conversation_through_trip_b():
+    trip_a, trip_b, conversation_id = uuid4(), uuid4(), uuid4()
+    anchor = PersonalAISidecarAnchor(
+        conversation_id=conversation_id,
+        owner_id="context-owner",
+        trip_id=trip_a,
+    )
+
+    class FakeSession:
+        def get(self, model, identifier):
+            assert model is PersonalAISidecarAnchor
+            return anchor if identifier == conversation_id else None
+
+    context_routes._require_sidecar_anchor(
+        FakeSession(),
+        owner_id="context-owner",
+        trip_id=trip_a,
+        conversation_id=conversation_id,
+    )
+    with pytest.raises(DomainError) as error:
+        context_routes._require_sidecar_anchor(
+            FakeSession(),
+            owner_id="context-owner",
+            trip_id=trip_b,
+            conversation_id=conversation_id,
+        )
+    assert error.value.status_code == 404
+
+
+def test_context_v2_rejects_the_removed_travel_research_proxy_operation(
     local_context_client,
-    monkeypatch: pytest.MonkeyPatch,
 ):
     client, _settings = local_context_client
-    now = datetime.now(UTC)
-    current_id, expired_id = uuid4(), uuid4()
-    citation = SimpleNamespace(
-        title="Current source",
-        url="https://evidence.example/current",
-        observed_at=now - timedelta(minutes=5),
-        expires_at=now + timedelta(hours=1),
-    )
-    current = SimpleNamespace(
-        id=current_id,
-        state="completed",
-        expires_at=now + timedelta(minutes=45),
-        answer="A synthetic, currently cited fact.",
-        citations=[citation],
-        revision=2,
-    )
-    expired = SimpleNamespace(
-        id=expired_id,
-        state="completed",
-        expires_at=now - timedelta(seconds=1),
-        answer="This evidence is stale.",
-        citations=[citation],
-        revision=2,
-    )
-
-    class FakeContextClient:
-        async def get_research_context(self, session_id):
-            return {current_id: current, expired_id: expired}[session_id]
-
-    monkeypatch.setattr(
-        context_routes,
-        "_context_client",
-        lambda _request, timeout_seconds=None: FakeContextClient(),
-    )
+    trip = _trip()
     response = client.post(
         "/v1/integrations/personal-ai/context",
         json={
             "operation": "search",
             "entity_refs": [
                 {
-                    "entity_type": "research_session",
-                    "entity_id": str(current_id),
-                    "application_id": "travel",
-                    "workspace_id": None,
-                },
-                {
-                    "entity_type": "research_session",
-                    "entity_id": str(expired_id),
+                    "entity_type": "trip",
+                    "entity_id": str(trip.id),
                     "application_id": "travel",
                     "workspace_id": None,
                 },
             ],
-            "fields": ["passage", "observed_at", "expires_at", "citations"],
-            "max_results": 2,
+            "fields": ["trip_title"],
+            "max_results": 1,
             "max_bytes": 16_384,
         },
     )
 
+    assert response.status_code == 422
+
+
+def test_saved_place_with_provider_attribution_stays_travel_authoritative():
+    trip = _trip()
+    place = Place(
+        id=uuid4(),
+        owner_id=trip.owner_id,
+        name="Saved cafe",
+        address="Example address",
+        category="cafe",
+        provider_source_name="OpenStreetMap",
+        provider_source_attribution="© OpenStreetMap contributors",
+        provider_source_url="https://www.openstreetmap.org/way/123",
+        revision=2,
+        created_at=trip.created_at,
+        updated_at=trip.updated_at,
+    )
+    trip.saved_places = [
+        SavedPlace(
+            owner_id=trip.owner_id,
+            trip_id=trip.id,
+            place_id=place.id,
+            place=place,
+        )
+    ]
+    request = _context_request(
+        refs=(
+            ContextEntityReference(
+                entity_type="trip", entity_id=str(trip.id), application_id="travel"
+            ),
+            ContextEntityReference(
+                entity_type="place", entity_id=str(place.id), application_id="travel"
+            ),
+        ),
+        fields=("place_name", "place_source", "place_attribution"),
+    )
+
+    (record,) = context_routes._context_records(trip, request)
+
+    assert record.authority == "user_asserted"
+    assert record.observed_at == trip.updated_at.astimezone(UTC).isoformat()
+    assert record.expires_at is None
+    assert record.source_refs[-1].uri == place.provider_source_url
+
+
+def test_sidecar_action_policy_is_passed_through_from_personal_ai(
+    local_context_client,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    client, _settings = local_context_client
+    trip = _trip()
+
+    class FakeTripService:
+        def __init__(self, _session, _owner_id):
+            pass
+
+        def get(self, trip_id):
+            assert trip_id == trip.id
+            return trip
+
+    class FakeContextClient:
+        async def get_sidecar_action_policy(self):
+            return PersonalAISidecarActionPolicy(
+                copy_allowed=False,
+                draft_insert_target_ids=(),
+            )
+
+    monkeypatch.setattr(context_routes, "TripService", FakeTripService)
+    monkeypatch.setattr(
+        context_routes,
+        "_context_client",
+        lambda *_args, **_kwargs: FakeContextClient(),
+    )
+    response = client.get(f"/v1/trips/{trip.id}/assistant/execution-options")
+
     assert response.status_code == 200
-    assert len(response.json()["items"]) == 1
-    record = response.json()["items"][0]
-    assert record["entity_id"] == str(current_id)
-    assert record["authority"] == "external"
-    assert record["expires_at"] is not None
-    assert record["source_refs"][0]["kind"] == "url"
+    assert response.json() == {"copy_allowed": False, "draft_insert_target_ids": []}
 
 
 def test_hosted_context_read_requires_service_and_user_identity_separately(

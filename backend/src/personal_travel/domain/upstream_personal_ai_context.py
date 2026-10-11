@@ -30,6 +30,11 @@ class PersonalAISidecarConversation(_StrictModel):
     workspace_id: None = None
 
 
+class PersonalAISidecarActionPolicy(_StrictModel):
+    copy_allowed: bool
+    draft_insert_target_ids: tuple[str, ...] = Field(default=(), max_length=16)
+
+
 class PersonalAISidecarMessage(_StrictModel):
     id: UUID
     role: Literal["user", "assistant"]

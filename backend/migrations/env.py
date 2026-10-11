@@ -10,6 +10,7 @@ from personal_travel.models import (  # noqa: F401
     BookingImport,
     ItineraryItem,
     ItineraryProposal,
+    PersonalAISidecarAnchor,
     Place,
     ProviderQuotaBucket,
     Reservation,

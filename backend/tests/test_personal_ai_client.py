@@ -19,6 +19,7 @@ from personal_travel.clients.personal_ai import (
     PersonalAISidecarUnknown,
 )
 from personal_travel.config import Settings
+from personal_travel.domain.upstream_personal_ai_context import PersonalAISidecarActionPolicy
 
 
 def _client_with_transport(
@@ -27,8 +28,10 @@ def _client_with_transport(
 ) -> PersonalAIClient:
     async_client = httpx.AsyncClient
 
-    def create_client(*, timeout: float) -> httpx.AsyncClient:
-        return async_client(transport=handler, timeout=timeout)
+    def create_client(
+        *, timeout: float, transport: httpx.BaseTransport | None = None
+    ) -> httpx.AsyncClient:
+        return async_client(transport=transport or handler, timeout=timeout)
 
     monkeypatch.setattr(personal_ai.httpx, "AsyncClient", create_client)
     return PersonalAIClient(base_url="http://personal-ai.test", timeout_seconds=0.1)
@@ -140,6 +143,33 @@ def test_sidecar_malformed_completed_event_is_an_unknown_retryable_outcome(
 
     with pytest.raises(PersonalAISidecarUnknown, match="retry with the same request key"):
         asyncio.run(client.continue_sidecar_turn(conversation_id=uuid4(), payload={}))
+
+
+def test_sidecar_action_policy_uses_travel_application_scope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/v1/conversations/execution-options"
+        assert request.headers["X-Application-ID"] == "travel"
+        return httpx.Response(
+            200,
+            json={
+                "sidecar": {
+                    "copy_allowed": False,
+                    "draft_insert_target_ids": [],
+                }
+            },
+            request=request,
+        )
+
+    client = _client_with_transport(monkeypatch, httpx.MockTransport(handler))
+
+    result = asyncio.run(client.get_sidecar_action_policy())
+
+    assert result == PersonalAISidecarActionPolicy(
+        copy_allowed=False,
+        draft_insert_target_ids=(),
+    )
 
 
 @pytest.mark.parametrize("token_result", ["raises", "empty", "oversized"])

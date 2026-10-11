@@ -13,12 +13,14 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from personal_travel.domain.upstream_personal_ai_context import (
+    PersonalAISidecarActionPolicy,
     PersonalAISidecarConversation,
     PersonalAISidecarHistory,
     PersonalAISidecarPreview,
 )
 
 type SidecarConversationResponse = PersonalAISidecarConversation
+type SidecarActionPolicyResponse = PersonalAISidecarActionPolicy
 type SidecarHistoryResponse = PersonalAISidecarHistory
 type SidecarPreviewResponse = PersonalAISidecarPreview
 
@@ -31,6 +33,7 @@ __all__ = [
     "ContextReadResponse",
     "ContextSourceReference",
     "SidecarConversationResponse",
+    "SidecarActionPolicyResponse",
     "SidecarCreateRequest",
     "SidecarHistoryResponse",
     "SidecarPreviewResponse",
@@ -77,10 +80,10 @@ class ContextFieldSensitivity(BaseModel):
 class ContextReadRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: Literal["travel-context-read-v1"] = "travel-context-read-v1"
+    schema_version: Literal["travel-context-read-v2"] = "travel-context-read-v2"
     application_id: Literal["travel"] = "travel"
     workspace_id: None = None
-    operation: Literal["current", "entity", "search", "verify"]
+    operation: Literal["current", "entity", "verify"]
     entity_refs: tuple[ContextEntityReference, ...] = Field(default=(), max_length=16)
     fields: tuple[str, ...] = Field(min_length=1, max_length=32)
     max_results: int = Field(ge=1, le=50)
@@ -95,8 +98,29 @@ class ContextReadRequest(BaseModel):
             for reference in self.entity_refs
         ):
             raise ValueError("context_entity_reference_scope_invalid")
-        if self.operation != "search" and not self.entity_refs:
+        if not self.entity_refs:
             raise ValueError("context_entity_reference_required")
+        return self
+
+
+class ContextSelectionBinding(BaseModel):
+    """Travel-owned proof that a derived reservation is linked to an anchor."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    entity_type: Literal["trip", "day", "itinerary_item", "place"]
+    entity_id: str = Field(min_length=1, max_length=200)
+    relationship: Literal[
+        "trip_reservation_summary",
+        "day_reservation_summary",
+        "itinerary_item_reservation_summary",
+        "place_reservation_summary",
+    ]
+
+    @model_validator(mode="after")
+    def relationship_matches_anchor(self) -> ContextSelectionBinding:
+        if self.relationship.split("_reservation_summary", 1)[0] != self.entity_type:
+            raise ValueError("context_selection_binding_mismatch")
         return self
 
 
@@ -120,12 +144,13 @@ class ContextReadRecord(BaseModel):
         default=(), max_length=16
     )
     field_sensitivity: tuple[ContextFieldSensitivity, ...] = Field(default=(), max_length=32)
+    selection_binding: ContextSelectionBinding | None = None
 
 
 class ContextReadResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: Literal["travel-context-read-v1"] = "travel-context-read-v1"
+    schema_version: Literal["travel-context-read-v2"] = "travel-context-read-v2"
     application_id: Literal["travel"] = "travel"
     workspace_id: None = None
     items: tuple[ContextReadRecord, ...] = Field(default=(), max_length=50)

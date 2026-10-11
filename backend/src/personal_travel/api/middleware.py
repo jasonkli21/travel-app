@@ -47,7 +47,7 @@ TRIP_RESEARCH_PATH = re.compile(rf"^/v1/trips/{UUID_PATH}/research$")
 TRIP_PROPOSAL_PATH = re.compile(rf"^/v1/trips/{UUID_PATH}/proposals$")
 PERSONAL_AI_CONTEXT_PATH = "/v1/integrations/personal-ai/context"
 PERSONAL_AI_SIDECAR_PATH = re.compile(
-    rf"^/v1/trips/{UUID_PATH}/assistant(?:/conversations(?:/{UUID_PATH}(?:/(?:preview|continue))?)?)?$"
+    rf"^/v1/trips/{UUID_PATH}/assistant(?:/execution-options|/conversations(?:/{UUID_PATH}(?:/(?:preview|continue))?)?)?$"
 )
 UPLOAD_SECONDS = 30
 

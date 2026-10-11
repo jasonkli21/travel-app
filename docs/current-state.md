@@ -73,7 +73,7 @@ a plan.
 
 ## Personal AI boundary
 
-Phase 26 adds a separately gated `travel-context-read-v1` projection at `POST /v1/integrations/personal-ai/context`. It returns only requested, bounded trip/day/itinerary/place fields and selected completed, cited, unexpired Travel research. Reservation summaries are minimized, explicitly selected, and marked sensitive. Every Travel record carries a trip revision, source fingerprint, and owner-scoped permission dependency; Personal AI rechecks source authority before derived history is reused. The shared sidecar shows its planned context and supports narrowing, Copy, and non-authoritative draft insertion. It has no generic itinerary or booking mutation operation. The new path uses `application_id="travel"` and `workspace_id=null`; no trip-to-workspace mapping exists. Existing standalone capability contracts remain unchanged.
+Phase 26's reviewed read boundary uses `travel-context-read-v2` at `POST /v1/integrations/personal-ai/context`. It returns requested bounded trip/day/itinerary/place fields; selected Personal-AI-owned research goes through the shared Personal AI evidence provider rather than a Travel proxy. Reservation summaries are minimized, sensitive, and carry typed parent bindings when derived from a selected trip/day/item/place; Personal AI checks each binding against the original selection. Every Travel record carries a trip revision, source fingerprint, and owner-scoped permission dependency; Personal AI rechecks Travel authority before derived history is reused. Canonical research history fails closed on later reuse until its current policy revalidator is implemented. The sidecar fetches the shared Copy/draft action policy, and a persisted Travel owner/trip/conversation mapping prevents cross-trip reuse. There is no generic itinerary or booking mutation operation. P26.1 remains blocked because automatic chat still uses direct Gemini instead of P21 routing; Phase 26 is incomplete and its integration gates remain off. `application_id="travel"` and `workspace_id=null` remain in force, and no trip-to-workspace mapping exists. Existing standalone capability contracts remain unchanged.
 
 Travel owns canonical trips, itinerary ordering/state, bookings and
 reservations, travel validation, authorization, persistence, and final
@@ -93,7 +93,7 @@ mapping is defined.
 
 ## Current work boundary
 
-Phase 26 is locally implemented behind default-off gates. The root README and [integration contract](06-ai-integration.md) describe the optional capability; local checks do not establish live cloud identity, provider approval, deployment, or browser acceptance.
+Phase 26's local review fixes are implemented behind default-off gates. P26.1 remains blocked pending Phase 15 authorization/revocation acceptance and shared P21 workflow dispatch; local checks do not establish live cloud identity, provider approval, deployment, or browser acceptance. See the [Phase 26 release follow-up](releases/phase-26-personal-ai-context.md) and [integration contract](06-ai-integration.md).
 
 Phase 9 remains the latest unfinished product phase. Phase plans are historical
 implementation intent and do not authorize new work. Any further feature or

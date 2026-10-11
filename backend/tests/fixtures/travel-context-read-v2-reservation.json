@@ -1,0 +1,49 @@
+{
+  "schema_version": "travel-context-read-v2",
+  "application_id": "travel",
+  "workspace_id": null,
+  "items": [
+    {
+      "entity_type": "reservation",
+      "entity_id": "00000000-0000-4000-8000-000000000003",
+      "source_id": "travel:opaque-reservation-source",
+      "source_version": "7",
+      "authority": "authoritative",
+      "observed_at": "2026-10-11T12:00:00Z",
+      "effective_at": null,
+      "expires_at": null,
+      "sensitivity": "sensitive",
+      "payload": {
+        "reservation_summary": "lodging · Example Stay · confirmed"
+      },
+      "source_refs": [
+        {
+          "kind": "record",
+          "reference_id": "travel-record:opaque-reservation",
+          "uri": null,
+          "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "permission_dependencies": [
+        {
+          "permission_id": "travel_context_read:00000000-0000-4000-8000-000000000001",
+          "version": "7",
+          "purpose": "confirm current owner access and Travel source revision before disclosure",
+          "source_application_id": null,
+          "destination_application_id": null
+        }
+      ],
+      "field_sensitivity": [
+        {
+          "field": "reservation_summary",
+          "sensitivity": "sensitive"
+        }
+      ],
+      "selection_binding": {
+        "entity_type": "day",
+        "entity_id": "00000000-0000-4000-8000-000000000002",
+        "relationship": "day_reservation_summary"
+      }
+    }
+  ]
+}
