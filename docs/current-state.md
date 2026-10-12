@@ -105,7 +105,11 @@ Phase 30's Travel → Shopping source export is implemented locally behind
 owner-controlled sharing flag; the source endpoint exports only destination,
 start date, and end date for the exact Shopping purpose, and rechecks the same
 dependency on verification. The shared Personal AI adapter consumes that
-contract through the generic broker. The complete product flow remains gated:
-there is no accepted Shopping user-bound task host, and live identity, grant
-selection, deployment, and cross-app revocation acceptance remain open. See
-[Phase 30 Travel export evidence](releases/phase-30-federation-export.md).
+contract through the generic broker. The authenticated Travel choice-list
+route is classified as a Personal AI sidecar operation; its browser contract
+forwards opaque choice IDs and displays only safe labels. Personal AI resolves
+the IDs to current canonical grants and repeats full source authorization at
+actual context use. The complete product flow remains gated: there is no
+accepted Shopping user-bound task host, and live identity, grant selection,
+deployment, and cross-app revocation acceptance remain open. See [Phase 30
+Travel export evidence](releases/phase-30-federation-export.md).
