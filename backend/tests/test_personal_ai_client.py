@@ -172,6 +172,71 @@ def test_sidecar_action_policy_uses_travel_application_scope(
     )
 
 
+def test_sidecar_federation_choices_use_the_authenticated_travel_scope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    grant_id, issuance_id = uuid4(), uuid4()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/v1/federation/grants/choices"
+        assert request.headers["X-Application-ID"] == "travel"
+        assert request.headers["X-User-ID-Token"] == "synthetic-user-token"
+        assert request.headers["Authorization"] == "Bearer synthetic-service-token"
+        assert "X-Workspace-ID" not in request.headers
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "id": "current-health-dietary-choice",
+                        "category_label": "Health · dietary restrictions",
+                        "choice": {
+                            "provider_id": "federation.health.dietary",
+                            "fields": ["dietary_restrictions"],
+                            "federation": {
+                                "grant_id": str(grant_id),
+                                "issuance_id": str(issuance_id),
+                                "revision": 2,
+                                "epoch": 1,
+                                "source": {"application_id": "health", "workspace_id": None},
+                                "category": "dietary_restrictions",
+                                "purpose": "health_dietary_restrictions_to_travel",
+                                "entities": [
+                                    {
+                                        "entity_type": "health_profile_item",
+                                        "entity_id": str(uuid4()),
+                                        "application_id": "health",
+                                        "workspace_id": None,
+                                    }
+                                ],
+                            },
+                        },
+                    }
+                ]
+            },
+            request=request,
+        )
+
+    monkeypatch.setattr(
+        "personal_travel.clients.personal_ai.get_settings",
+        lambda: Settings(personal_ai_base_url="https://personal-ai.test"),
+    )
+    client = PersonalAIClient(
+        auth_context=PersonalAIAuthContext(
+            user_id_token="synthetic-user-token",
+            service_audience="https://personal-ai.test",
+            service_account="travel-ai@project.iam.gserviceaccount.com",
+        ),
+        service_token_fetcher=lambda _audience, _account: "synthetic-service-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = asyncio.run(client.get_sidecar_federation_choices())
+
+    assert result.choices[0].category_label == "Health · dietary restrictions"
+    assert result.choices[0].choice.federation.grant_id == grant_id
+
+
 @pytest.mark.parametrize("token_result", ["raises", "empty", "oversized"])
 def test_comparison_identity_failures_are_safe_and_happen_before_dispatch(
     monkeypatch: pytest.MonkeyPatch, token_result: str

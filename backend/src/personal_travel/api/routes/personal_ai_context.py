@@ -26,6 +26,7 @@ from personal_travel.api.schemas.personal_ai_context import (
     SidecarActionPolicyResponse,
     SidecarConversationResponse,
     SidecarCreateRequest,
+    SidecarFederationChoicesResponse,
     SidecarHistoryResponse,
     SidecarPreviewResponse,
     SidecarTurnRequest,
@@ -38,7 +39,10 @@ from personal_travel.clients.personal_ai import (
     PersonalAISidecarUnknown,
 )
 from personal_travel.config import Settings, get_settings
-from personal_travel.domain.upstream_personal_ai_context import PersonalAISidecarConversation
+from personal_travel.domain.upstream_personal_ai_context import (
+    PersonalAISidecarConversation,
+    PersonalAISidecarFederationChoices,
+)
 from personal_travel.models.itinerary import ItineraryItem
 from personal_travel.models.place import Place
 from personal_travel.models.reservation import Reservation
@@ -566,6 +570,15 @@ def _turn_payload(trip: Trip, conversation_id: UUID, turn: SidecarTurnRequest) -
         "choice": {"mode": "automatic"},
         "launch_context": _launch_context(trip, conversation_id, turn),
         "excluded_source_classes": list(turn.excluded_source_classes),
+        **(
+            {
+                "federation_context": [
+                    item.model_dump(mode="json") for item in turn.federation_context
+                ]
+            }
+            if turn.federation_context
+            else {}
+        ),
     }
 
 
@@ -590,6 +603,29 @@ async def read_personal_ai_context(
     if len(response.model_dump_json().encode("utf-8")) > payload.max_bytes:
         raise HTTPException(status_code=413, detail="context_response_too_large")
     return response
+
+
+@router.get(
+    "/trips/{trip_id}/assistant/federation-choices",
+    response_model=SidecarFederationChoicesResponse,
+)
+async def list_sidecar_federation_choices(
+    trip_id: UUID,
+    request: Request,
+    session: SessionDependency,
+    owner_id: OwnerDependency,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> PersonalAISidecarFederationChoices:
+    _require_enabled(settings)
+    TripService(session, owner_id).get(trip_id)
+    try:
+        return await _context_client(request).get_sidecar_federation_choices()
+    except PersonalAISidecarError as error:
+        raise DomainError(
+            "personal_ai_unavailable",
+            "Current shared context choices could not be loaded.",
+            status_code=503,
+        ) from error
 
 
 @router.post(

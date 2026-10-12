@@ -13,14 +13,17 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from personal_travel.domain.upstream_personal_ai_context import (
+    PersonalAIFederationContextChoice,
     PersonalAISidecarActionPolicy,
     PersonalAISidecarConversation,
+    PersonalAISidecarFederationChoices,
     PersonalAISidecarHistory,
     PersonalAISidecarPreview,
 )
 
 type SidecarConversationResponse = PersonalAISidecarConversation
 type SidecarActionPolicyResponse = PersonalAISidecarActionPolicy
+type SidecarFederationChoicesResponse = PersonalAISidecarFederationChoices
 type SidecarHistoryResponse = PersonalAISidecarHistory
 type SidecarPreviewResponse = PersonalAISidecarPreview
 
@@ -34,6 +37,7 @@ __all__ = [
     "ContextSourceReference",
     "SidecarConversationResponse",
     "SidecarActionPolicyResponse",
+    "SidecarFederationChoicesResponse",
     "SidecarCreateRequest",
     "SidecarHistoryResponse",
     "SidecarPreviewResponse",
@@ -203,6 +207,9 @@ class SidecarTurnRequest(BaseModel):
     idempotency_key: UUID
     entity_refs: tuple[ContextEntityReference, ...] = Field(default=(), max_length=16)
     view_id: Literal["travel.trip", "travel.day", "travel.place"] = "travel.trip"
+    federation_context: tuple[PersonalAIFederationContextChoice, ...] = Field(
+        default=(), max_length=4
+    )
     excluded_source_classes: tuple[
         Literal[
             "global_profile",
@@ -227,6 +234,10 @@ class SidecarTurnRequest(BaseModel):
             for reference in self.entity_refs
         ):
             raise ValueError("context_entity_reference_scope_invalid")
+        if len({item.federation.grant_id for item in self.federation_context}) != len(
+            self.federation_context
+        ):
+            raise ValueError("federation_choices_must_be_unique")
         if len(set(self.excluded_source_classes)) != len(self.excluded_source_classes):
             raise ValueError("context_source_exclusions_must_be_unique")
         return self

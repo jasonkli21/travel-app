@@ -24,6 +24,7 @@ from personal_travel.domain.upstream_extractions import UpstreamBookingExtractio
 from personal_travel.domain.upstream_personal_ai_context import (
     PersonalAISidecarActionPolicy,
     PersonalAISidecarConversation,
+    PersonalAISidecarFederationChoices,
     PersonalAISidecarHistory,
     PersonalAISidecarMessage,
     PersonalAISidecarPreview,
@@ -291,6 +292,35 @@ class PersonalAIClient:
             ValueError,
         ):
             raise PersonalAISidecarError("The Travel assistant policy is unavailable.") from None
+
+    async def get_sidecar_federation_choices(self) -> PersonalAISidecarFederationChoices:
+        """Load the current owner grants for this exact Travel destination scope."""
+        try:
+            async with asyncio.timeout(self._timeout):
+                headers = await self._outbound_headers()
+                headers["X-Application-ID"] = "travel"
+                async with httpx.AsyncClient(
+                    timeout=self._timeout, transport=self._transport
+                ) as client:
+                    async with client.stream(
+                        "GET",
+                        f"{self._base_url}/v1/federation/grants/choices",
+                        headers=headers,
+                    ) as response:
+                        response.raise_for_status()
+                        raw = await read_json(response, max_bytes=64 * 1024)
+                result = PersonalAISidecarFederationChoices.model_validate(raw)
+            return result
+        except (
+            httpx.HTTPError,
+            TimeoutError,
+            InvalidUpstreamResponse,
+            ValidationError,
+            ValueError,
+        ):
+            raise PersonalAISidecarError(
+                "Current shared context choices are unavailable."
+            ) from None
 
     async def get_sidecar_conversation(self, conversation_id: UUID) -> PersonalAISidecarHistory:
         try:

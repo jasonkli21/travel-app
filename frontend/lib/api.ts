@@ -412,12 +412,43 @@ export interface PersonalAIContextEntityReference {
   workspace_id: null;
 }
 
+export interface PersonalAIFederationContextChoice {
+  provider_id: string;
+  fields: string[];
+  federation: {
+    grant_id: string;
+    issuance_id: string;
+    revision: number;
+    epoch: number;
+    source: { application_id: string; workspace_id: string | null };
+    category: string;
+    purpose: string;
+    entities: {
+      application_id: string;
+      workspace_id: string | null;
+      entity_type: string;
+      entity_id: string;
+    }[];
+  };
+}
+
+export interface PersonalAISidecarFederationChoice {
+  id: string;
+  category_label: string;
+  choice: PersonalAIFederationContextChoice;
+}
+
+export interface PersonalAISidecarFederationChoices {
+  choices: PersonalAISidecarFederationChoice[];
+}
+
 export interface PersonalAISidecarTurnInput {
   content: string;
   idempotency_key: string;
   entity_refs: PersonalAIContextEntityReference[];
   view_id: "travel.trip" | "travel.day" | "travel.place";
   excluded_source_classes: PersonalAIContextSourceClass[];
+  federation_context?: PersonalAIFederationContextChoice[];
 }
 
 export interface PersonalAISidecarPreview {
@@ -609,6 +640,10 @@ export const travelApi = {
   getAssistantActionPolicy: (tripId: string) =>
     request<PersonalAISidecarActionPolicy>(
       `/trips/${tripId}/assistant/execution-options`,
+    ),
+  getAssistantFederationChoices: (tripId: string) =>
+    request<PersonalAISidecarFederationChoices>(
+      `/trips/${tripId}/assistant/federation-choices`,
     ),
   createAssistantConversation: (tripId: string, idempotencyKey: string) =>
     request<{ id: string; application_id: "travel"; workspace_id: null }>(

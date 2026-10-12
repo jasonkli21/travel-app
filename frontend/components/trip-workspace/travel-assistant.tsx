@@ -6,6 +6,7 @@ import {
   type PersonalAIContextSourceClass,
   type PersonalAISidecarMessage,
   type PersonalAISidecarActionPolicy,
+  type PersonalAISidecarFederationChoice,
   type PersonalAISidecarPreview,
   type PersonalAISidecarTurnInput,
   type TripDetail,
@@ -82,6 +83,8 @@ export default function TravelAssistant({
   const [messages, setMessages] = useState<PersonalAISidecarMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [excludedSources, setExcludedSources] = useState<PersonalAIContextSourceClass[]>([]);
+  const [federationChoices, setFederationChoices] = useState<PersonalAISidecarFederationChoice[]>([]);
+  const [selectedFederationChoiceIds, setSelectedFederationChoiceIds] = useState<string[]>([]);
   const [attempt, setAttempt] = useState<Attempt | null>(null);
   const [preview, setPreview] = useState<PersonalAISidecarPreview | null>(null);
   const [previewSignature, setPreviewSignature] = useState<string | null>(null);
@@ -101,12 +104,21 @@ export default function TravelAssistant({
     () => references.map((item) => item.reference),
     [references],
   );
+  const selectedFederationContext = useMemo(() => {
+    const choicesById = new Map(federationChoices.map((item) => [item.id, item.choice]));
+    return selectedFederationChoiceIds
+      .map((id) => choicesById.get(id))
+      .filter((choice): choice is NonNullable<typeof choice> => choice !== undefined);
+  }, [federationChoices, selectedFederationChoiceIds]);
   const sourceSelection = useMemo(() => ({
     content: draft.trim(),
     entity_refs: selectedReferenceList,
     view_id: viewId,
     excluded_source_classes: excludedSources,
-  }), [draft, excludedSources, selectedReferenceList, viewId]);
+    ...(selectedFederationContext.length
+      ? { federation_context: selectedFederationContext }
+      : {}),
+  }), [draft, excludedSources, selectedFederationContext, selectedReferenceList, viewId]);
   const currentSignature = attemptSignature(sourceSelection);
   const previewIsCurrent = preview !== null && previewSignature === currentSignature;
   const actionPolicy = actionPolicyState?.tripId === trip.id ? actionPolicyState.policy : null;
@@ -121,6 +133,21 @@ export default function TravelAssistant({
       })
       .catch((failure: unknown) => {
         if (!cancelled) setError(errorMessage(failure));
+      });
+    void travelApi.getAssistantFederationChoices(trip.id)
+      .then((result) => {
+        if (cancelled) return;
+        setFederationChoices(result.choices);
+        setSelectedFederationChoiceIds((current) =>
+          current.filter((id) => result.choices.some((choice) => choice.id === id)).slice(0, 4),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setFederationChoices([]);
+          setSelectedFederationChoiceIds([]);
+          setNotice("Current shared context grants could not be loaded. You can continue without them.");
+        }
       });
     return () => { cancelled = true; };
   }, [open, trip.id]);
@@ -194,6 +221,9 @@ export default function TravelAssistant({
         entity_refs: attempt.entity_refs,
         view_id: attempt.view_id,
         excluded_source_classes: attempt.excluded_source_classes,
+        ...(attempt.federation_context
+          ? { federation_context: attempt.federation_context }
+          : {}),
       }) === attemptSignature(withoutKey);
     return existingMatches ? attempt : {
       ...withoutKey,
@@ -286,6 +316,18 @@ export default function TravelAssistant({
     setPreviewSignature(null);
   }
 
+  function toggleFederationChoice(choiceId: string, checked: boolean) {
+    setSelectedFederationChoiceIds((current) => {
+      if (checked) return current.includes(choiceId) || current.length >= 4
+        ? current
+        : [...current, choiceId];
+      return current.filter((item) => item !== choiceId);
+    });
+    setAttempt(null);
+    setPreview(null);
+    setPreviewSignature(null);
+  }
+
   function editPrompt(value: string) {
     setDraft(value);
     setAttempt(null);
@@ -340,6 +382,34 @@ export default function TravelAssistant({
           ) : <p className="muted">No selected day, place, or research. The current trip remains available.</p>}
           {selectionNote ? <p className="formHint">{selectionNote}</p> : null}
         </section>
+
+        <fieldset className={styles.narrowing} disabled={busy !== null}>
+          <legend>Shared context from other apps</legend>
+          <p className="formHint">Personal AI rechecks each selected grant and source permission when it builds context.</p>
+          {federationChoices.map((option) => (
+            <label key={option.id}>
+              <input
+                type="checkbox"
+                checked={selectedFederationChoiceIds.includes(option.id)}
+                disabled={!selectedFederationChoiceIds.includes(option.id)
+                  && selectedFederationChoiceIds.length >= 4}
+                onChange={(event) => toggleFederationChoice(option.id, event.target.checked)}
+              />
+              <span>Include {option.category_label}</span>
+            </label>
+          ))}
+          {!federationChoices.length
+            ? <p className="formHint">No active shared grants are available for Travel.</p>
+            : null}
+          {selectedFederationChoiceIds.length
+            ? <p className="formHint" role="status">
+                Included shared context: {federationChoices
+                  .filter((option) => selectedFederationChoiceIds.includes(option.id))
+                  .map((option) => option.category_label)
+                  .join(", ")}
+              </p>
+            : null}
+        </fieldset>
 
         <fieldset className={styles.narrowing} disabled={busy !== null}>
           <legend>Narrow source categories</legend>

@@ -17,6 +17,7 @@ from personal_travel.api.schemas.personal_ai_context import (
     ContextReadRequest,
     ContextReadResponse,
     PersonalAISidecarActionPolicy,
+    SidecarTurnRequest,
 )
 from personal_travel.auth.contracts import VerifiedPrincipal
 from personal_travel.config import Settings, get_settings
@@ -551,6 +552,57 @@ def test_sidecar_action_policy_is_passed_through_from_personal_ai(
 
     assert response.status_code == 200
     assert response.json() == {"copy_allowed": False, "draft_insert_target_ids": []}
+
+
+def test_travel_host_forwards_the_same_typed_federation_choice_to_the_generic_continuation():
+    trip = _trip()
+    conversation_id = uuid4()
+    grant_id = uuid4()
+    selected = {
+        "provider_id": "federation.health.dietary",
+        "fields": ["dietary_restrictions"],
+        "federation": {
+            "grant_id": str(grant_id),
+            "issuance_id": str(uuid4()),
+            "revision": 3,
+            "epoch": 2,
+            "source": {"application_id": "health", "workspace_id": None},
+            "category": "dietary_restrictions",
+            "purpose": "health_dietary_restrictions_to_travel",
+            "entities": [
+                {
+                    "entity_type": "health_profile_item",
+                    "entity_id": str(uuid4()),
+                    "application_id": "health",
+                    "workspace_id": None,
+                }
+            ],
+        },
+    }
+    turn = SidecarTurnRequest(
+        content="Plan a meal that fits my dietary needs.",
+        idempotency_key=uuid4(),
+        federation_context=(selected,),
+    )
+
+    payload = context_routes._turn_payload(trip, conversation_id, turn)
+
+    assert payload["choice"] == {"mode": "automatic"}
+    assert payload["federation_context"] == [selected]
+    assert payload["launch_context"]["application_id"] == "travel"
+    assert payload["launch_context"]["conversation_id"] == str(conversation_id)
+    assert payload["launch_context"]["entity_refs"][0]["entity_id"] == str(trip.id)
+
+
+def test_travel_host_omits_empty_federation_selection():
+    trip = _trip()
+    payload = context_routes._turn_payload(
+        trip,
+        uuid4(),
+        SidecarTurnRequest(content="Continue without shared context.", idempotency_key=uuid4()),
+    )
+
+    assert "federation_context" not in payload
 
 
 def test_hosted_context_read_requires_service_and_user_identity_separately(
