@@ -571,12 +571,8 @@ def _turn_payload(trip: Trip, conversation_id: UUID, turn: SidecarTurnRequest) -
         "launch_context": _launch_context(trip, conversation_id, turn),
         "excluded_source_classes": list(turn.excluded_source_classes),
         **(
-            {
-                "federation_context": [
-                    item.model_dump(mode="json") for item in turn.federation_context
-                ]
-            }
-            if turn.federation_context
+            {"federation_choice_ids": list(turn.federation_choice_ids)}
+            if turn.federation_choice_ids
             else {}
         ),
     }

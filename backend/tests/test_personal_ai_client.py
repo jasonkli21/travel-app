@@ -175,7 +175,7 @@ def test_sidecar_action_policy_uses_travel_application_scope(
 def test_sidecar_federation_choices_use_the_authenticated_travel_scope(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    grant_id, issuance_id = uuid4(), uuid4()
+    handle = "A" * 43
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/v1/federation/grants/choices"
@@ -188,29 +188,8 @@ def test_sidecar_federation_choices_use_the_authenticated_travel_scope(
             json={
                 "choices": [
                     {
-                        "id": "current-health-dietary-choice",
+                        "id": handle,
                         "category_label": "Health · dietary restrictions",
-                        "choice": {
-                            "provider_id": "federation.health.dietary",
-                            "fields": ["dietary_restrictions"],
-                            "federation": {
-                                "grant_id": str(grant_id),
-                                "issuance_id": str(issuance_id),
-                                "revision": 2,
-                                "epoch": 1,
-                                "source": {"application_id": "health", "workspace_id": None},
-                                "category": "dietary_restrictions",
-                                "purpose": "health_dietary_restrictions_to_travel",
-                                "entities": [
-                                    {
-                                        "entity_type": "health_profile_item",
-                                        "entity_id": str(uuid4()),
-                                        "application_id": "health",
-                                        "workspace_id": None,
-                                    }
-                                ],
-                            },
-                        },
                     }
                 ]
             },
@@ -234,7 +213,7 @@ def test_sidecar_federation_choices_use_the_authenticated_travel_scope(
     result = asyncio.run(client.get_sidecar_federation_choices())
 
     assert result.choices[0].category_label == "Health · dietary restrictions"
-    assert result.choices[0].choice.federation.grant_id == grant_id
+    assert result.choices[0].id == handle
 
 
 @pytest.mark.parametrize("token_result", ["raises", "empty", "oversized"])

@@ -35,39 +35,9 @@ class PersonalAISidecarActionPolicy(_StrictModel):
     draft_insert_target_ids: tuple[str, ...] = Field(default=(), max_length=16)
 
 
-class PersonalAIFederationEntity(_StrictModel):
-    entity_type: str = Field(min_length=1, max_length=80)
-    entity_id: str = Field(min_length=1, max_length=200)
-    application_id: str = Field(min_length=2, max_length=42)
-    workspace_id: str | None = Field(default=None, max_length=100)
-
-
-class PersonalAIFederationSource(_StrictModel):
-    application_id: str = Field(min_length=2, max_length=42)
-    workspace_id: str | None = Field(default=None, max_length=100)
-
-
-class PersonalAIFederationSelection(_StrictModel):
-    grant_id: UUID
-    issuance_id: UUID
-    revision: int = Field(ge=1)
-    epoch: int = Field(ge=1)
-    source: PersonalAIFederationSource
-    category: str = Field(min_length=1, max_length=80)
-    purpose: str = Field(min_length=1, max_length=160)
-    entities: tuple[PersonalAIFederationEntity, ...] = Field(min_length=1, max_length=16)
-
-
-class PersonalAIFederationContextChoice(_StrictModel):
-    provider_id: str = Field(pattern=r"^[a-z][a-z0-9_.-]{1,80}$")
-    fields: tuple[str, ...] = Field(min_length=1, max_length=32)
-    federation: PersonalAIFederationSelection
-
-
 class PersonalAISidecarFederationChoice(_StrictModel):
-    id: str = Field(min_length=1, max_length=100)
+    id: str = Field(pattern=r"^[A-Za-z0-9_-]{43}$")
     category_label: str = Field(min_length=1, max_length=100)
-    choice: PersonalAIFederationContextChoice
 
 
 class PersonalAISidecarFederationChoices(_StrictModel):

@@ -412,30 +412,9 @@ export interface PersonalAIContextEntityReference {
   workspace_id: null;
 }
 
-export interface PersonalAIFederationContextChoice {
-  provider_id: string;
-  fields: string[];
-  federation: {
-    grant_id: string;
-    issuance_id: string;
-    revision: number;
-    epoch: number;
-    source: { application_id: string; workspace_id: string | null };
-    category: string;
-    purpose: string;
-    entities: {
-      application_id: string;
-      workspace_id: string | null;
-      entity_type: string;
-      entity_id: string;
-    }[];
-  };
-}
-
 export interface PersonalAISidecarFederationChoice {
   id: string;
   category_label: string;
-  choice: PersonalAIFederationContextChoice;
 }
 
 export interface PersonalAISidecarFederationChoices {
@@ -448,7 +427,7 @@ export interface PersonalAISidecarTurnInput {
   entity_refs: PersonalAIContextEntityReference[];
   view_id: "travel.trip" | "travel.day" | "travel.place";
   excluded_source_classes: PersonalAIContextSourceClass[];
-  federation_context?: PersonalAIFederationContextChoice[];
+  federation_choice_ids?: string[];
 }
 
 export interface PersonalAISidecarPreview {

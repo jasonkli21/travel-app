@@ -7,13 +7,13 @@ comes from the independently verified user identity in middleware.
 
 from __future__ import annotations
 
+import re
 from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from personal_travel.domain.upstream_personal_ai_context import (
-    PersonalAIFederationContextChoice,
     PersonalAISidecarActionPolicy,
     PersonalAISidecarConversation,
     PersonalAISidecarFederationChoices,
@@ -207,9 +207,7 @@ class SidecarTurnRequest(BaseModel):
     idempotency_key: UUID
     entity_refs: tuple[ContextEntityReference, ...] = Field(default=(), max_length=16)
     view_id: Literal["travel.trip", "travel.day", "travel.place"] = "travel.trip"
-    federation_context: tuple[PersonalAIFederationContextChoice, ...] = Field(
-        default=(), max_length=4
-    )
+    federation_choice_ids: tuple[str, ...] = Field(default=(), max_length=4)
     excluded_source_classes: tuple[
         Literal[
             "global_profile",
@@ -234,9 +232,9 @@ class SidecarTurnRequest(BaseModel):
             for reference in self.entity_refs
         ):
             raise ValueError("context_entity_reference_scope_invalid")
-        if len({item.federation.grant_id for item in self.federation_context}) != len(
-            self.federation_context
-        ):
+        if any(not re.fullmatch(r"[A-Za-z0-9_-]{43}", item) for item in self.federation_choice_ids):
+            raise ValueError("federation_choice_invalid")
+        if len(set(self.federation_choice_ids)) != len(self.federation_choice_ids):
             raise ValueError("federation_choices_must_be_unique")
         if len(set(self.excluded_source_classes)) != len(self.excluded_source_classes):
             raise ValueError("context_source_exclusions_must_be_unique")

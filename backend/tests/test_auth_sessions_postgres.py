@@ -23,11 +23,13 @@ from starlette.testclient import TestClient
 
 import personal_travel.api.routes.auth as auth_routes
 import personal_travel.api.routes.imports as import_routes
+import personal_travel.api.routes.personal_ai_context as personal_ai_context_routes
 import personal_travel.api.routes.private_deletions as private_deletion_routes
 from personal_travel.auth.contracts import PersonalAIAuthContext, VerifiedPrincipal
 from personal_travel.auth.google_oidc import stable_google_owner_id
 from personal_travel.auth.sessions import create_session, secret_digest
 from personal_travel.config import Settings, get_settings
+from personal_travel.domain.upstream_personal_ai_context import PersonalAISidecarFederationChoices
 from personal_travel.models import AuthIdentity, AuthSession, OAuthLoginAttempt, Trip
 
 pytestmark = pytest.mark.usefixtures("clean_database")
@@ -625,6 +627,88 @@ def test_comparison_routes_use_the_comparison_gate_independently_of_research(
         )
         assert response.status_code == 400
         assert response.json()["error"]["code"] == "invalid_identity_header"
+
+
+def test_hosted_federation_choice_route_receives_verified_personal_ai_context(
+    api_client: TestClient,
+    database_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = google_settings(
+        personal_ai_auth_mode="google_cloud_run_iam",
+        personal_ai_context_enabled=True,
+        personal_ai_user_id_token_audience="travel-client.apps.googleusercontent.com",
+        personal_ai_service_iam_audience="https://travel-ai.test",
+        personal_ai_service_account="travel-ai@project.iam.gserviceaccount.com",
+    )
+    use_settings(api_client, settings)
+    raw_session, csrf = make_identity_and_session(database_engine)
+    owner_id = stable_google_owner_id("https://accounts.google.com", "synthetic-subject")
+    trip = Trip(
+        owner_id=owner_id,
+        title="Federation middleware test",
+        start_date=datetime(2026, 10, 11, tzinfo=UTC).date(),
+        end_date=datetime(2026, 10, 12, tzinfo=UTC).date(),
+        timezone="UTC",
+    )
+    with Session(database_engine) as session, session.begin():
+        session.add(trip)
+        session.flush()
+        trip_id = trip.id
+
+    user_token, certificate, _subject = signed_token(
+        "federation-choice-test", subject="synthetic-subject"
+    )
+    set_google_key_fixture(monkeypatch, certificate)
+    observed: list[PersonalAIAuthContext | None] = []
+
+    class FakeContextClient:
+        async def get_sidecar_federation_choices(self):
+            return PersonalAISidecarFederationChoices(choices=())
+
+    def context_client(request):
+        observed.append(request.scope.get("personal_ai_auth_context"))
+        return FakeContextClient()
+
+    monkeypatch.setattr(personal_ai_context_routes, "_context_client", context_client)
+    cookies = {
+        settings.auth_session_cookie_name: raw_session,
+        settings.auth_csrf_cookie_name: csrf,
+    }
+    headers = {"origin": "http://localhost:3000", "x-csrf-token": csrf}
+    path = f"/v1/trips/{trip_id}/assistant/federation-choices"
+
+    valid = api_client.get(
+        path, cookies=cookies, headers={**headers, "x-user-id-token": user_token}
+    )
+    assert valid.status_code == 200, valid.text
+    assert observed == [
+        PersonalAIAuthContext(
+            user_id_token=user_token,
+            service_audience="https://travel-ai.test",
+            service_account="travel-ai@project.iam.gserviceaccount.com",
+        )
+    ]
+
+    missing = api_client.get(path, cookies=cookies, headers=headers)
+    assert missing.status_code == 401
+    assert missing.json()["error"]["code"] == "ai_identity_required"
+
+    mismatched_token, mismatch_certificate, _ = signed_token("mismatched-owner")
+    set_google_key_fixture(monkeypatch, mismatch_certificate)
+    mismatch = api_client.get(
+        path, cookies=cookies, headers={**headers, "x-user-id-token": mismatched_token}
+    )
+    assert mismatch.status_code == 403
+    assert mismatch.json()["error"]["code"] == "ai_identity_mismatch"
+
+    unrelated = api_client.get(
+        "/v1/trips",
+        cookies=cookies,
+        headers={**headers, "x-user-id-token": user_token},
+    )
+    assert unrelated.status_code == 400
+    assert unrelated.json()["error"]["code"] == "invalid_identity_header"
 
 
 def test_ai_requires_verified_user_token_matching_session_before_domain_access(

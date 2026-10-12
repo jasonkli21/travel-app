@@ -104,21 +104,15 @@ export default function TravelAssistant({
     () => references.map((item) => item.reference),
     [references],
   );
-  const selectedFederationContext = useMemo(() => {
-    const choicesById = new Map(federationChoices.map((item) => [item.id, item.choice]));
-    return selectedFederationChoiceIds
-      .map((id) => choicesById.get(id))
-      .filter((choice): choice is NonNullable<typeof choice> => choice !== undefined);
-  }, [federationChoices, selectedFederationChoiceIds]);
   const sourceSelection = useMemo(() => ({
     content: draft.trim(),
     entity_refs: selectedReferenceList,
     view_id: viewId,
     excluded_source_classes: excludedSources,
-    ...(selectedFederationContext.length
-      ? { federation_context: selectedFederationContext }
+    ...(selectedFederationChoiceIds.length
+      ? { federation_choice_ids: selectedFederationChoiceIds }
       : {}),
-  }), [draft, excludedSources, selectedFederationContext, selectedReferenceList, viewId]);
+  }), [draft, excludedSources, selectedFederationChoiceIds, selectedReferenceList, viewId]);
   const currentSignature = attemptSignature(sourceSelection);
   const previewIsCurrent = preview !== null && previewSignature === currentSignature;
   const actionPolicy = actionPolicyState?.tripId === trip.id ? actionPolicyState.policy : null;
@@ -221,8 +215,8 @@ export default function TravelAssistant({
         entity_refs: attempt.entity_refs,
         view_id: attempt.view_id,
         excluded_source_classes: attempt.excluded_source_classes,
-        ...(attempt.federation_context
-          ? { federation_context: attempt.federation_context }
+        ...(attempt.federation_choice_ids
+          ? { federation_choice_ids: attempt.federation_choice_ids }
           : {}),
       }) === attemptSignature(withoutKey);
     return existingMatches ? attempt : {
