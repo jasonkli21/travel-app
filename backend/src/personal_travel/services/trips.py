@@ -54,6 +54,8 @@ class TripService:
                 start_date=data.start_date,
                 end_date=data.end_date,
                 timezone=data.timezone,
+                destination=data.destination,
+                cross_domain_sharing_allowed=data.cross_domain_sharing_allowed,
             )
             self._trips.add(trip)
             self._session.flush()
@@ -90,6 +92,14 @@ class TripService:
             target_timezone = (
                 data.timezone if "timezone" in data.model_fields_set else trip.timezone
             )
+            target_destination = (
+                data.destination if "destination" in data.model_fields_set else trip.destination
+            )
+            target_sharing = (
+                data.cross_domain_sharing_allowed
+                if "cross_domain_sharing_allowed" in data.model_fields_set
+                else trip.cross_domain_sharing_allowed
+            )
             if target_start is None or target_end is None or target_timezone is None:
                 raise DomainError(
                     "invalid_trip_update", "trip date and timezone values are required."
@@ -101,6 +111,8 @@ class TripService:
                 target_start != trip.start_date
                 or target_end != trip.end_date
                 or target_timezone != trip.timezone
+                or target_destination != trip.destination
+                or target_sharing != trip.cross_domain_sharing_allowed
                 or ("title" in data.model_fields_set and data.title != trip.title)
             )
 
@@ -117,6 +129,12 @@ class TripService:
             trip.start_date = target_start
             trip.end_date = target_end
             trip.timezone = target_timezone
+            if "destination" in data.model_fields_set:
+                trip.destination = data.destination
+            if "cross_domain_sharing_allowed" in data.model_fields_set:
+                if data.cross_domain_sharing_allowed is None:
+                    raise DomainError("invalid_trip_update", "sharing consent cannot be null.")
+                trip.cross_domain_sharing_allowed = data.cross_domain_sharing_allowed
             if changed:
                 trip.revision += 1
             self._session.flush()

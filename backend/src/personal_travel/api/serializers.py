@@ -106,6 +106,8 @@ def serialize_summary(
         start_date=trip.start_date,
         end_date=trip.end_date,
         timezone=trip.timezone,
+        destination=trip.destination,
+        cross_domain_sharing_allowed=trip.cross_domain_sharing_allowed,
         day_count=len(trip.days) if day_count is None else day_count,
         item_count=sum(len(day.items) for day in trip.days) if item_count is None else item_count,
         created_at=trip.created_at,

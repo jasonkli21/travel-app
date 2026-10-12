@@ -5,6 +5,7 @@ from datetime import date
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Date,
     ForeignKey,
@@ -32,6 +33,10 @@ class Trip(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
     timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="UTC")
+    destination: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    cross_domain_sharing_allowed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 
     days: Mapped[list[TripDay]] = relationship(

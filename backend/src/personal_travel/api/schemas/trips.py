@@ -19,6 +19,8 @@ class TripCreate(BaseModel):
     start_date: date
     end_date: date
     timezone: str = Field(default="UTC", min_length=1, max_length=64)
+    destination: str | None = Field(default=None, max_length=160)
+    cross_domain_sharing_allowed: bool = False
 
 
 class TripUpdate(BaseModel):
@@ -43,6 +45,15 @@ class TripUpdate(BaseModel):
         min_length=1,
         max_length=64,
         description="IANA timezone name; omit to preserve it, or provide a non-null replacement.",
+    )
+    destination: str | None = Field(
+        default=None,
+        max_length=160,
+        description="Destination used for the explicitly consented Shopping projection.",
+    )
+    cross_domain_sharing_allowed: bool | None = Field(
+        default=None,
+        description="Explicit consent for a narrow trip projection to be shared with Shopping.",
     )
 
 
@@ -72,6 +83,8 @@ class TripSummaryResponse(BaseModel):
     start_date: date
     end_date: date
     timezone: str
+    destination: str | None = None
+    cross_domain_sharing_allowed: bool = False
     day_count: int
     item_count: int
     created_at: datetime

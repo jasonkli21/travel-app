@@ -104,6 +104,16 @@ def _trip_permission(trip: Trip) -> ContextPermissionDependency:
     )
 
 
+def _trip_export_permission(trip: Trip) -> ContextPermissionDependency:
+    return ContextPermissionDependency(
+        permission_id=f"travel_context_read:{trip.id}",
+        version=str(trip.revision),
+        purpose="shopping_trip_context",
+        source_application_id="travel",
+        destination_application_id="shopping",
+    )
+
+
 def _record(
     trip: Trip,
     *,
@@ -142,8 +152,7 @@ def _record(
         selection_binding=selection_binding,
         field_sensitivity=tuple(
             ContextFieldSensitivity(field=name, sensitivity=sensitivity)
-            for name, value in payload.items()
-            if value is not None
+            for name in payload
         ),
     )
 
@@ -237,6 +246,29 @@ def _selected_trip(payload: ContextReadRequest) -> UUID:
 
 
 def _context_records(trip: Trip, request: ContextReadRequest) -> tuple[ContextReadRecord, ...]:
+    if request.purpose == "shopping_trip_context":
+        if not trip.cross_domain_sharing_allowed:
+            if request.operation == "verify":
+                return ()
+            raise HTTPException(status_code=404, detail="context_not_found")
+        payload = (
+            {"trip_revision": trip.revision}
+            if request.operation == "verify"
+            else {
+                "destination": trip.destination,
+                "start_date": trip.start_date.isoformat(),
+                "end_date": trip.end_date.isoformat(),
+            }
+        )
+        return (
+            _record(
+                trip,
+                entity_type="trip",
+                entity_id=trip.id,
+                payload=payload,
+                sensitivity="sensitive",
+            ).model_copy(update={"permission_dependencies": (_trip_export_permission(trip),)}),
+        )
     fields = tuple(request.fields)
     if len(fields) != len(set(fields)):
         raise HTTPException(status_code=422, detail="context_fields_invalid")
@@ -551,6 +583,8 @@ async def read_personal_ai_context(
     trip_id = _selected_trip(payload)
     trip = TripService(session, owner_id).get(trip_id)
     response = ContextReadResponse(items=_context_records(trip, payload))
+    if payload.operation == "federation" and not response.complete:
+        raise HTTPException(status_code=413, detail="context_export_incomplete")
     if len(response.items) > payload.max_results:
         raise HTTPException(status_code=413, detail="context_result_limit_exceeded")
     if len(response.model_dump_json().encode("utf-8")) > payload.max_bytes:

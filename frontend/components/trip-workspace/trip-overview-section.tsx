@@ -5,7 +5,10 @@ import { useState } from "react";
 import Link from "next/link";
 import type { TripDetail, UpdateTripInput } from "../../lib/api";
 
-type TripSettingsValues = Pick<TripDetail, "title" | "start_date" | "end_date" | "timezone">;
+type TripSettingsValues = Pick<TripDetail, "title" | "start_date" | "end_date" | "timezone"> & {
+  destination: string;
+  cross_domain_sharing_allowed: boolean;
+};
 
 function settingsFromTrip(trip: TripDetail): TripSettingsValues {
   return {
@@ -13,6 +16,8 @@ function settingsFromTrip(trip: TripDetail): TripSettingsValues {
     start_date: trip.start_date,
     end_date: trip.end_date,
     timezone: trip.timezone,
+    destination: trip.destination ?? "",
+    cross_domain_sharing_allowed: trip.cross_domain_sharing_allowed === true,
   };
 }
 
@@ -98,7 +103,9 @@ export default function TripOverviewSection({
               <label>Timezone<input maxLength={64} value={tripForm.timezone} onChange={(event) => setTripForm({ ...tripForm, timezone: event.target.value })} placeholder="America/Los_Angeles" required /></label>
               <label>Start date<input type="date" value={tripForm.start_date} onChange={(event) => setTripForm({ ...tripForm, start_date: event.target.value })} required /></label>
               <label>End date<input type="date" value={tripForm.end_date} onChange={(event) => setTripForm({ ...tripForm, end_date: event.target.value })} required /></label>
+              <label>Destination<input maxLength={160} value={tripForm.destination} onChange={(event) => setTripForm({ ...tripForm, destination: event.target.value })} placeholder="Kyoto, Japan" /></label>
             </div>
+            <label className="sharingConsent"><input type="checkbox" checked={tripForm.cross_domain_sharing_allowed} onChange={(event) => setTripForm({ ...tripForm, cross_domain_sharing_allowed: event.target.checked })} />Allow sharing destination and trip dates with Shopping</label>
             <button className="primary" type="submit">{saving ? "Saving…" : "Save trip"}</button>
           </fieldset>
         </form>

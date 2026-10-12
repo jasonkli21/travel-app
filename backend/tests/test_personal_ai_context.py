@@ -6,6 +6,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from personal_travel.api import middleware as request_middleware
@@ -37,6 +38,8 @@ def _trip(*, days: list[TripDay] | None = None) -> Trip:
         start_date=date(2026, 10, 11),
         end_date=date(2026, 10, 12),
         timezone="America/Los_Angeles",
+        destination="Tokyo, Japan",
+        cross_domain_sharing_allowed=False,
         revision=4,
         days=days or [],
         reservations=[],
@@ -99,6 +102,77 @@ def test_selected_empty_day_is_projected_once():
     assert len(records) == 1
     assert records[0].entity_type == "day"
     assert records[0].payload == {"day_date": "2026-10-11", "day_title": "Arrival"}
+
+
+def test_travel_shopping_export_is_narrow_consent_bound_and_revisioned():
+    trip = _trip()
+    trip.cross_domain_sharing_allowed = True
+    request = ContextReadRequest(
+        operation="federation",
+        purpose="shopping_trip_context",
+        destination_application_id="shopping",
+        entity_refs=(ContextEntityReference(
+            entity_type="trip", entity_id=str(trip.id), application_id="travel"
+        ),),
+        fields=("destination", "start_date", "end_date"),
+        max_results=1,
+        max_bytes=4096,
+    )
+
+    record = context_routes._context_records(trip, request)[0]
+
+    assert record.payload == {
+        "destination": "Tokyo, Japan",
+        "start_date": "2026-10-11",
+        "end_date": "2026-10-12",
+    }
+    assert record.source_version == "4"
+    assert record.permission_dependencies[0].permission_id == f"travel_context_read:{trip.id}"
+    assert record.permission_dependencies[0].version == "4"
+    assert record.permission_dependencies[0].purpose == "shopping_trip_context"
+    assert record.permission_dependencies[0].source_application_id == "travel"
+    assert record.permission_dependencies[0].destination_application_id == "shopping"
+
+    trip.destination = None
+    trip.revision += 1
+    empty_destination = context_routes._context_records(trip, request)[0]
+    assert empty_destination.payload["destination"] is None
+    assert empty_destination.source_version == "5"
+
+    trip.cross_domain_sharing_allowed = False
+    verify = request.model_copy(
+        update={"operation": "verify", "fields": ("trip_revision",)}
+    )
+    assert context_routes._context_records(trip, verify) == ()
+    with pytest.raises(HTTPException) as error:
+        context_routes._context_records(trip, request)
+    assert error.value.status_code == 404
+
+
+def test_travel_federation_contract_rejects_broad_or_wrong_destination_reads():
+    ref = ContextEntityReference(
+        entity_type="trip", entity_id=str(uuid4()), application_id="travel"
+    )
+    with pytest.raises(ValueError, match="travel_federation_export_scope_invalid"):
+        ContextReadRequest(
+            operation="federation",
+            purpose="shopping_trip_context",
+            destination_application_id="shopping",
+            entity_refs=(ref,),
+            fields=("destination", "timezone"),
+            max_results=1,
+            max_bytes=4096,
+        )
+    with pytest.raises(ValueError):
+        ContextReadRequest(
+            operation="federation",
+            purpose="shopping_trip_context",
+            destination_application_id="shopping",
+            entity_refs=(ref.model_copy(update={"application_id": "health"}),),
+            fields=("destination", "start_date", "end_date"),
+            max_results=1,
+            max_bytes=4096,
+        )
 
 
 def test_selected_itinerary_context_uses_minimal_booking_summary_and_omits_private_fields():

@@ -83,7 +83,9 @@ class ContextReadRequest(BaseModel):
     schema_version: Literal["travel-context-read-v2"] = "travel-context-read-v2"
     application_id: Literal["travel"] = "travel"
     workspace_id: None = None
-    operation: Literal["current", "entity", "verify"]
+    operation: Literal["current", "entity", "verify", "federation"]
+    purpose: Literal["personal_ai_context", "shopping_trip_context"] = "personal_ai_context"
+    destination_application_id: Literal["shopping"] | None = None
     entity_refs: tuple[ContextEntityReference, ...] = Field(default=(), max_length=16)
     fields: tuple[str, ...] = Field(min_length=1, max_length=32)
     max_results: int = Field(ge=1, le=50)
@@ -100,6 +102,24 @@ class ContextReadRequest(BaseModel):
             raise ValueError("context_entity_reference_scope_invalid")
         if not self.entity_refs:
             raise ValueError("context_entity_reference_required")
+        if self.operation == "federation" or self.purpose == "shopping_trip_context":
+            expected_fields = (
+                ("trip_revision",)
+                if self.operation == "verify"
+                else ("destination", "start_date", "end_date")
+            )
+            if (
+                self.operation not in {"federation", "verify"}
+                or self.purpose != "shopping_trip_context"
+                or self.destination_application_id != "shopping"
+                or len(self.entity_refs) != 1
+                or self.entity_refs[0].entity_type != "trip"
+                or self.fields != expected_fields
+                or self.max_results != 1
+            ):
+                raise ValueError("travel_federation_export_scope_invalid")
+        elif self.destination_application_id is not None:
+            raise ValueError("context_destination_scope_invalid")
         return self
 
 
@@ -154,6 +174,19 @@ class ContextReadResponse(BaseModel):
     application_id: Literal["travel"] = "travel"
     workspace_id: None = None
     items: tuple[ContextReadRecord, ...] = Field(default=(), max_length=50)
+    complete: bool = True
+    authoritative_empty_entities: tuple[str, ...] = Field(default=(), max_length=16)
+    continuation: str | None = Field(default=None, max_length=512)
+
+    @model_validator(mode="after")
+    def completeness_is_explicit(self) -> ContextReadResponse:
+        if self.complete and self.continuation is not None:
+            raise ValueError("travel_context_completeness_invalid")
+        if not self.complete and not self.continuation:
+            raise ValueError("travel_context_continuation_required")
+        if len(set(self.authoritative_empty_entities)) != len(self.authoritative_empty_entities):
+            raise ValueError("travel_context_empty_entity_duplicate")
+        return self
 
 
 class SidecarCreateRequest(BaseModel):

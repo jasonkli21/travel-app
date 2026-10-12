@@ -344,6 +344,8 @@ h3 { margin: 3px 0 0; }
 .itemFields, .tripEditor fieldset, .createTripForm fieldset { border: 0; margin: 0; min-width: 0; padding: 0; }
 .formGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 label { display: grid; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 700; }
+.sharingConsent { display: flex; align-items: flex-start; gap: 8px; color: var(--ink); font-size: 13px; font-weight: 500; line-height: 1.4; }
+.sharingConsent input { width: auto; margin-top: 2px; }
 input, select, textarea { width: 100%; border: 1px solid var(--line); border-radius: 8px; background: #fffefa; color: var(--ink); padding: 9px 10px; }
 textarea { resize: vertical; }
 input:focus, select:focus, textarea:focus, button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

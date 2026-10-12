@@ -41,7 +41,7 @@ When sources disagree about behavior or delivery, use this order:
 | --- | --- |
 | Itinerary, reservation, or place domain | [Product brief](01-product-brief.md), [data model](04-data-model.md), [service workflow map](../backend/src/personal_travel/services/README.md), and relevant ADR |
 | Database, schema, or migration | [Data model](04-data-model.md), relevant ADR, and [local development](07-local-development.md) migration guidance |
-| Personal AI integration or proposal lifecycle | [AI integration](06-ai-integration.md), relevant contract/ADR and release evidence, [current state](current-state.md) |
+| Personal AI integration or proposal lifecycle | [AI integration](06-ai-integration.md), [Phase 30 Travel federation export evidence](releases/phase-30-federation-export.md), relevant contract/ADR and release evidence, [current state](current-state.md) |
 | Authentication or private sources | Phase 6 plan, [ADR 0011](decisions/0011-phase6-google-identity-and-ai-auth.md), [ADR 0012](decisions/0012-phase6-private-source-storage.md), [ADR 0013](decisions/0013-phase6-booking-document-import.md), and [Phase 6 evidence](releases/phase-6-booking-imports.md) |
 | Attachments, exports, or travel mode | ADR 0015, [Phase 8 plan](phase-8-implementation-plan.md), and [Phase 8 evidence](releases/phase-8-attachments-exports.md) |
 | Frontend UX | [Product design](02-product-design.md) and the relevant feature contract or release record |

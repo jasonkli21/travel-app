@@ -19,7 +19,7 @@ export default function Home() {
   const createInFlight = useRef(false);
   const [uncertain, setUncertain] = useState(false);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState<CreateTripInput>({ title: "", start_date: "", end_date: "", timezone: "UTC" });
+  const [form, setForm] = useState<CreateTripInput>({ title: "", start_date: "", end_date: "", timezone: "UTC", destination: "", cross_domain_sharing_allowed: false });
 
   const loadTrips = useCallback(async () => {
     setError(null);
@@ -85,7 +85,9 @@ export default function Home() {
               <label>Timezone<input maxLength={64} value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })} placeholder="Asia/Tokyo" required /></label>
               <label>Start date<input type="date" value={form.start_date} onChange={(event) => setForm({ ...form, start_date: event.target.value })} required /></label>
               <label>End date<input type="date" value={form.end_date} onChange={(event) => setForm({ ...form, end_date: event.target.value })} required /></label>
+              <label>Destination<input maxLength={160} value={form.destination ?? ""} onChange={(event) => setForm({ ...form, destination: event.target.value })} placeholder="Kyoto, Japan" /></label>
             </div>
+            <label className="sharingConsent"><input type="checkbox" checked={form.cross_domain_sharing_allowed === true} onChange={(event) => setForm({ ...form, cross_domain_sharing_allowed: event.target.checked })} />Allow sharing destination and trip dates with Shopping</label>
             <button className="primary" type="submit" disabled={creating}>{creating ? "Creating…" : "Create trip"}</button></fieldset>
           </form>
         ) : null}

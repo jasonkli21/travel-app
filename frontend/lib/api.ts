@@ -114,6 +114,8 @@ export interface TripSummary {
   start_date: string;
   end_date: string;
   timezone: string;
+  destination?: string | null;
+  cross_domain_sharing_allowed?: boolean;
   day_count: number;
   item_count: number;
   created_at: string;
@@ -477,6 +479,8 @@ export interface CreateTripInput {
   start_date: string;
   end_date: string;
   timezone: string;
+  destination?: string | null;
+  cross_domain_sharing_allowed?: boolean;
 }
 
 export interface UpdateTripInput {
@@ -484,6 +488,8 @@ export interface UpdateTripInput {
   start_date?: string;
   end_date?: string;
   timezone?: string;
+  destination?: string | null;
+  cross_domain_sharing_allowed?: boolean;
 }
 
 export interface CreateItemInput {

@@ -99,3 +99,13 @@ Phase 9 remains the latest unfinished product phase. Phase plans are historical
 implementation intent and do not authorize new work. Any further feature or
 operational work needs an explicit current request and must follow its plan and
 open gates. Documentation alone never authorizes cloud deployment.
+
+Phase 30's Travel → Shopping source export is implemented locally behind
+`PERSONAL_AI_CONTEXT_ENABLED=false`. A trip has a revisioned destination and
+owner-controlled sharing flag; the source endpoint exports only destination,
+start date, and end date for the exact Shopping purpose, and rechecks the same
+dependency on verification. The shared Personal AI adapter consumes that
+contract through the generic broker. The complete product flow remains gated:
+there is no accepted Shopping user-bound task host, and live identity, grant
+selection, deployment, and cross-app revocation acceptance remain open. See
+[Phase 30 Travel export evidence](releases/phase-30-federation-export.md).
