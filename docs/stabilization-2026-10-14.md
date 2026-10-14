@@ -37,6 +37,11 @@ resource limits; mypy is checked for Linux as well as the local platform.
 Cross-repo documentation links use GitHub so a standalone checkout resolves
 its local documentation without requiring sibling repositories.
 
+The final password-authenticated CI run exposed a pool test converting a
+SQLAlchemy URL to its masked display string. It now passes the URL object
+directly, preserving the actual synthetic password. Native pool/recovery behavior
+remains asserted; local trust-auth success did not establish this boundary.
+
 ## Evidence authority
 
 [Exact commands/counts/source identity](https://github.com/jasonkli21/personal-ai-agent/blob/main/stabilization/VERIFICATION.md),

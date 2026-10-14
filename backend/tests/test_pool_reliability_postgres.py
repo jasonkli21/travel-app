@@ -20,7 +20,7 @@ def test_api_pool_timeout_is_bounded_and_manual_reads_recover(
     assert isinstance(schema, str) and schema.startswith("travel_test_")
 
     limited_engine = create_engine(
-        str(database_engine.url),
+        database_engine.url,
         connect_args={"options": f"-csearch_path={schema}"},
         pool_size=1,
         max_overflow=0,
