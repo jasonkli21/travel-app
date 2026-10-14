@@ -122,7 +122,7 @@ def _receive_result(connection: Connection, failure_code: str) -> tuple[str, str
 
 def _worker(path: str, connection: Connection, require_text: bool = True) -> None:
     try:
-        limits = (
+        limits: tuple[tuple[int, int, str], ...] = (
             (resource.RLIMIT_CORE, 0, "parser_core_limit_failed"),
             (resource.RLIMIT_CPU, PARSER_SECONDS, "parser_cpu_limit_failed"),
         )
@@ -181,7 +181,7 @@ def _worker(path: str, connection: Connection, require_text: bool = True) -> Non
 def _image_worker(path: str, media_type: str, connection: Connection) -> None:
     """Check untrusted image structure in a disposable resource-limited process."""
     try:
-        limits = (
+        limits: tuple[tuple[int, int, str], ...] = (
             (resource.RLIMIT_CORE, 0, "image_core_limit_failed"),
             (resource.RLIMIT_CPU, 4, "image_cpu_limit_failed"),
         )
