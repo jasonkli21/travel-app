@@ -48,7 +48,7 @@ def test_context_capability_defaults_off_and_hosted_enablement_requires_both_ide
             deployment_mode="hosted",
             travel_auth_mode="google_oidc",
             google_oauth_client_id="synthetic-client",
-            google_oauth_client_secret="synthetic-credential",
+            google_oauth_client_secret="synthetic-credential",  # pragma: allowlist secret
             google_oauth_redirect_uri="https://travel.example.test/auth/google/callback",
             google_oauth_allowed_email="owner@gmail.com",
             allowed_hosts="api.example.test",

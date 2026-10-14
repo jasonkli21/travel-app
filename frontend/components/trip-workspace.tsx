@@ -42,6 +42,7 @@ import PlaceAttribution from "./trip-workspace/place-attribution";
 import ItinerarySection from "./trip-workspace/itinerary-section";
 import PlaceMapSection from "./trip-workspace/place-map-section";
 import TripOverviewSection from "./trip-workspace/trip-overview-section";
+import ShoppingTaskPanel from "./trip-workspace/shopping-task-panel";
 import TravelAssistant from "./trip-workspace/travel-assistant";
 
 type AssistantReference = {
@@ -446,6 +447,8 @@ export default function TripWorkspace({ tripId }: { tripId: string }) {
           onDeleteTrip={deleteTrip}
           onReload={reloadWorkspace}
         />
+
+        <ShoppingTaskPanel key={trip.id} trip={trip} />
 
         <PlaceMapSection
           trip={trip}

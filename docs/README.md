@@ -1,5 +1,9 @@
 # Documentation router
 
+Stabilization and delegated tasks: [current state](current-state.md),
+[dated evidence](stabilization-2026-10-14.md), then the
+[suite review handoff](../../personal-ai-system/stabilization/REVIEW-HANDOFF.md).
+
 For an ordinary task, read this page, then [current state](current-state.md),
 then only the sources routed below.
 

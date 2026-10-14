@@ -32,6 +32,11 @@ from sqlalchemy.orm import sessionmaker
 if os.environ.get("SYNTHETIC_IDENTITY_FIXTURE") != "1":
     raise SystemExit("Synthetic identity fixture must be explicitly enabled.")
 database_url = os.environ.get("TEST_DATABASE_URL", "")
+# Default fixture safety stays on5432; the owned suite harness can explicitly
+# select its disposable loopback cluster's port without widening normal tests.
+fixture_port = int(os.environ.get("SYNTHETIC_IDENTITY_FIXTURE_PORT", "5432"))
+if not 1 <= fixture_port <= 65535:
+    raise SystemExit("A valid explicit synthetic database port is required.")
 
 
 def _is_disposable_test_database_url(value: str) -> bool:
@@ -44,7 +49,7 @@ def _is_disposable_test_database_url(value: str) -> bool:
     return (
         parsed.scheme in {"postgresql", "postgresql+psycopg"}
         and parsed.hostname == "127.0.0.1"
-        and port in {None, 5432}
+        and port in {None, 5432, fixture_port}
         and not parsed.query
         and not parsed.fragment
         and (database.startswith("test_") or database.endswith("_test"))

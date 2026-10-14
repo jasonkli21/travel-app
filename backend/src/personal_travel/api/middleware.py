@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 from uuid import uuid4
 
 from anyio.to_thread import run_sync
-from fastapi import Request
+from fastapi import HTTPException, Request
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -174,7 +174,40 @@ class LocalBoundaryMiddleware:
                 await self.app(scope, receive, send_response)
                 return
 
-            if service_context_request:
+            signed_task_request = method == "POST" and (
+                path == "/internal/personal-ai/commands/read"
+                or (is_context_read and headers.get("x-user-delegation") is not None)
+            )
+            if signed_task_request:
+                from personal_travel.auth.task_ingress import authenticate_task_ingress
+
+                try:
+                    task_principal, receive = await authenticate_task_ingress(
+                        headers,
+                        receive,
+                        settings,
+                        session_factory,
+                        state,
+                        command_read=path == "/internal/personal-ai/commands/read",
+                    )
+                except HTTPException as error:
+                    await reject(
+                        error.status_code, str(error.detail), "The task request was denied."
+                    )
+                    return
+                except (TimeoutError, IdentityProviderUnavailable):
+                    await reject(
+                        503,
+                        "task_identity_unavailable",
+                        "Task identity verification is unavailable.",
+                    )
+                    return
+                except InvalidIdentityToken:
+                    await reject(401, "task_identity_denied", "The task identity was denied.")
+                    return
+                scope["principal"] = task_principal
+                scope["auth_session"] = None
+            elif service_context_request:
                 service_token = (
                     supplied_authorization[7:].strip()
                     if supplied_authorization and supplied_authorization.startswith("Bearer ")

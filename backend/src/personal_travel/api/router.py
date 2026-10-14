@@ -15,6 +15,7 @@ from personal_travel.api.routes import (
     research,
     reservations,
     saved_places,
+    shopping_tasks,
     travel_mode,
     trips,
 )
@@ -36,3 +37,5 @@ api_router.include_router(research.router, prefix="/v1")
 api_router.include_router(proposals.router, prefix="/v1")
 api_router.include_router(location.router, prefix="/v1")
 api_router.include_router(personal_ai_context.router)
+
+api_router.include_router(shopping_tasks.router)

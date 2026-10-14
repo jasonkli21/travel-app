@@ -143,7 +143,7 @@ class ResponseLike:
     headers: object
 
 
-def test_all_domain_route_families_require_session_before_body_or_service(
+def test_domain_routes_authenticate_and_disabled_context_is_hidden(
     api_client: TestClient,
 ) -> None:
     settings = google_settings()
@@ -177,9 +177,11 @@ def test_all_domain_route_families_require_session_before_body_or_service(
                     domain_paths.add((method, path))
 
     assert len(domain_paths) >= 30
+    disabled_context = ("POST", "/v1/integrations/personal-ai/context")
     for method, path in sorted(domain_paths):
         response = api_client.request(method, path, content=b"not-json")
-        assert response.status_code == 401, (method, path, response.text)
+        expected_status = 404 if (method, path) == disabled_context else 401
+        assert response.status_code == expected_status, (method, path, response.text)
 
     assert api_client.get("/health").status_code == 200
     assert api_client.get("/ready").status_code == 200
@@ -869,3 +871,33 @@ def test_authenticated_cleanup_routes_receive_verified_user_and_service_context(
     retry_context = observed[-1][1]
     assert retry_context is not None
     assert retry_context.user_id_token == user_token
+
+
+def test_session_retains_verified_authentication_time_without_refreshing_it(
+    database_engine: Engine,
+) -> None:
+    from personal_travel.auth.sessions import load_active_session
+
+    principal = VerifiedPrincipal(
+        issuer="https://accounts.google.com",
+        subject="synthetic-time-user",
+        owner_id=stable_google_owner_id("https://accounts.google.com", "synthetic-time-user"),
+        email="owner@gmail.com",
+        issued_at=int(time.time()),
+        expires_at=int(time.time()) + 3600,
+        authenticated_at=int(time.time()) - 120,
+    )
+    with Session(database_engine, expire_on_commit=False) as session, session.begin():
+        token, _, _ = create_session(session, principal, ttl_seconds=3600)
+    with Session(database_engine) as session:
+        saved = load_active_session(session, token)
+        assert saved is not None
+        assert saved.principal.authenticated_at == principal.authenticated_at
+        assert saved.principal.authenticated_at != saved.principal.issued_at
+        old = session.scalar(select(AuthSession))
+        assert old is not None
+        old.upstream_auth_time = None
+        session.commit()
+    with Session(database_engine) as session:
+        saved = load_active_session(session, token)
+        assert saved is not None and saved.principal.authenticated_at is None

@@ -155,8 +155,7 @@ def _record(
         permission_dependencies=(_trip_permission(trip),),
         selection_binding=selection_binding,
         field_sensitivity=tuple(
-            ContextFieldSensitivity(field=name, sensitivity=sensitivity)
-            for name in payload
+            ContextFieldSensitivity(field=name, sensitivity=sensitivity) for name in payload
         ),
     )
 
@@ -255,7 +254,7 @@ def _context_records(trip: Trip, request: ContextReadRequest) -> tuple[ContextRe
             if request.operation == "verify":
                 return ()
             raise HTTPException(status_code=404, detail="context_not_found")
-        payload = (
+        payload: ContextPayload = (
             {"trip_revision": trip.revision}
             if request.operation == "verify"
             else {
@@ -283,7 +282,7 @@ def _context_records(trip: Trip, request: ContextReadRequest) -> tuple[ContextRe
     }.get(request.operation)
     if allowed is None or not set(fields).issubset(allowed):
         raise HTTPException(status_code=422, detail="context_fields_not_allowed")
-    trip_source = {
+    trip_source: ContextPayload = {
         "trip_title": trip.title,
         "start_date": trip.start_date.isoformat(),
         "end_date": trip.end_date.isoformat(),
@@ -393,13 +392,17 @@ def _context_records(trip: Trip, request: ContextReadRequest) -> tuple[ContextRe
         selected_reservation = key in selected
         if selected_reservation:
             found.add(key)
-        anchor: tuple[str, str, str] | None = None
+        anchor: ContextSelectionBinding | None = None
         if not selected_reservation and include_reservations:
             if (
                 reservation.place_id is not None
                 and ("place", str(reservation.place_id)) in selected
             ):
-                anchor = ("place", str(reservation.place_id), "place_reservation_summary")
+                anchor = ContextSelectionBinding(
+                    entity_type="place",
+                    entity_id=str(reservation.place_id),
+                    relationship="place_reservation_summary",
+                )
             else:
                 for day in trip.days:
                     for item in day.items:
@@ -407,10 +410,10 @@ def _context_records(trip: Trip, request: ContextReadRequest) -> tuple[ContextRe
                             "itinerary_item",
                             str(item.id),
                         ) in selected and item.reservation_id == reservation.id:
-                            anchor = (
-                                "itinerary_item",
-                                str(item.id),
-                                "itinerary_item_reservation_summary",
+                            anchor = ContextSelectionBinding(
+                                entity_type="itinerary_item",
+                                entity_id=str(item.id),
+                                relationship="itinerary_item_reservation_summary",
                             )
                             break
                     if (
@@ -418,11 +421,19 @@ def _context_records(trip: Trip, request: ContextReadRequest) -> tuple[ContextRe
                         and ("day", str(day.id)) in selected
                         and any(item.reservation_id == reservation.id for item in day.items)
                     ):
-                        anchor = ("day", str(day.id), "day_reservation_summary")
+                        anchor = ContextSelectionBinding(
+                            entity_type="day",
+                            entity_id=str(day.id),
+                            relationship="day_reservation_summary",
+                        )
                     if anchor is not None:
                         break
                 if anchor is None and ("trip", str(trip.id)) in selected:
-                    anchor = ("trip", str(trip.id), "trip_reservation_summary")
+                    anchor = ContextSelectionBinding(
+                        entity_type="trip",
+                        entity_id=str(trip.id),
+                        relationship="trip_reservation_summary",
+                    )
         if selected_reservation or anchor is not None:
             records.append(
                 _record(
@@ -438,13 +449,7 @@ def _context_records(trip: Trip, request: ContextReadRequest) -> tuple[ContextRe
                     ),
                     observed_at=reservation.updated_at,
                     sensitivity="sensitive",
-                    selection_binding=(
-                        ContextSelectionBinding(
-                            entity_type=anchor[0], entity_id=anchor[1], relationship=anchor[2]
-                        )
-                        if anchor is not None
-                        else None
-                    ),
+                    selection_binding=anchor,
                 )
             )
     if selected - found:

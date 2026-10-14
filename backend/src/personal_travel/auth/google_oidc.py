@@ -338,6 +338,7 @@ def principal_from_google_token(token: str, settings: Settings) -> VerifiedPrinc
     issued_at = claims.get("iat")
     expires_at = claims.get("exp")
     nonce = claims.get("nonce")
+    authenticated_at = claims.get("auth_time")
     now = int(time.time())
     if (
         not isinstance(subject, str)
@@ -356,6 +357,11 @@ def principal_from_google_token(token: str, settings: Settings) -> VerifiedPrinc
     ):
         raise InvalidIdentityToken
 
+    if authenticated_at is not None and (
+        type(authenticated_at) is not int or authenticated_at < 0 or authenticated_at > now + 30
+    ):
+        raise InvalidIdentityToken
+
     return VerifiedPrincipal(
         issuer=CANONICAL_GOOGLE_ISSUER,
         subject=subject,
@@ -364,6 +370,7 @@ def principal_from_google_token(token: str, settings: Settings) -> VerifiedPrinc
         issued_at=int(issued_at),
         expires_at=int(expires_at),
         nonce=nonce if isinstance(nonce, str) else None,
+        authenticated_at=authenticated_at,
     )
 
 

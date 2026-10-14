@@ -7,12 +7,15 @@ from urllib.parse import urlsplit
 from pydantic import AliasChoices, AnyHttpUrl, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from personal_travel.clients.task_control import SourceTaskSettings
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=("../.env", ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
+        hide_input_in_errors=True,
         populate_by_name=True,
     )
 
@@ -38,6 +41,7 @@ class Settings(BaseSettings):
     auth_oauth_flow_cookie_name: str = Field(default="__Host-travel_oauth_flow", max_length=64)
     auth_ai_token_cookie_name: str = Field(default="__Host-travel_ai_token", max_length=64)
     personal_ai_auth_mode: Literal["none", "google_cloud_run_iam"] = "none"
+    task_control: SourceTaskSettings | None = None
     personal_ai_context_enabled: bool = False
     personal_ai_context_service_iam_audience: str = Field(default="", max_length=500)
     personal_ai_context_service_account: str = Field(default="", max_length=320)
@@ -263,6 +267,14 @@ class Settings(BaseSettings):
             and self.personal_ai_auth_mode == "none"
         ):
             raise ValueError("Authenticated AI operations require an independent AI credential.")
+        if self.task_control is not None and (
+            self.travel_auth_mode != "google_oidc"
+            or self.google_oidc_issuer != "https://accounts.google.com"
+            or not self.personal_ai_context_enabled
+            or not self.personal_ai_context_service_iam_audience.startswith("https://")
+            or not self.personal_ai_context_service_account.endswith(".iam.gserviceaccount.com")
+        ):
+            raise ValueError("task_control_requires_verified_context_identity")
         return self
 
     @property

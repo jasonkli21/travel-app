@@ -5,6 +5,7 @@ description = "API for the personal travel application"
 requires-python = ">=3.12"
 dependencies = [
   "alembic>=1.13",
+  "cryptography>=46,<51",
   "fastapi>=0.115",
   "google-auth[requests]>=2.59,<3",
   "httpx>=0.27",
@@ -37,6 +38,10 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.ruff.format]
 quote-style = "double"
+
+# Shared wire module is formatted canonically at 88 columns by the suite generator.
+exclude = [
+    "src/personal_travel/clients/task_control.py","src/personal_travel/clients/task_wire.py"]
 
 [tool.mypy]
 python_version = "3.12"

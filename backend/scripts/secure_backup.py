@@ -21,13 +21,21 @@ import tempfile
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL, make_url
+from sqlalchemy.orm import Session
+
+from personal_travel.services.owner_erasure import (
+    ErasureLedgerSnapshot,
+    ledger_snapshot,
+    replay_erasure_ledger,
+)
+from personal_travel.services.source_store import LocalSourceStore
 
 MANIFEST_NAME = "manifest.json"
 DATABASE_NAME = "database.dump.age"
@@ -682,7 +690,12 @@ def restore_backup(
     identity: Path,
     database_url: str,
     store_destination: Path,
+    erasure_snapshot: ErasureLedgerSnapshot | None = None,
 ) -> dict[str, Any]:
+    if erasure_snapshot is None:
+        raise BackupError(
+            "A current independently retained erasure ledger is required before restore."
+        )
     started = time.monotonic()
     _assert_empty_database(database_url)
     store_destination = store_destination.expanduser().absolute()
@@ -696,10 +709,25 @@ def restore_backup(
         manifest, database_ciphertext, private_root = _read_archive(
             artifact.expanduser().absolute(), identity.expanduser().absolute(), scratch
         )
+        try:
+            created_at = datetime.fromisoformat(manifest["created_at"])
+            if (
+                created_at.tzinfo is None
+                or not created_at
+                <= erasure_snapshot.observed_at
+                <= datetime.now(UTC) + timedelta(seconds=60)
+            ):
+                raise ValueError("stale erasure snapshot")
+        except (KeyError, TypeError, ValueError) as exc:
+            raise BackupError(
+                "The erasure ledger must be observed after this backup "
+                "and must not be future-dated."
+            ) from exc
         _verify_database_dump(database_ciphertext, identity.expanduser().absolute())
         store_destination.parent.mkdir(parents=True, exist_ok=True)
         staged_store = store_destination.parent / f".{store_destination.name}.{uuid4().hex}.restore"
         shutil.copytree(private_root, staged_store, copy_function=shutil.copyfile)
+        os.chmod(staged_store, 0o700)
         for path in staged_store.rglob("*"):
             if path.is_file():
                 os.chmod(path, 0o600)
@@ -715,6 +743,25 @@ def restore_backup(
         reference_counts = _validate_private_reference_inventory(
             private_references, restored_inventory
         )
+        engine = create_engine(database_url, pool_size=1, max_overflow=0)
+        try:
+            with Session(engine) as session, session.begin():
+                store = LocalSourceStore(staged_store)
+                try:
+                    replay = replay_erasure_ledger(session, erasure_snapshot, store=store)
+                finally:
+                    store.close()
+        finally:
+            engine.dispose()
+        if replay["pending"]:
+            raise BackupError(
+                "Restored owner erasure or upstream cleanup remains pending; promotion is blocked."
+            )
+        counts = _validate_restored_database(database_url, manifest["alembic_revision"])
+        restored_inventory = _store_inventory(staged_store)
+        reference_counts = _validate_private_reference_inventory(
+            _private_attachment_references(database_url), restored_inventory
+        )
         revision = _current_revision(database_url)
         os.replace(staged_store, store_destination)
         staged_store = None
@@ -722,7 +769,8 @@ def restore_backup(
             "restored": True,
             "alembic_revision": revision,
             "row_counts": counts,
-            "private_objects": len(manifest["private_objects"]),
+            "private_objects": len(restored_inventory),
+            "erasure_replay": replay,
             "private_references": reference_counts,
             "elapsed_seconds": round(time.monotonic() - started, 3),
         }
@@ -753,6 +801,16 @@ def _parser() -> argparse.ArgumentParser:
     restore.add_argument("--identity", type=Path, required=True)
     restore.add_argument("--store-dir", type=Path, required=True)
     restore.add_argument(
+        "--erasure-ledger",
+        type=Path,
+        required=True,
+        help="current ledger exported separately from historical backups",
+    )
+    ledger = commands.add_parser(
+        "erasure-ledger", help="export current minimal markers from DATABASE_URL"
+    )
+    ledger.add_argument("--output", type=Path, required=True)
+    restore.add_argument(
         "--database-url-env",
         default="RESTORE_DATABASE_URL",
         help="environment variable containing the separate restore database URL",
@@ -778,7 +836,34 @@ def main() -> int:
             payload = {"backup": str(artifact), "bytes": size, "sha256": digest}
         elif args.command == "verify":
             payload = verify_backup(args.artifact, args.identity)
+        elif args.command == "erasure-ledger":
+            database_url = os.environ.get("DATABASE_URL", "")
+            if not database_url:
+                raise BackupError("Set DATABASE_URL for the current authoritative erasure ledger.")
+            engine = create_engine(database_url, pool_size=1, max_overflow=0)
+            try:
+                with Session(engine) as session:
+                    snapshot = ledger_snapshot(session)
+            finally:
+                engine.dispose()
+            # Never replace a previous recovery artifact implicitly.
+            with args.output.open("x", encoding="utf-8") as output:
+                os.chmod(args.output, 0o600)
+                output.write(snapshot.model_dump_json())
+            payload = {"erasure_ledger": str(args.output), "owner_count": len(snapshot.owners)}
         else:
+            if (
+                args.erasure_ledger.is_symlink()
+                or not args.erasure_ledger.is_file()
+                or args.erasure_ledger.stat().st_size > 2 * 1024 * 1024
+            ):
+                raise BackupError("The current erasure ledger file is unavailable or oversized.")
+            try:
+                snapshot = ErasureLedgerSnapshot.model_validate_json(
+                    args.erasure_ledger.read_bytes()
+                )
+            except ValueError as exc:
+                raise BackupError("The erasure ledger file is invalid.") from exc
             database_url = os.environ.get(args.database_url_env, "")
             if not database_url:
                 raise BackupError(f"Set {args.database_url_env} to a separate empty database URL.")
@@ -787,6 +872,7 @@ def main() -> int:
                 identity=args.identity,
                 database_url=database_url,
                 store_destination=args.store_dir,
+                erasure_snapshot=snapshot,
             )
         print(json.dumps(payload, sort_keys=True, indent=2))
         return 0

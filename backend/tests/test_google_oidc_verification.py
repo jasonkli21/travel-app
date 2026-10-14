@@ -364,3 +364,22 @@ def test_google_key_trickle_exceeds_one_elapsed_budget(monkeypatch, phase: str) 
 def test_identity_configuration_fails_closed_on_incomplete_ai_or_allowlist(settings) -> None:
     with pytest.raises(ValueError):
         oidc_settings(**settings)
+
+
+def test_verified_auth_time_is_preserved_and_missing_remains_unknown(google_keys) -> None:
+    signer, _ = google_keys
+    auth_time = int(time.time()) - 90
+    principal = principal_from_google_token(
+        google_token(signer, auth_time=auth_time), oidc_settings()
+    )
+    assert principal.authenticated_at == auth_time
+    assert (
+        principal_from_google_token(google_token(signer), oidc_settings()).authenticated_at is None
+    )
+
+
+@pytest.mark.parametrize("value", [True, -1, "123", 1.5])
+def test_malformed_authentication_time_is_rejected(google_keys, value) -> None:
+    signer, _ = google_keys
+    with pytest.raises(InvalidIdentityToken):
+        principal_from_google_token(google_token(signer, auth_time=value), oidc_settings())

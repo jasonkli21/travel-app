@@ -12,6 +12,7 @@ class VerifiedPrincipal:
     issued_at: int
     expires_at: int
     nonce: str | None = None
+    authenticated_at: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

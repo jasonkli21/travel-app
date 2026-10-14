@@ -18,6 +18,8 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -33,7 +35,10 @@ from personal_travel.models import (
     Trip,
     TripDay,
 )
+from personal_travel.models.auth import AuthIdentity
+from personal_travel.models.owner_erasure import OwnerErasureLedger
 from personal_travel.services.attachments import AttachmentService
+from personal_travel.services.owner_erasure import freeze_owner, ledger_snapshot
 from personal_travel.services.source_store import LocalSourceStore
 from personal_travel.services.trip_exports import build_export, render_export
 from scripts.secure_backup import (
@@ -54,6 +59,27 @@ BOOKING_BYTES = b"synthetic booking source for recovery"
 PENDING_PROMOTION_BYTES = b"complete upload interrupted after link promotion"
 PENDING_PARTIAL_BYTES = b"partial upload bytes"
 PENDING_UPLOAD_BYTES = b"complete upload interrupted during temporary write"
+
+
+def _repository_alembic_head() -> str:
+    backend_dir = Path(__file__).resolve().parents[1]
+    config = Config(str(backend_dir / "alembic.ini"))
+    config.set_main_option("script_location", str(backend_dir / "migrations"))
+    try:
+        head = ScriptDirectory.from_config(config).get_current_head()
+    except Exception as exc:
+        raise BackupError("Could not determine the repository Alembic head.") from exc
+    if not head:
+        raise BackupError("The repository must have exactly one current Alembic head.")
+    return head
+
+
+def _require_repository_head(source_revision: str) -> None:
+    expected_head = _repository_alembic_head()
+    if source_revision != expected_head:
+        raise BackupError(
+            f"Recovery smoke source must be migrated to the current head, {expected_head}."
+        )
 
 
 def _database_has_business_data(database_url: str) -> bool:
@@ -86,7 +112,7 @@ def _seed_source(database_url: str, store_dir: Path) -> tuple[str, dict[str, str
     (store_dir / attachment_key).write_bytes(ATTACHMENT_BYTES)
     (store_dir / booking_key).write_bytes(BOOKING_BYTES)
     (store_dir / pending_promotion_key).with_suffix(".tmp").write_bytes(PENDING_PROMOTION_BYTES)
-    (store_dir / f"{pending_promotion_key}.tmp").hardlink_to(store_dir / pending_promotion_key)
+    (store_dir / pending_promotion_key).hardlink_to(store_dir / f"{pending_promotion_key}.tmp")
     (store_dir / f"{pending_partial_key}.tmp").write_bytes(PENDING_PARTIAL_BYTES)
 
     engine = create_engine(database_url, pool_size=1, max_overflow=0)
@@ -387,8 +413,7 @@ def run() -> dict[str, object]:
         raise BackupError("Recovery smoke source and restore databases must be different.")
     if _database_has_business_data(source_url):
         raise BackupError("Recovery smoke source has business data; use a fresh empty database.")
-    if _current_revision(source_url) != "0015":
-        raise BackupError("Recovery smoke source must be migrated to the current head, 0015.")
+    _require_repository_head(_current_revision(source_url))
 
     with tempfile.TemporaryDirectory(prefix="travel-recovery-smoke-") as raw_dir:
         scratch = Path(raw_dir)
@@ -398,22 +423,77 @@ def run() -> dict[str, object]:
         restored_store = scratch / "restored-store"
         identity = scratch / "age-identity.txt"
         trip_id, keys = _seed_source(source_url, store_dir)
-        recipient = _age_recipient(identity)
-        artifact = create_backup(
-            database_url=source_url,
-            store_dir=store_dir,
-            output_dir=backup_dir,
-            recipient=recipient,
-            writes_stopped=True,
-        )
+        deleted_owner = "synthetic-erased-after-backup"
+        deleted_key = uuid4().hex
+        (store_dir / deleted_key).write_bytes(b"synthetic deleted bytes")
+        source_engine = create_engine(source_url)
+        try:
+            with Session(source_engine) as session, session.begin():
+                session.add(
+                    AuthIdentity(
+                        owner_id=deleted_owner,
+                        issuer="https://accounts.google.com",
+                        subject=deleted_owner,
+                        email="erased@example.invalid",
+                        status="active",
+                    )
+                )
+                session.flush()
+                erased_trip = Trip(
+                    owner_id=deleted_owner,
+                    title="Must not return from old backup",
+                    start_date=date(2026, 10, 14),
+                    end_date=date(2026, 10, 14),
+                    timezone="UTC",
+                    revision=1,
+                )
+                session.add(erased_trip)
+                session.flush()
+                session.add(
+                    SourceAttachment(
+                        owner_id=deleted_owner,
+                        trip_id=erased_trip.id,
+                        purpose="trip_attachment",
+                        object_key=deleted_key,
+                        sha256=hashlib.sha256(b"synthetic deleted bytes").hexdigest(),
+                        byte_size=len(b"synthetic deleted bytes"),
+                        media_type="text/plain",
+                        display_filename="synthetic-erased.txt",
+                        state="ready",
+                    )
+                )
+            recipient = _age_recipient(identity)
+            artifact = create_backup(
+                database_url=source_url,
+                store_dir=store_dir,
+                output_dir=backup_dir,
+                recipient=recipient,
+                writes_stopped=True,
+            )
+            with Session(source_engine) as session, session.begin():
+                freeze_owner(session, deleted_owner)
+            with Session(source_engine) as session:
+                current_markers = ledger_snapshot(session)
+        finally:
+            source_engine.dispose()
         verified = verify_backup(artifact, identity)
         restored = restore_backup(
             artifact=artifact,
             identity=identity,
             database_url=destination_url,
+            erasure_snapshot=current_markers,
             store_destination=restored_store,
         )
         _assert_restored_invariants(destination_url, restored_store, trip_id, keys)
+        restored_engine = create_engine(destination_url)
+        try:
+            with Session(restored_engine) as session:
+                assert session.get(OwnerErasureLedger, deleted_owner) is not None
+                assert session.get(AuthIdentity, deleted_owner) is None
+                assert session.scalar(select(Trip).where(Trip.owner_id == deleted_owner)) is None
+            assert not (restored_store / deleted_key).exists()
+        finally:
+            restored_engine.dispose()
         return {
             "backup_verified": verified["verified"],
             "source_revision": _current_revision(source_url),
@@ -422,6 +502,7 @@ def run() -> dict[str, object]:
             "private_objects": restored["private_objects"],
             "private_references": restored["private_references"],
             "application_export": "passed",
+            "post_backup_erasure_replay": restored["erasure_replay"],
         }
 
 

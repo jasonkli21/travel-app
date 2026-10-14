@@ -112,9 +112,11 @@ def test_travel_shopping_export_is_narrow_consent_bound_and_revisioned():
         operation="federation",
         purpose="shopping_trip_context",
         destination_application_id="shopping",
-        entity_refs=(ContextEntityReference(
-            entity_type="trip", entity_id=str(trip.id), application_id="travel"
-        ),),
+        entity_refs=(
+            ContextEntityReference(
+                entity_type="trip", entity_id=str(trip.id), application_id="travel"
+            ),
+        ),
         fields=("destination", "start_date", "end_date"),
         max_results=1,
         max_bytes=4096,
@@ -141,9 +143,7 @@ def test_travel_shopping_export_is_narrow_consent_bound_and_revisioned():
     assert empty_destination.source_version == "5"
 
     trip.cross_domain_sharing_allowed = False
-    verify = request.model_copy(
-        update={"operation": "verify", "fields": ("trip_revision",)}
-    )
+    verify = request.model_copy(update={"operation": "verify", "fields": ("trip_revision",)})
     assert context_routes._context_records(trip, verify) == ()
     with pytest.raises(HTTPException) as error:
         context_routes._context_records(trip, request)
@@ -594,7 +594,7 @@ def test_hosted_context_read_requires_service_and_user_identity_separately(
         owner_id="local-must-not-authorize",
         travel_auth_mode="google_oidc",
         google_oauth_client_id="synthetic-client",
-        google_oauth_client_secret="synthetic-credential",
+        google_oauth_client_secret="synthetic-credential",  # pragma: allowlist secret
         google_oauth_redirect_uri="https://travel.example.test/auth/google/callback",
         google_oauth_allowed_email="owner@gmail.com",
         allowed_hosts="api.travel.example.test",

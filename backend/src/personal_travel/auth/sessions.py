@@ -35,6 +35,10 @@ def matches_digest(value: str, expected_digest: str) -> bool:
 def persist_verified_identity(session: Session, principal: VerifiedPrincipal) -> AuthIdentity:
     if principal.owner_id != stable_google_owner_id(principal.issuer, principal.subject):
         raise ValueError("The verified identity does not match the stable Google owner ID.")
+    from personal_travel.models.owner_erasure import OwnerErasureLedger
+
+    if session.get(OwnerErasureLedger, principal.owner_id) is not None:
+        raise ValueError("The account is unavailable.")
     identity = session.get(AuthIdentity, principal.owner_id)
     if identity is None:
         identity = AuthIdentity(
@@ -79,6 +83,7 @@ def create_session(
             owner_id=principal.owner_id,
             csrf_token_hash=csrf_token_hash,
             issued_at=current,
+            upstream_auth_time=principal.authenticated_at,
             expires_at=expires_at,
         )
     )
@@ -127,6 +132,7 @@ def load_active_session(
         email=identity.email,
         issued_at=int(browser_session.issued_at.timestamp()),
         expires_at=int(browser_session.expires_at.timestamp()),
+        authenticated_at=browser_session.upstream_auth_time,
     )
     return ActiveSession(
         principal=principal,

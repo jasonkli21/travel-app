@@ -53,7 +53,8 @@ def clean_database(database_engine: Engine) -> None:
     with database_engine.begin() as connection:
         connection.execute(
             text(
-                "TRUNCATE provider_quota_buckets, booking_deletion_intents, booking_imports, "
+                "TRUNCATE owner_erasure_ledger, delegated_source_commands, provider_quota_buckets, "
+                "booking_deletion_intents, booking_imports, "
                 "source_attachments, "
                 "owner_migration_audits, "
                 "auth_sessions, oauth_login_attempts, "

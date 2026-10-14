@@ -6,6 +6,84 @@
 **Decision:** [ADR 0016](../decisions/0016-phase9-operational-hardening.md)
 **Runbook:** [Local operations](../runbooks/phase-9-operations.md)
 
+## Stabilization Gate 0/1 recheck — 2026-10-13
+
+The latest observed workflow at baseline revision
+`09584976d46c67c97a19c72d173b2ee88dbcb31c` is [run
+38286358285](https://github.com/jasonkli21/travel-app/actions/runs/38286358285).
+Its frontend, docs, and container jobs passed. Backend Ruff check passed, but
+Ruff formatting failed in `personal_ai_context.py` and its test, so backend
+mypy, pytest, package build, and migration steps were skipped. The dependency
+audit passed. The secret hook reported two test-only OAuth configuration
+fixtures; both values were synthetic placeholders. The recovery job applied
+migrations through `0017` and then failed because `recovery_smoke.py` still
+required `0015`.
+
+The working-tree fixes format the two files, derive the single canonical
+Alembic head through the repository migration scripts while rejecting a
+mismatch, and correct the recovery fixture’s interrupted-promotion hard-link
+direction. Full local backend pytest additionally exposed a stale mypy typing
+in the read-only context projection, a test expecting `401` for a default-off
+route that is intentionally hidden with `404`, and a migration test pinned to
+`0015`; these received bounded fixes. The two synthetic OAuth fixtures now
+carry an inline scanner allowlist. The baseline was refreshed for four moved
+locations only: all 29 fingerprints remain identical and no new fingerprint
+was added.
+
+Local verification on macOS/Python 3.12.14 and PostgreSQL 17.11:
+
+- Ruff check passed; `ruff format --check` reported 164 files already formatted.
+- Mypy passed for 103 source files.
+- Full backend suite: **334 passed, 51 existing Starlette deprecation warnings**.
+- `uv build --project backend --out-dir /tmp/travel-api-dist` built a source
+distribution and wheel.
+- The complete encrypted recovery smoke passed using `age` v1.3.2 and PG17
+  tools, with separate synthetic databases `travel_test` and `travel_restore`.
+  Backup authentication, SQL and private bytes, application export, and
+  restored schema/ORM parity passed at revision `0017`; 1 trip, reservation,
+  proposal, and booking import were restored, plus 4 private objects (2 ready,
+  2 pending) and no unreferenced objects.
+- A full tracked-source secret scan against a temporary copy of the reviewed
+  baseline found no new detections. The repository hook refuses to run when the
+  changed baseline is unstaged; its clean-checkout CI form therefore remains
+  to be exercised after the working tree is reviewed.
+
+No commit, push, or new remote workflow run was performed. Local PostgreSQL 17
+and synthetic recovery do not substitute for GitHub’s Ubuntu/PostgreSQL 16
+run, Docker image acceptance, browser checks, live identity, or hosted recovery.
+Phase 9 remains open: owner-wide deletion and restore-time deletion fencing,
+approved recovery objectives/retention, image scanning/digest pinning, full
+privacy/browser evidence, and hosted IAM/storage/provider/deployment gates are
+still unimplemented or unverified. The older 2026-10-05 and 2026-10-08
+verification sections below remain historical evidence for those earlier
+revisions and environments.
+
+## Stabilization Gate 1 frontend and local journey — 2026-10-13
+
+The frontend checks below ran with the required bundled Node runtime and the
+package manager pinned by `frontend/package.json` (`pnpm@10.17.1`). The bundled
+runtime is Node `v24.19.0`; the GitHub workflow uses Node 22, so the local run
+supplements rather than replaces that environment.
+
+The commands ran from `/tmp` with the bundled Node runtime and pnpm cache
+isolated under `/tmp`:
+
+```bash
+export PATH=/Users/jasonkli/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH
+pnpm dlx pnpm@10.17.1 --version
+CI=true PNPM_HOME=/tmp/travel-pnpm-home NPM_CONFIG_STORE_DIR=/tmp/travel-pnpm-store XDG_CACHE_HOME=/tmp/travel-pnpm-cache pnpm dlx pnpm@10.17.1 --dir /Users/jasonkli/projects/personal-travel-app/frontend install --frozen-lockfile
+pnpm dlx pnpm@10.17.1 --dir /Users/jasonkli/projects/personal-travel-app/frontend run lint
+pnpm dlx pnpm@10.17.1 --dir /Users/jasonkli/projects/personal-travel-app/frontend run typecheck
+pnpm dlx pnpm@10.17.1 --dir /Users/jasonkli/projects/personal-travel-app/frontend test
+pnpm dlx pnpm@10.17.1 --dir /Users/jasonkli/projects/personal-travel-app/frontend run build
+```
+
+All five commands passed. `typecheck` ran `next typegen && tsc --noEmit`; `next typegen` generated Next route types. There is no OpenAPI or generated API client; `frontend/lib/api.ts` types are handwritten. The Node test suite reported **60 passed, 0 failed, 0 skipped**. Next `16.3.8` completed its Turbopack production build and page generation. Node emitted existing typeless-package-module warnings in `frontend/lib/api.ts` and `frontend/scripts/workspace-mutation.js`. The pre-existing untracked `frontend/pnpm-workspace.yaml` was preserved and caused pnpm to skip the `unrs-resolver` install script; the frozen lockfile was unchanged. Do not interpret this local Node 24 run as proof of Node 22 CI behavior.
+
+A local-only browser journey used the built standalone frontend on `127.0.0.1:3000` and the API on `127.0.0.1:8000`, both explicitly configured for local deployment and local auth, against synthetic PostgreSQL 17 database `travel_test` on `127.0.0.1:55439`. No dotenv files, real personal data, credentials, Google OAuth, or provider calls were used. The journey created a Copenhagen trip, a tentative itinerary activity, and a tentative lodging reservation. It used the UI to download JSON, HTML, and ICS exports. Proxy responses were `200`, carried revision and attachment headers, `Cache-Control: no-store`, and `X-Content-Type-Options: nosniff`; the JSON export excluded the synthetic confirmation code and attached documents. Reload and a backend restart retained the trip and reservation. A write with an old expected revision returned `409` without changing state; a cross-owner trip read returned `404`. The trip was then deleted with `204`, and a direct count confirmed the trip, reservation, and days were removed while the separate recovery fixture remained.
+
+The local journey is only a partial Gate 3 result. It does not cover every major edit/delete flow, uncertain network retry, stale browser draft recovery, private attachment/import lifecycle, verified Google multi-user isolation, provider-dependent research/proposals/comparisons, production restart, or hosted acceptance. Research and proposal feature gates, Geoapify, private imports, and attachments stayed disabled; the local UI reported the missing map key. A local sample must not be treated as full product acceptance, a deployment result, or a privacy/security approval. No commit, push, or new CI workflow was triggered.
+
 ## Independent review remediation — 2026-10-06
 
 The first independent review found concrete bypasses in quota path matching,

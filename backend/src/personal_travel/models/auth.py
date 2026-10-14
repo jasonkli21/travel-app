@@ -3,7 +3,16 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, Index, String, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from personal_travel.db.base import Base
@@ -38,10 +47,14 @@ class AuthSession(Base):
     csrf_token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    upstream_auth_time: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         CheckConstraint("issued_at < expires_at", name="valid_lifetime"),
+        CheckConstraint(
+            "upstream_auth_time IS NULL OR upstream_auth_time >= 0", name="valid_upstream_auth_time"
+        ),
         Index("ix_auth_sessions_owner_expiry", "owner_id", "expires_at"),
     )
 
