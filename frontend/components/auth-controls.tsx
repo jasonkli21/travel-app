@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { browserComparisonStorage, clearComparisonRetries } from "../lib/comparison-recovery.mjs";
+import { bindShoppingTaskOwner, clearShoppingTaskRecovery } from "../lib/shopping-task-recovery.mjs";
 
-type SessionStatus = { mode: string; authenticated: boolean; email?: string | null };
+type SessionStatus = { mode: string; authenticated: boolean; email?: string | null; recovery_owner_key?: string | null };
 
 function readCookie(name: string): string | null {
   const matches = document.cookie.split(";")
@@ -28,7 +29,11 @@ export default function AuthControls() {
         if (!response.ok || !payload || typeof payload.authenticated !== "boolean") {
           throw new Error("session_unavailable");
         }
-        if (mounted) setSession(payload as SessionStatus);
+        if (mounted) {
+          const value = payload as SessionStatus;
+          bindShoppingTaskOwner(value.recovery_owner_key ?? null);
+          setSession(value);
+        }
       })
       .catch(() => {
         if (mounted) setError("Session status is unavailable.");
@@ -56,6 +61,7 @@ export default function AuthControls() {
       });
       if (response.status === 204 || response.status === 401) {
         clearComparisonRetries(browserComparisonStorage());
+        clearShoppingTaskRecovery();
         router.replace("/sign-in?expired=1");
         return;
       }

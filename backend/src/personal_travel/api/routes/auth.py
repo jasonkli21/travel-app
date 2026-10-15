@@ -56,6 +56,7 @@ class AuthSessionResponse(BaseModel):
     authenticated: bool
     email: str | None = None
     expires_at: datetime | None = None
+    recovery_owner_key: str | None = None
 
 
 def _b64url_random(size: int = 32) -> str:
@@ -388,6 +389,9 @@ def current_session(
         authenticated=True,
         email=principal.email,
         expires_at=expires_at,
+        recovery_owner_key=hashlib.sha256(
+            f"travel-shopping-task-recovery-v1\0{principal.issuer}\0{principal.subject}".encode()
+        ).hexdigest(),
     )
 
 

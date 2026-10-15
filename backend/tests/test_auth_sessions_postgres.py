@@ -192,6 +192,7 @@ def test_domain_routes_authenticate_and_disabled_context_is_hidden(
         "authenticated": False,
         "email": None,
         "expires_at": None,
+        "recovery_owner_key": None,
     }
     stale_session = {settings.auth_session_cookie_name: "expired-session"}
     stale_status = api_client.get("/v1/auth/session", cookies=stale_session)

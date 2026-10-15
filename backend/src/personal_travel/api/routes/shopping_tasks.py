@@ -5,7 +5,7 @@ from typing import Any, Literal, cast
 from uuid import UUID
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
 from personal_travel.api.dependencies import OwnerDependency, SessionDependency
@@ -24,6 +24,7 @@ from personal_travel.clients.task_wire import (
     COMMAND_READ_FINGERPRINT,
     DelegatedCommandRead,
     DelegatedSourceCommand,
+    DelegatedTargetChoicesResult,
 )
 from personal_travel.config import Settings
 from personal_travel.services.shopping_commands import ShoppingCommandService, TripTaskChoice
@@ -88,6 +89,14 @@ def capabilities(request: Request) -> dict[str, bool]:
 @router.get(PREFIX + "/choices")
 def choices(request: Request) -> dict[str, Any]:
     return _relay(request, "GET", "/v1/federation/grants/choices")
+
+
+@router.get(PREFIX + "/projects", response_model=DelegatedTargetChoicesResult)
+def projects(request: Request, response: Response) -> dict[str, Any]:
+    """Relay Shopping's minimal owner-scoped project choices through PAI."""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    return _relay(request, "GET", "/v1/mutations/target-choices")
 
 
 @router.post(PREFIX + "/commands", response_model=DelegatedSourceCommand, status_code=201)
