@@ -36,18 +36,30 @@ class PrivatePlanBinding(Base):
         PGUUID(as_uuid=True),
         ForeignKey("personal_ai_sidecar_anchors.conversation_id", ondelete="CASCADE"),
     )
+    create_receipt_digest: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
     __table_args__ = (
         UniqueConstraint("conversation_id", name="uq_private_plan_binding_conversation"),
+        CheckConstraint(
+            "create_receipt_digest IS NULL OR "
+            "(conversation_id IS NOT NULL AND create_receipt_digest ~ '^[0-9a-f]{64}$')",
+            name="create_receipt",
+        ),
         UniqueConstraint(
-            "owner_id", "target_id", "client_namespace", "create_key",
+            "owner_id",
+            "target_id",
+            "client_namespace",
+            "create_key",
             name="uq_private_plan_create_scope",
         ),
         UniqueConstraint(
-            "owner_id", "trip_id", "target_id", "client_namespace",
+            "owner_id",
+            "trip_id",
+            "target_id",
+            "client_namespace",
             name="uq_private_plan_binding_scope",
         ),
     )

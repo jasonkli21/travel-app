@@ -38,9 +38,12 @@ original execution. Recoverable state is scoped to the authenticated owner and
 cleared on owner change. Browser rendering and native session behavior still
 need independent acceptance.
 
-The offline private PAS preview candidate introduces an opt-in source route,
-an owner-scoped conversation binding and an original-key preview journal.
-Integrated preview and dispatch remain `BLOCKED_CONTRACT`.
+The offline private PAS preview candidate verifies signed PAS create and preview
+receipts against the Travel-owned binding and original request. Migration 0022
+quarantines bindings without receipt provenance. Recovery can inspect metadata
+only by the original key after rechecking the current anchor and trip authority.
+Independent approval of the paired contract and integrated dispatch remain
+`BLOCKED_CONTRACT`.
 [Proposed reverse-hop contract](decisions/0017-private-plan-preview-source.md)
 
 ## Verification and release boundary

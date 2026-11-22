@@ -41,7 +41,11 @@ quote-style = "double"
 
 # Shared wire module is formatted canonically at 88 columns by the suite generator.
 exclude = [
-    "src/personal_travel/clients/task_control.py","src/personal_travel/clients/task_wire.py"]
+    "src/personal_travel/clients/task_control.py",
+    "src/personal_travel/clients/task_wire.py",
+    # The published 0021 migration is preserved byte for byte.
+    "migrations/versions/0021_private_plan_preview.py",
+]
 
 [tool.mypy]
 python_version = "3.12"

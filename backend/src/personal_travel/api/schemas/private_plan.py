@@ -24,9 +24,7 @@ class PrivatePlanSourceRequest(BaseModel):
     client_namespace: str = Field(pattern=SHA256_PATTERN)
     conversation_id: UUID
     operation: Literal["current", "verify"]
-    expected_source_version: str | None = Field(
-        default=None, pattern=EXPECTED_REVISION_PATTERN
-    )
+    expected_source_version: str | None = Field(default=None, pattern=EXPECTED_REVISION_PATTERN)
 
     @model_validator(mode="after")
     def verify_requires_expected_source_version(self) -> Self:

@@ -112,8 +112,13 @@ class SignedPlanFixture:
 class TestPrivatePlanDelegation(TestCase):
     def test_rejects_incomplete_registration(self) -> None:
         trust = SignedPlanFixture().trust
-        for name in ("service_audience", "service_account", "delegation_issuer",
-                     "delegation_key_id", "human_issuer"):
+        for name in (
+            "service_audience",
+            "service_account",
+            "delegation_issuer",
+            "delegation_key_id",
+            "human_issuer",
+        ):
             with self.subTest(name=name), self.assertRaises(ValueError):
                 replace(trust, **{name: ""})
 

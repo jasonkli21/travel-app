@@ -10,6 +10,7 @@ from threading import Barrier
 from uuid import UUID
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -25,6 +26,14 @@ from personal_travel.api.routes.personal_ai_context import (
 from personal_travel.api.routes.private_plan import mount_private_plan_source
 from personal_travel.api.schemas.private_plan import PRIVATE_PLAN_SOURCE_PATH
 from personal_travel.auth.contracts import VerifiedPrincipal
+from personal_travel.clients.private_plan import (
+    PlanDestination,
+    PlanReceipt,
+    PlanReceiptRegistration,
+    create_body,
+    preview_body,
+)
+from personal_travel.clients.task_wire import canonical_bytes
 from personal_travel.config import Settings
 from personal_travel.models.auth import AuthIdentity
 from personal_travel.models.private_plan import PrivatePlanBinding, PrivatePlanIntent
@@ -46,6 +55,64 @@ class Fixture:
     engine: Engine
     signed: SignedPlanFixture
     settings: Settings
+    receipt_key: Ed25519PrivateKey
+
+    @property
+    def destination(self) -> PlanDestination:
+        return PlanDestination(
+            application="travel",
+            provider="ChatGPT",
+            model="fake-model",
+            runtime="fake-runtime",
+            recipient="fake-account",
+        )
+
+    def receipt(
+        self,
+        conversation_id,
+        key,
+        title_or_content,
+        *,
+        revision=None,
+        expiry=None,
+        owner=OWNER,
+        subject=SUBJECT,
+        **scope_override,
+    ):
+        if revision is None:
+            request = create_body(key, title_or_content)
+            payload = {"conversation_id": str(conversation_id)}
+        else:
+            request = preview_body(key, title_or_content)
+            payload = {
+                "confirmation": "1" * 64,
+                "destination": self.destination.model_dump(),
+                "purpose": "foreground_application_plan",
+                "selected_context": [
+                    {"category": "conversation_history", "turns": 0},
+                    {"category": "domain_current", "fields": ["trip_revision", "trip_title"]},
+                    {"category": "ai_memory", "fields": ["content"]},
+                ],
+                "input_tokens_estimated": 10,
+                "expires_at": (expiry or datetime.now(UTC) + timedelta(seconds=20)).isoformat(),
+            }
+        body = canonical_bytes(payload)
+        statement = {
+            "schema_version": "travel-application-plan-receipt-v1",
+            "operation": "create" if revision is None else "preview",
+            "target_id": self.signed.trust.target_id,
+            "client_namespace": self.signed.trust.client_namespace,
+            "application_id": "travel",
+            "workspace_id": None,
+            "owner_id": owner,
+            "issuer": self.signed.trust.human_issuer,
+            "subject": subject,
+            "conversation_id": str(conversation_id),
+            "request_digest": hashlib.sha256(request).hexdigest(),
+            "response_digest": hashlib.sha256(body).hexdigest(),
+            "source_revision": str(revision) if revision is not None else None,
+        } | scope_override
+        return PlanReceipt(body, self.receipt_key.sign(canonical_bytes(statement)).hex())
 
     def session(self) -> Session:
         return Session(self.engine, autoflush=False, expire_on_commit=False)
@@ -58,6 +125,7 @@ class Fixture:
             session,
             settings=self.settings,
             trust=self.signed.trust,
+            receipts=PlanReceiptRegistration(self.receipt_key.public_key(), self.destination),
             principal=VerifiedPrincipal(
                 issuer=self.signed.trust.human_issuer,
                 subject=subject,
@@ -86,6 +154,7 @@ def plan_fixture(database_engine: Engine, clean_database: None) -> Iterator[Fixt
         database_engine,
         SignedPlanFixture(),
         Settings(_env_file=None, personal_ai_plan_enabled=True),
+        Ed25519PrivateKey.generate(),
     )
     with fixture.session() as session, session.begin():
         session.add(
@@ -120,7 +189,9 @@ def bind_fabricated_conversations(fixture: Fixture) -> None:
             )
             assert reserved.newly_reserved and reserved.conversation_id is None
             journal.bind_created_conversation(
-                trip_id=trip_id, create_key=create_key, returned_conversation_id=conversation
+                trip_id=trip_id,
+                create_key=create_key,
+                receipt=fixture.receipt(conversation, create_key, "Travel assistant"),
             )
 
 
@@ -264,7 +335,9 @@ def test_binding_is_write_once_and_disjoint_from_automatic_sidecar(
         assert match.conversation_id == CONVERSATIONS[0] and not match.newly_reserved
         with pytest.raises(DomainError) as conflicting_result:
             journal.bind_created_conversation(
-                trip_id=TRIPS[0], create_key=CREATES[0], returned_conversation_id=CONVERSATIONS[1]
+                trip_id=TRIPS[0],
+                create_key=CREATES[0],
+                receipt=plan_fixture.receipt(CONVERSATIONS[1], CREATES[0], "Travel assistant"),
             )
         assert conflicting_result.value.status_code == 409
 
@@ -280,12 +353,27 @@ def test_binding_is_write_once_and_disjoint_from_automatic_sidecar(
             assert binding is not None
             binding.client_namespace = "b" * 64
 
+    with plan_fixture.session() as session, session.begin():
+        binding = session.scalar(
+            select(PrivatePlanBinding).where(PrivatePlanBinding.create_key == CREATES[1])
+        )
+        assert binding is not None
+        session.delete(binding)
+    with plan_fixture.session() as session:
+        journal = plan_fixture.journal(session)
+        journal.reserve_create(trip_id=TRIPS[1], create_key=CREATES[1], title="Travel assistant")
+        with pytest.raises(DomainError) as automatic_collision:
+            journal.bind_created_conversation(
+                trip_id=TRIPS[1],
+                create_key=CREATES[1],
+                receipt=plan_fixture.receipt(legacy_id, CREATES[1], "Travel assistant"),
+            )
+        assert automatic_collision.value.status_code == 409
+
     signed = plan_fixture.signed
     body = signed.body(legacy_id)
     with TestClient(plan_fixture.app()) as client:
-        response = client.post(
-            PRIVATE_PLAN_SOURCE_PATH, json=body, headers=signed.headers(body)
-        )
+        response = client.post(PRIVATE_PLAN_SOURCE_PATH, json=body, headers=signed.headers(body))
         assert response.status_code == 404 and TITLES[0] not in response.text
 
 
@@ -345,8 +433,9 @@ def test_original_key_concurrent_reservation_and_ambiguous_lookup(
         assert journal.reserve_preview(**receipt_args, content=content) == "reserved"
         journal.record_preview(
             **receipt_args,
-            preview_digest="f" * 64,
-            expires_at=datetime.now(UTC) + timedelta(seconds=20),
+            receipt=plan_fixture.receipt(
+                CONVERSATIONS[1], UUID(int=402), content, revision=REVISIONS[1]
+            ),
         )
         assert journal.original_status(**receipt_args) == PlanRecovery(
             CONVERSATIONS[1], UUID(int=402)
@@ -391,14 +480,25 @@ def test_same_keys_and_email_under_a_distinct_owner_are_isolated(plan_fixture: F
         )
         assert reserved.newly_reserved
         other.bind_created_conversation(
-            trip_id=other_trip, create_key=CREATES[0], returned_conversation_id=other_conversation
-        )
-        assert other.reserve_preview(
             trip_id=other_trip,
-            conversation_id=other_conversation,
-            original_key=ORIGINAL_KEY,
-            content="Second fabricated intent",
-        ) == "reserved"
+            create_key=CREATES[0],
+            receipt=plan_fixture.receipt(
+                other_conversation,
+                CREATES[0],
+                "Other Travel assistant",
+                owner=OTHER_OWNER,
+                subject=other_subject,
+            ),
+        )
+        assert (
+            other.reserve_preview(
+                trip_id=other_trip,
+                conversation_id=other_conversation,
+                original_key=ORIGINAL_KEY,
+                content="Second fabricated intent",
+            )
+            == "reserved"
+        )
         with pytest.raises(DomainError) as wrong_owner:
             other.original_status(**source)
         assert wrong_owner.value.status_code == 404
@@ -411,3 +511,56 @@ def test_same_keys_and_email_under_a_distinct_owner_are_isolated(plan_fixture: F
             headers=plan_fixture.signed.headers(body, subject=other_subject),
         )
         assert denied.status_code == 404 and TITLES[0] not in denied.text
+
+
+def test_bindings_without_receipt_provenance_stay_quarantined(plan_fixture: Fixture) -> None:
+    conversation_id = CONVERSATIONS[0]
+    with plan_fixture.session() as session, session.begin():
+        # Represents a completed 0021 binding restored from before receipt verification.
+        session.add(
+            PersonalAISidecarAnchor(
+                conversation_id=conversation_id,
+                owner_id=OWNER,
+                trip_id=TRIPS[0],
+                lane="user_owned_plan",
+            )
+        )
+        session.flush()
+        session.add(
+            PrivatePlanBinding(
+                create_key=CREATES[0],
+                owner_id=OWNER,
+                trip_id=TRIPS[0],
+                issuer=plan_fixture.signed.trust.human_issuer,
+                subject=SUBJECT,
+                target_id=plan_fixture.signed.trust.target_id,
+                client_namespace=plan_fixture.signed.trust.client_namespace,
+                title="Travel assistant",
+                conversation_id=conversation_id,
+            )
+        )
+
+    args = {"trip_id": TRIPS[0], "create_key": CREATES[0]}
+    with plan_fixture.session() as session:
+        journal = plan_fixture.journal(session)
+        with pytest.raises(DomainError) as replay:
+            journal.reserve_create(**args, title="Travel assistant")
+        assert replay.value.status_code == 404
+        with pytest.raises(DomainError) as bind:
+            journal.bind_created_conversation(
+                **args,
+                receipt=plan_fixture.receipt(conversation_id, CREATES[0], "Travel assistant"),
+            )
+        assert bind.value.status_code == 404
+        with pytest.raises(DomainError) as recovery:
+            journal.original_status(
+                trip_id=TRIPS[0], conversation_id=conversation_id, original_key=ORIGINAL_KEY
+            )
+        assert recovery.value.status_code == 404
+
+    signed = plan_fixture.signed
+    body = signed.body(conversation_id)
+    with TestClient(plan_fixture.app()) as client:
+        result = client.post(PRIVATE_PLAN_SOURCE_PATH, json=body, headers=signed.headers(body))
+        assert result.status_code == 404
+        assert TITLES[0] not in result.text

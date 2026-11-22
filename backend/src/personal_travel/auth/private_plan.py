@@ -35,11 +35,17 @@ class PrivatePlanTrust:
 
     def __post_init__(self) -> None:
         identifiers = (
-            self.service_audience, self.service_account, self.delegation_issuer,
-            self.delegation_key_id, self.human_issuer,
+            self.service_audience,
+            self.service_account,
+            self.delegation_issuer,
+            self.delegation_key_id,
+            self.human_issuer,
         )
         if (
-            any(not value or value.strip() != value or not value.isprintable() for value in identifiers)
+            any(
+                not value or value.strip() != value or not value.isprintable()
+                for value in identifiers
+            )
             or not 1 <= len(self.target_id) <= 200
             or not all(character.isprintable() for character in self.target_id)
             or self.target_id.strip() != self.target_id
@@ -69,7 +75,7 @@ def authenticate_private_plan_source(
     ):
         raise ValueError("private_plan_source_denied")
 
-    token = authorizations[0][len("Bearer "):]
+    token = authorizations[0][len("Bearer ") :]
     if not token or len(token) > 8192 or any(char.isspace() for char in token):
         raise ValueError("private_plan_source_denied")
     verify_service(

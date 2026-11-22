@@ -1,21 +1,31 @@
 """Travel-owned private plan authority and a preview-only, original-key journal."""
 
-import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from hashlib import sha256
 from typing import Literal
 from uuid import UUID
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from personal_travel.api.schemas.private_plan import PRIVATE_PLAN_LANE, SHA256_PATTERN
+from personal_travel.api.schemas.private_plan import PRIVATE_PLAN_LANE
 from personal_travel.auth.contracts import VerifiedPrincipal
 from personal_travel.auth.private_plan import PrivatePlanTrust
-from personal_travel.clients.task_wire import canonical_bytes
+from personal_travel.clients.private_plan import (
+    PLAN_PATH,
+    PlanPreview,
+    PlanReceipt,
+    PlanReceiptError,
+    PlanReceiptRegistration,
+    PlanStatus,
+    PrivatePlanHTTP,
+    create_body,
+    preview_body,
+)
 from personal_travel.config import Settings
 from personal_travel.models.auth import AuthIdentity
 from personal_travel.models.owner_erasure import OwnerErasureLedger
@@ -63,6 +73,7 @@ def resolve_plan_trip(
         )
         .where(
             PrivatePlanBinding.conversation_id == conversation_id,
+            PrivatePlanBinding.create_receipt_digest.is_not(None),
             PrivatePlanBinding.owner_id == identity.owner_id,
             PrivatePlanBinding.issuer == identity.issuer,
             PrivatePlanBinding.subject == identity.subject,
@@ -112,6 +123,7 @@ class PrivatePlanJournal:
         settings: Settings,
         trust: PrivatePlanTrust,
         principal: VerifiedPrincipal,
+        receipts: PlanReceiptRegistration | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self.session = session
@@ -119,6 +131,7 @@ class PrivatePlanJournal:
         self.trust = trust
         self.principal = principal
         self.clock = clock
+        self.receipts = receipts
 
     def _identity(self) -> AuthIdentity:
         principal = self.principal
@@ -149,17 +162,16 @@ class PrivatePlanJournal:
             query = query.with_for_update()
         binding = self.session.scalar(query)
         if binding is not None and (binding.issuer, binding.subject) != (
-            identity.issuer, identity.subject
+            identity.issuer,
+            identity.subject,
         ):
             raise not_found("private plan")
         return binding
 
-    def reserve_create(
-        self, *, trip_id: UUID, create_key: UUID, title: str
-    ) -> ReservedPlanCreate:
+    def reserve_create(self, *, trip_id: UUID, create_key: UUID, title: str) -> ReservedPlanCreate:
         """Reserve the exact idempotent create before a caller can make its first POST."""
         title.encode("utf-8")
-        if not 1 <= len(title) <= 200:
+        if not 1 <= len(title) <= 200 or not title.strip():
             raise ValueError("private_plan_title_invalid")
         try:
             with self.session.begin():
@@ -181,7 +193,7 @@ class PrivatePlanJournal:
                     )
                     return ReservedPlanCreate(create_key, title, None, True)
                 if (binding.create_key, binding.title) == (create_key, title):
-                    return ReservedPlanCreate(create_key, title, binding.conversation_id, False)
+                    return self._existing_create(identity, binding)
         except IntegrityError:
             # A concurrent tab may have inserted the same original request.
             with self.session.begin():
@@ -189,15 +201,55 @@ class PrivatePlanJournal:
                 TripService(self.session, identity.owner_id).get(trip_id)
                 binding = self._create_for_trip(identity=identity, trip_id=trip_id)
                 if binding is not None and (binding.create_key, binding.title) == (
-                    create_key, title
+                    create_key,
+                    title,
                 ):
-                    return ReservedPlanCreate(create_key, title, binding.conversation_id, False)
+                    return self._existing_create(identity, binding)
         raise _plan_conflict()
 
+    def _existing_create(
+        self, identity: AuthIdentity, binding: PrivatePlanBinding
+    ) -> ReservedPlanCreate:
+        if binding.conversation_id is not None:
+            resolve_plan_trip(
+                self.session,
+                identity=identity,
+                trust=self.trust,
+                conversation_id=binding.conversation_id,
+                expected_trip_id=binding.trip_id,
+            )
+        return ReservedPlanCreate(binding.create_key, binding.title, binding.conversation_id, False)
+
+    def _verify_receipt(
+        self,
+        receipt: PlanReceipt,
+        binding: PrivatePlanBinding,
+        *,
+        operation: Literal["create", "preview"],
+        conversation_id: UUID,
+        request_digest: str,
+        source_revision: int | None = None,
+    ) -> PlanReceiptRegistration:
+        if self.receipts is None or type(receipt) is not PlanReceipt:
+            raise not_found("private plan")
+        receipt.verify(
+            self.receipts,
+            operation=operation,
+            target_id=binding.target_id,
+            client_namespace=binding.client_namespace,
+            owner_id=binding.owner_id,
+            issuer=binding.issuer,
+            subject=binding.subject,
+            conversation_id=conversation_id,
+            request_digest=request_digest,
+            source_revision=source_revision,
+        )
+        return self.receipts
+
     def bind_created_conversation(
-        self, *, trip_id: UUID, create_key: UUID, returned_conversation_id: UUID
-    ) -> None:
-        """Store the verified PAS response to this scope's reserved original create."""
+        self, *, trip_id: UUID, create_key: UUID, receipt: PlanReceipt
+    ) -> UUID:
+        """Verify the signed response against the exact original create reservation."""
         try:
             with self.session.begin():
                 identity = self._identity()
@@ -205,27 +257,37 @@ class PrivatePlanJournal:
                 binding = self._create_for_trip(identity=identity, trip_id=trip_id, lock=True)
                 if binding is None or binding.create_key != create_key:
                     raise not_found("private plan")
+                if type(receipt) is not PlanReceipt:
+                    raise not_found("private plan")
+                conversation_id = receipt.conversation_id()
+                self._verify_receipt(
+                    receipt,
+                    binding,
+                    operation="create",
+                    conversation_id=conversation_id,
+                    request_digest=sha256(
+                        create_body(binding.create_key, binding.title)
+                    ).hexdigest(),
+                )
                 if binding.conversation_id is not None:
-                    if binding.conversation_id != returned_conversation_id:
+                    if binding.conversation_id != conversation_id:
                         raise _plan_conflict()
-                    resolve_plan_trip(
-                        self.session,
-                        identity=identity,
-                        trust=self.trust,
-                        conversation_id=returned_conversation_id,
-                        expected_trip_id=trip_id,
-                    )
-                    return
+                    self._existing_create(identity, binding)
+                    return conversation_id
                 self.session.add(
                     PersonalAISidecarAnchor(
-                        conversation_id=returned_conversation_id,
+                        conversation_id=conversation_id,
                         owner_id=identity.owner_id,
                         trip_id=trip_id,
                         lane=PRIVATE_PLAN_LANE,
                     )
                 )
                 self.session.flush()
-                binding.conversation_id = returned_conversation_id
+                binding.conversation_id = conversation_id
+                binding.create_receipt_digest = sha256(bytes.fromhex(receipt.signature)).hexdigest()
+                return conversation_id
+        except PlanReceiptError:
+            raise not_found("private plan") from None
         except IntegrityError:
             # The shared anchor key fences a conversation already in either lane.
             raise _plan_conflict() from None
@@ -258,15 +320,7 @@ class PrivatePlanJournal:
         """Save a digest of the exact PAS preview intent before any preview POST."""
         if not 1 <= len(content) <= 20_000:
             raise ValueError("private_plan_content_invalid")
-        digest = sha256(
-            canonical_bytes(
-                {
-                    "content": content,
-                    "idempotency_key": str(original_key),
-                    "choice": {"mode": PRIVATE_PLAN_LANE},
-                }
-            )
-        ).hexdigest()
+        digest = sha256(preview_body(original_key, content)).hexdigest()
         try:
             with self.session.begin():
                 binding, trip = self._bound_trip(trip_id=trip_id, conversation_id=conversation_id)
@@ -297,7 +351,9 @@ class PrivatePlanJournal:
         intent: PrivatePlanIntent, original_key: UUID, digest: str, revision: int
     ) -> Literal["join", "reconcile_only"]:
         if (intent.original_key, intent.request_digest, intent.source_revision) != (
-            original_key, digest, revision
+            original_key,
+            digest,
+            revision,
         ):
             raise _plan_conflict()
         if intent.state == "preview_unknown":
@@ -310,27 +366,34 @@ class PrivatePlanJournal:
         trip_id: UUID,
         conversation_id: UUID,
         original_key: UUID,
-        preview_digest: str,
-        expires_at: datetime,
-    ) -> None:
-        """Record receipt metadata supplied by a validated PAS preview response."""
-        now = self.clock()
-        if (
-            re.fullmatch(SHA256_PATTERN, preview_digest) is None
-            or expires_at.utcoffset() is None
-            or not now < expires_at <= now + timedelta(seconds=45)
-        ):
-            raise ValueError("private_plan_preview_invalid")
-        with self.session.begin():
-            binding, trip = self._bound_trip(trip_id=trip_id, conversation_id=conversation_id)
-            intent = self._intent(binding, lock=True)
-            if intent is None or intent.original_key != original_key:
-                raise not_found("private plan")
-            if intent.source_revision != trip.revision or intent.state != "preview_pending":
-                raise _plan_conflict()
-            intent.preview_digest = preview_digest
-            intent.preview_expires_at = expires_at
-            intent.state = "preview_ready"
+        receipt: PlanReceipt,
+    ) -> PlanPreview:
+        """Only the scoped signed transaction can move a pending intent to ready."""
+        try:
+            with self.session.begin():
+                binding, trip = self._bound_trip(trip_id=trip_id, conversation_id=conversation_id)
+                intent = self._intent(binding, lock=True)
+                if intent is None or intent.original_key != original_key:
+                    raise not_found("private plan")
+                if intent.source_revision != trip.revision or intent.state != "preview_pending":
+                    raise _plan_conflict()
+                registration = self._verify_receipt(
+                    receipt,
+                    binding,
+                    operation="preview",
+                    conversation_id=conversation_id,
+                    request_digest=intent.request_digest,
+                    source_revision=intent.source_revision,
+                )
+                preview, expiry = receipt.preview(
+                    destination=registration.destination, now=self.clock()
+                )
+                intent.preview_digest = sha256(receipt.body).hexdigest()
+                intent.preview_expires_at = expiry
+                intent.state = "preview_ready"
+                return preview
+        except PlanReceiptError:
+            raise not_found("private plan") from None
 
     def record_preview_unknown(
         self, *, trip_id: UUID, conversation_id: UUID, original_key: UUID
@@ -351,7 +414,58 @@ class PrivatePlanJournal:
             binding, trip = self._bound_trip(trip_id=trip_id, conversation_id=conversation_id)
             intent = self._intent(binding)
             if intent is None or (intent.original_key, intent.source_revision) != (
-                original_key, trip.revision
+                original_key,
+                trip.revision,
             ):
                 return None
             return PlanRecovery(conversation_id, intent.original_key)
+
+
+class PrivatePlanCaller:
+    """Orchestrate isolated create, preview and status-only reconciliation."""
+
+    def __init__(self, journal: PrivatePlanJournal, http: PrivatePlanHTTP) -> None:
+        if journal.receipts is None:
+            raise not_found("private plan")
+        self.journal = journal
+        self.http = http
+
+    def create(self, *, trip_id: UUID, create_key: UUID, title: str) -> UUID:
+        reservation = self.journal.reserve_create(
+            trip_id=trip_id, create_key=create_key, title=title
+        )
+        if reservation.conversation_id is not None:
+            return reservation.conversation_id
+        receipt = self.http.receipt(PLAN_PATH, create_body(create_key, title), status=201)
+        return self.journal.bind_created_conversation(
+            trip_id=trip_id, create_key=create_key, receipt=receipt
+        )
+
+    def preview(
+        self, *, trip_id: UUID, conversation_id: UUID, original_key: UUID, content: str
+    ) -> PlanPreview | None:
+        selector = dict(trip_id=trip_id, conversation_id=conversation_id, original_key=original_key)
+        if self.journal.reserve_preview(**selector, content=content) != "reserved":
+            return None
+        try:
+            receipt = self.http.receipt(
+                f"{PLAN_PATH}/{conversation_id}/context-preview",
+                preview_body(original_key, content),
+                status=200,
+            )
+            return self.journal.record_preview(**selector, receipt=receipt)
+        except (httpx.HTTPError, PlanReceiptError, DomainError):
+            self.journal.record_preview_unknown(**selector)
+            raise
+
+    def inspect_original_status(
+        self, *, trip_id: UUID, conversation_id: UUID, original_key: UUID
+    ) -> PlanStatus | None:
+        scope = dict(trip_id=trip_id, conversation_id=conversation_id, original_key=original_key)
+        selector = self.journal.original_status(**scope)
+        if selector is None:
+            return None
+        state = self.http.original_status(selector.conversation_id, selector.original_key)
+        if self.journal.original_status(**scope) != selector:
+            return None
+        return state
