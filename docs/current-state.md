@@ -38,6 +38,11 @@ original execution. Recoverable state is scoped to the authenticated owner and
 cleared on owner change. Browser rendering and native session behavior still
 need independent acceptance.
 
+The offline private PAS preview candidate introduces an opt-in source route,
+an owner-scoped conversation binding and an original-key preview journal.
+Integrated preview and dispatch remain `BLOCKED_CONTRACT`.
+[Proposed reverse-hop contract](decisions/0017-private-plan-preview-source.md)
+
 ## Verification and release boundary
 
 Read [the local stabilization evidence](stabilization-2026-10-14.md) and

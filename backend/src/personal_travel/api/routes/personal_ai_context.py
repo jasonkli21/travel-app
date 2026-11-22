@@ -462,12 +462,22 @@ def _context_client(request: Request, *, timeout_seconds: float | None = None) -
     return PersonalAIClient(auth_context=auth, timeout_seconds=timeout_seconds)
 
 
+def _automatic_sidecar_anchor_matches(
+    anchor: PersonalAISidecarAnchor | None, *, owner_id: str, trip_id: UUID
+) -> bool:
+    return (
+        anchor is not None
+        and anchor.lane in (None, "automatic")
+        and (anchor.owner_id, anchor.trip_id) == (owner_id, trip_id)
+    )
+
+
 def _bind_sidecar_conversation(
     session: Session, *, owner_id: str, trip_id: UUID, conversation_id: UUID
 ) -> None:
     current = session.get(PersonalAISidecarAnchor, conversation_id)
     if current is not None:
-        if current.owner_id != owner_id or current.trip_id != trip_id:
+        if not _automatic_sidecar_anchor_matches(current, owner_id=owner_id, trip_id=trip_id):
             raise not_found("sidecar conversation")
         return
     session.add(
@@ -482,7 +492,7 @@ def _bind_sidecar_conversation(
     except IntegrityError:
         session.rollback()
         current = session.get(PersonalAISidecarAnchor, conversation_id)
-        if current is None or current.owner_id != owner_id or current.trip_id != trip_id:
+        if not _automatic_sidecar_anchor_matches(current, owner_id=owner_id, trip_id=trip_id):
             raise not_found("sidecar conversation") from None
 
 
@@ -490,7 +500,7 @@ def _require_sidecar_anchor(
     session: Session, *, owner_id: str, trip_id: UUID, conversation_id: UUID
 ) -> None:
     current = session.get(PersonalAISidecarAnchor, conversation_id)
-    if current is None or current.owner_id != owner_id or current.trip_id != trip_id:
+    if not _automatic_sidecar_anchor_matches(current, owner_id=owner_id, trip_id=trip_id):
         raise not_found("sidecar conversation")
 
 

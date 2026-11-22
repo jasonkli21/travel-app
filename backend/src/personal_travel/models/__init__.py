@@ -14,6 +14,7 @@ from personal_travel.models.itinerary import ItineraryItem
 from personal_travel.models.owner_erasure import OwnerErasureLedger  # noqa: F401
 from personal_travel.models.place import Place
 from personal_travel.models.proposal import ItineraryProposal
+from personal_travel.models.private_plan import PrivatePlanBinding, PrivatePlanIntent
 from personal_travel.models.reservation import Reservation, SavedPlace
 from personal_travel.models.sidecar_anchor import PersonalAISidecarAnchor
 from personal_travel.models.source_command import DelegatedSourceCommand  # noqa: F401
@@ -31,6 +32,8 @@ __all__ = [
     "OwnerMigrationAudit",
     "ProviderQuotaBucket",
     "PersonalAISidecarAnchor",
+    "PrivatePlanBinding",
+    "PrivatePlanIntent",
     "Place",
     "Reservation",
     "SavedPlace",

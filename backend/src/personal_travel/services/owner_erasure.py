@@ -35,6 +35,8 @@ _DATA_TABLES = frozenset(
         "booking_imports",
         "itinerary_proposals",
         "personal_ai_sidecar_anchors",
+        "personal_ai_private_plan_bindings",
+        "personal_ai_private_plan_intents",
         "delegated_source_commands",
     }
 )

@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     personal_ai_auth_mode: Literal["none", "google_cloud_run_iam"] = "none"
     task_control: SourceTaskSettings | None = None
     personal_ai_context_enabled: bool = False
+    personal_ai_plan_enabled: bool = False
     personal_ai_context_service_iam_audience: str = Field(default="", max_length=500)
     personal_ai_context_service_account: str = Field(default="", max_length=320)
     personal_ai_user_id_token_audience: str = Field(default="", max_length=500)
@@ -82,6 +83,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_identity_configuration(self) -> "Settings":
+        if self.deployment_mode == "hosted" and self.personal_ai_plan_enabled:
+            raise ValueError("Private plan previews require an isolated local composition.")
         if self.deployment_mode == "hosted" and (
             self.private_imports_enabled or self.private_attachments_enabled
         ):

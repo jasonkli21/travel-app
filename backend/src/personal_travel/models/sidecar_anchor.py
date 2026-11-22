@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, Index, String
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -20,10 +20,16 @@ class PersonalAISidecarAnchor(Base):
         ForeignKey("trips.id", ondelete="CASCADE"),
         nullable=False,
     )
+    lane: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="automatic", server_default=text("'automatic'")
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(UTC),
     )
 
-    __table_args__ = (Index("ix_personal_ai_sidecar_anchors_owner_trip", "owner_id", "trip_id"),)
+    __table_args__ = (
+        Index("ix_personal_ai_sidecar_anchors_owner_trip", "owner_id", "trip_id"),
+        CheckConstraint("lane IN ('automatic', 'user_owned_plan')", name="lane"),
+    )
