@@ -77,6 +77,7 @@ class Fixture:
         expiry=None,
         owner=OWNER,
         subject=SUBJECT,
+        destination=None,
         **scope_override,
     ):
         if revision is None:
@@ -86,7 +87,7 @@ class Fixture:
             request = preview_body(key, title_or_content)
             payload = {
                 "confirmation": "1" * 64,
-                "destination": self.destination.model_dump(),
+                "destination": (destination or self.destination).model_dump(),
                 "purpose": "foreground_application_plan",
                 "selected_context": [
                     {"category": "conversation_history", "turns": 0},

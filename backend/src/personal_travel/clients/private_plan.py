@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from hashlib import sha256
+from time import monotonic
 from typing import Any, Literal
 from uuid import UUID
 
@@ -61,7 +62,7 @@ class StrictPlanModel(BaseModel):
 
 class PlanDestination(StrictPlanModel):
     application: Literal["travel"]
-    provider: Literal["ChatGPT"]
+    provider: Literal["ChatGPT", "fake"]
     model: str = Field(min_length=1, max_length=200)
     runtime: str = Field(min_length=1, max_length=200)
     recipient: str = Field(min_length=1, max_length=200)
@@ -113,7 +114,11 @@ class PlanReceipt:
             raise PlanReceiptError("private_plan_receipt_invalid") from error
 
     def preview(
-        self, *, destination: PlanDestination, now: datetime
+        self,
+        *,
+        destination: PlanDestination,
+        now: datetime,
+        synthetic: bool = False,
     ) -> tuple[PlanPreview, datetime]:
         try:
             parsed = PlanPreview.model_validate(self._json())
@@ -129,6 +134,7 @@ class PlanReceipt:
             expiry.utcoffset() is None
             or not now < expiry <= now + timedelta(seconds=45)
             or parsed.destination != destination
+            or parsed.destination.provider != ("fake" if synthetic else "ChatGPT")
             or fields
             != {"ai_memory": ["content"], "domain_current": ["trip_revision", "trip_title"]}
             or not isinstance(parsed.selected_context[0], _History)
@@ -235,7 +241,23 @@ class PrivatePlanHTTP:
         *,
         body: bytes | None = None,
         status: int,
+        accept: str | None = None,
+        request_media: str = "application/json",
+        response_media: str | None = "application/json",
+        original_key: UUID | None = None,
+        deadline_seconds: float | None = None,
     ) -> tuple[bytes, httpx.Headers]:
+        headers = {
+            "authorization": f"Bearer {self._bearer}",
+            "content-type": request_media,
+            "x-application-id": "travel",
+            "accept-encoding": "identity",
+        }
+        if accept is not None:
+            headers["accept"] = accept
+        if original_key is not None:
+            headers["x-pas-original-key"] = str(original_key)
+        deadline = monotonic() + deadline_seconds if deadline_seconds is not None else None
         with (
             httpx.Client(
                 trust_env=False,
@@ -247,23 +269,27 @@ class PrivatePlanHTTP:
                 method,
                 self._origin.copy_with(path=path),
                 content=body,
-                headers={
-                    "authorization": f"Bearer {self._bearer}",
-                    "content-type": "application/json",
-                    "x-application-id": "travel",
-                    "accept-encoding": "identity",
-                },
+                headers=headers,
             ) as response,
         ):
             if (
                 response.status_code != status
-                or response.headers.get_list("content-type") != ["application/json"]
+                or (
+                    response_media is not None
+                    and response.headers.get_list("content-type") != [response_media]
+                )
                 or response.headers.get("content-encoding", "identity") != "identity"
             ):
                 raise PlanReceiptError("private_plan_response_unavailable")
             raw = bytearray()
-            for chunk in response.iter_bytes(chunk_size=4096):
+            for chunk in response.iter_bytes(chunk_size=None if deadline is not None else 4096):
+                if deadline is not None and monotonic() >= deadline:
+                    raise PlanReceiptError("private_plan_response_unavailable")
                 if len(raw) + len(chunk) > MAX_PREVIEW_BYTES:
                     raise PlanReceiptError("private_plan_response_invalid")
                 raw.extend(chunk)
+            if deadline is not None and monotonic() >= deadline:
+                raise PlanReceiptError("private_plan_response_unavailable")
+            if response_media is None and raw:
+                raise PlanReceiptError("private_plan_response_invalid")
             return bytes(raw), response.headers

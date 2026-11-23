@@ -64,8 +64,9 @@ def resolve_plan_trip(
     trust: PrivatePlanTrust,
     conversation_id: UUID,
     expected_trip_id: UUID | None = None,
+    lock: bool = False,
 ) -> tuple[PrivatePlanBinding, Trip]:
-    binding = session.scalar(
+    query = (
         select(PrivatePlanBinding)
         .join(
             PersonalAISidecarAnchor,
@@ -84,8 +85,20 @@ def resolve_plan_trip(
             PersonalAISidecarAnchor.trip_id == PrivatePlanBinding.trip_id,
         )
     )
+    if lock:
+        query = query.with_for_update()
+    binding = session.scalar(query)
     if binding is None or (expected_trip_id is not None and binding.trip_id != expected_trip_id):
         raise not_found("private plan")
+    if lock:
+        trip = session.scalar(
+            select(Trip)
+            .where(Trip.id == binding.trip_id, Trip.owner_id == identity.owner_id)
+            .with_for_update()
+        )
+        if trip is None:
+            raise not_found("private plan")
+        return binding, trip
     return binding, TripService(session, identity.owner_id).get(binding.trip_id)
 
 

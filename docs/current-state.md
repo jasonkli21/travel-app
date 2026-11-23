@@ -42,9 +42,14 @@ The offline private PAS preview candidate verifies signed PAS create and preview
 receipts against the Travel-owned binding and original request. Migration 0022
 quarantines bindings without receipt provenance. Recovery can inspect metadata
 only by the original key after rechecking the current anchor and trip authority.
-Independent approval of the paired contract and integrated dispatch remain
-`BLOCKED_CONTRACT`.
+The original preview profile still requires independent paired verification.
 [Proposed reverse-hop contract](decisions/0017-private-plan-preview-source.md)
+
+An isolated Travel `pas-dispatch/1` candidate extends the private path with an
+explicit confirmation, immutable original-key submission journal in migration
+0023, and validated terminal recovery. It requires explicit synthetic
+registration and awaits independent review and paired PAS verification.
+[Travel Step 2 evidence](reviews/2026-11-23-private-dispatch-travel-step2.md)
 
 ## Verification and release boundary
 

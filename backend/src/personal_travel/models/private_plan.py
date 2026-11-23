@@ -8,6 +8,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     UniqueConstraint,
     func,
@@ -92,5 +93,44 @@ class PrivatePlanIntent(Base):
             "(state IN ('preview_pending', 'preview_unknown') AND preview_digest IS NULL "
             "AND preview_expires_at IS NULL)",
             name="state",
+        ),
+    )
+
+
+class PrivatePlanConfirmation(Base):
+    """Durable single submitted marker and content-free recovery evidence."""
+
+    __tablename__ = "personal_ai_private_plan_confirmations"
+
+    binding_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("personal_ai_private_plan_intents.binding_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    owner_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    original_key: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    attempt: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    root: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    binding_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    body: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    body_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    confirmation_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    create_receipt_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    preview_receipt_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    submitted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    quarantined_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        UniqueConstraint("attempt", name="uq_private_plan_confirmation_attempt"),
+        UniqueConstraint("root", name="uq_private_plan_confirmation_root"),
+        CheckConstraint(
+            "octet_length(body) BETWEEN 1 AND 512 AND "
+            "binding_digest ~ '^[0-9a-f]{64}$' AND body_digest ~ '^[0-9a-f]{64}$' AND "
+            "confirmation_digest ~ '^[0-9a-f]{64}$' AND "
+            "create_receipt_digest ~ '^[0-9a-f]{64}$' AND "
+            "preview_receipt_digest ~ '^[0-9a-f]{64}$'",
+            name="wire",
         ),
     )

@@ -1,0 +1,1 @@
+{"audience":"travel","binding_sha256":"55dad190dd42f782ea9a4ad1808d47c31f7498f13a9fca459e7b5e247e8b6e1d","expires":1060,"issuer":"pas-fixture","kid":"p1","payload_sha256":"3598d0ff38a7de11a47e352399a0fde5b7c49b6fb95ae3b5ef248ee5b1761936","purpose":"preview","v":"pas-dispatch/1"}
