@@ -255,12 +255,17 @@ def verify_status(
     if value.get("state") == "completed":
         signature = value.get("signature")
         if not isinstance(signature, str) or value.get("terminal") is None:
-            raise ValueError("dispatch_status_invalid")
+            raise DispatchEvidenceConflict("dispatch_status_invalid")
         try:
             _verify(role, canonical(value["terminal"]), signature)
         except ValueError:
             raise DispatchEvidenceConflict("dispatch_terminal_signature_invalid") from None
-    status = DispatchStatus.model_validate(value)
+    try:
+        status = DispatchStatus.model_validate(value)
+    except ValueError:
+        if value.get("state") == "completed":
+            raise DispatchEvidenceConflict("dispatch_status_invalid") from None
+        raise
     if (status.original_key, status.attempt, status.root, status.body_sha256) != (
         binding.original_key,
         binding.attempt,
@@ -271,7 +276,7 @@ def verify_status(
     terminal = status.terminal
     if status.state != "completed":
         if status.message_id is not None or terminal is not None or status.signature is not None:
-            raise ValueError("dispatch_status_invalid")
+            raise DispatchEvidenceConflict("dispatch_status_invalid")
     elif (
         terminal is None
         or status.message_id is None
@@ -285,12 +290,16 @@ def verify_status(
         raise DispatchEvidenceConflict("dispatch_terminal_invalid")
     if terminal is not None and now >= terminal.expires:
         # Archived expiry needs an authenticated commit-time witness absent from v1.
-        raise ValueError("dispatch_terminal_expired")
+        raise DispatchEvidenceConflict("dispatch_terminal_expired")
     return status
 
 
 def verify_detail(raw: bytes, status: DispatchStatus) -> DispatchDetail:
-    detail = DispatchDetail.model_validate(parse(raw))
+    value = parse(raw)
+    try:
+        detail = DispatchDetail.model_validate(value)
+    except ValueError:
+        raise DispatchEvidenceConflict("dispatch_detail_invalid") from None
     if (
         status.terminal is None
         or (detail.message_id, detail.attempt, detail.root, detail.original_key)
@@ -362,7 +371,7 @@ class PrivateDispatchHTTP(PrivatePlanHTTP):
             body=body,
             status=200,
             accept=MEDIA_TYPE,
-            request_media="application/json",
+            request_media=MEDIA_TYPE,
             response_media=MEDIA_TYPE,
         )
         signatures = headers.get_list(RECEIPT_HEADER)

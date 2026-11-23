@@ -27,6 +27,7 @@ from personal_travel.clients.private_dispatch import (
     SigningRole,
     canonical,
     digest,
+    parse,
     verify_detail,
     verify_preview,
     verify_status,
@@ -370,8 +371,8 @@ class PrivateDispatchJournal:
                 metadata.destination.recipient,
             ) != (
                 binding.destination.model,
-                binding.destination.runtime,
-                binding.destination.account,
+                f"local:{binding.destination.runtime}",
+                f"openai-responses:{binding.destination.account}",
             ):
                 raise ValueError("dispatch_destination_invalid")
             if dispatch_expiry > min(authority.expiry, int(expiry.timestamp())):
@@ -495,17 +496,22 @@ class RegisteredTravelSource:
     """In-process capability for PAS to verify one registered Travel source."""
 
     def __init__(
-        self, journal: Callable[[], PrivateDispatchJournal], clock: Callable[[], datetime]
+        self,
+        journal: Callable[[], PrivateDispatchJournal],
+        clock: Callable[[], datetime],
+        pending: Callable[[UUID, UUID], DispatchBinding | None],
     ) -> None:
         self._journal = journal
         self._clock = clock
+        self._pending = pending
         self._nonces: set[str] = set()
         self._lock = Lock()
 
-    def current(self, binding: DispatchBinding, phase: Phase, nonce: str) -> CurrentSource:
+    def current(self, binding_bytes: bytes, phase: Phase, nonce: str) -> dict[str, object]:
         started = monotonic()
+        binding = DispatchBinding.model_validate(parse(binding_bytes))
         result = CurrentSource(
-            binding_sha256=binding.commitment(),
+            binding_sha256=digest(binding_bytes),
             phase=phase,
             nonce=nonce,
             current=False,
@@ -513,18 +519,28 @@ class RegisteredTravelSource:
         )
         with self._lock:
             if nonce in self._nonces or len(self._nonces) >= MAX_CALLBACK_NONCES:
-                return result
+                return result.model_dump()
             self._nonces.add(nonce)
         try:
+            if phase == "preview":
+                expected = self._pending(UUID(binding.conversation), UUID(binding.original_key))
+                # The original receipt is returned with the preview. The pending
+                # allocation must agree on every independently known binding field.
+                if expected is None or expected.model_dump(exclude={"preview_receipt"}) != (
+                    binding.model_dump(exclude={"preview_receipt"})
+                ):
+                    return result.model_dump()
             journal = self._journal()
             with journal.session:
                 expires = journal.source_current(binding, phase)
         except (DomainError, SQLAlchemyError, ValueError):
-            return result
+            return result.model_dump()
         now = self._clock().timestamp()
         if monotonic() - started >= 1 or now >= expires:
-            return result
-        return result.model_copy(update={"current": True, "expires": min(expires, int(now) + 1)})
+            return result.model_dump()
+        return result.model_copy(
+            update={"current": True, "expires": min(expires, int(now) + 1)}
+        ).model_dump()
 
 
 class PrivateDispatchCaller:
@@ -681,6 +697,8 @@ class PrivateDispatchCaller:
             return DispatchObservation("unknown")
         try:
             detail = verify_detail(detail_bytes, status)
+            if not recheck():
+                return DispatchObservation("unknown")
             verify_status(
                 raw, binding, submission.body_digest, role, self.journal.legacy.clock().timestamp()
             )
@@ -688,8 +706,6 @@ class PrivateDispatchCaller:
             self._quarantine(submission)
             return DispatchObservation("quarantined")
         except ValueError:
-            return DispatchObservation("unknown")
-        if not recheck():
             return DispatchObservation("unknown")
         return DispatchObservation("completed", UUID(detail.message_id), detail.result)
 

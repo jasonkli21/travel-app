@@ -104,3 +104,7 @@ revocation writers with an outward socket write.
   migration files 0021 and 0022 have no diff from the base.
 - `make frontend-install frontend-check` used the frozen pnpm lock. Lint,
   type checking, and all 68 frontend tests passed.
+
+## Combined review verification
+
+The private preview sends the vendor media type on the request and requires it on the response. The callback consumes canonical binding bytes and compares the original pending allocation. Recovery checks terminal expiry after the final authority lookup. The Step 3 focused suite passed 30 tests, including the separate PostgreSQL restore. PAS+Travel paired acceptance remains pending.

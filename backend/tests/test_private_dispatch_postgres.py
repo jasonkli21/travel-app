@@ -38,7 +38,11 @@ from personal_travel.clients.private_dispatch import (
     canonical,
     digest,
 )
-from personal_travel.clients.private_plan import RECEIPT_HEADER, create_body, preview_body
+from personal_travel.clients.private_plan import (
+    RECEIPT_HEADER,
+    PlanReceiptRegistration,
+    create_body,
+)
 from personal_travel.models.auth import AuthSession
 from personal_travel.models.private_plan import PrivatePlanConfirmation
 from personal_travel.models.trip import Trip
@@ -75,13 +79,21 @@ class FakePAS:
             CONTENT,
             revision=REVISIONS[0],
             expiry=self.now + timedelta(seconds=40),
-            destination=fixture.destination.model_copy(update={"provider": "fake"}),
+            destination=fixture.destination.model_copy(
+                update={
+                    "provider": "fake",
+                    "runtime": "local:fake-runtime",
+                    "recipient": "openai-responses:fake-account",
+                }
+            ),
         )
         self.calls = Counter()
         self.fail_confirmation = None
         self.status_kind = "unknown"
         self.status_hook = lambda: None
         self.detail_hook = lambda: None
+        self.preview_hook = lambda: None
+        self.terminal_lifetime = 30
         self.result = "validated synthetic result"
         self.continuity = True
         self.preview_active = True
@@ -178,7 +190,16 @@ class FakePAS:
         assert request.headers["authorization"] == "Bearer synthetic-pas"
         if request.url.path.endswith("context-preview"):
             assert request.headers["accept"] == MEDIA_TYPE
-            assert request.content == preview_body(ORIGINAL_KEY, CONTENT)
+            assert request.headers.get_list("content-type") == [MEDIA_TYPE]
+            assert request.headers.get_list("x-application-id") == ["travel"]
+            assert request.content == canonical(
+                {
+                    "content": CONTENT,
+                    "idempotency_key": str(ORIGINAL_KEY),
+                    "choice": {"mode": "user_owned_plan"},
+                }
+            )
+            self.preview_hook()
             claims = {
                 "audience": "travel",
                 "binding_sha256": self.binding.commitment(),
@@ -213,6 +234,7 @@ class FakePAS:
                 return self.fail_confirmation(request)
             return httpx.Response(202)
         if request.method == "POST":
+            assert request.headers.get_list("content-type") == ["application/json"]
             assert request.content == create_body(CREATES[0], TITLE)
             return httpx.Response(
                 201,
@@ -225,6 +247,7 @@ class FakePAS:
             )
         assert request.headers["accept"] == MEDIA_TYPE
         if "/continuations/" in request.url.path:
+            assert "x-pas-original-key" not in request.headers
             self.status_hook()
             if self.status_kind == "partial":
                 return httpx.Response(200, headers=self._headers(), content=b'{"state":"comp')
@@ -249,7 +272,7 @@ class FakePAS:
                     "audience": "fixture-pas",
                     "binding_sha256": self.binding.commitment(),
                     "body_sha256": body_digest,
-                    "expires": int(self.now.timestamp()) + 30,
+                    "expires": int(self.now.timestamp()) + self.terminal_lifetime,
                     "issuer": "fixture-runtime",
                     "kid": "r1",
                     "message_id": message_id,
@@ -284,7 +307,17 @@ class FakePAS:
         )
 
     def journal(self, session):
-        return PrivateDispatchJournal(self.fixture.journal(session), self.registration)
+        legacy = self.fixture.journal(session)
+        legacy.receipts = PlanReceiptRegistration(
+            self.fixture.receipt_key.public_key(),
+            self.fixture.destination.model_copy(
+                update={
+                    "runtime": "local:fake-runtime",
+                    "recipient": "openai-responses:fake-account",
+                }
+            ),
+        )
+        return PrivateDispatchJournal(legacy, self.registration)
 
     def caller(self, session):
         return PrivateDispatchCaller(
@@ -500,16 +533,38 @@ def test_terminal_and_detail_are_bound_to_original_attempt(plan_fixture, invalid
 
 def test_authenticated_current_source_consumes_nonce_and_blocks_unknown_continuity(plan_fixture):
     pas = FakePAS(plan_fixture)
-    prepared = pas.create_and_preview()
-    source = RegisteredTravelSource(lambda: pas.journal(plan_fixture.session()), lambda: pas.now)
+    raw = canonical(pas.binding.model_dump())
+    source = RegisteredTravelSource(
+        lambda: pas.journal(plan_fixture.session()),
+        lambda: pas.now,
+        lambda conversation, key: (
+            pas.binding
+            if (str(conversation), str(key)) == (pas.binding.conversation, pas.binding.original_key)
+            else None
+        ),
+    )
     nonce = str(uuid4())
-    assert source.current(pas.binding, "preview", nonce).current
-    assert not source.current(pas.binding, "preview", nonce).current
-    assert not source.current(pas.binding, "send", str(uuid4())).current
+
+    def check_pending():
+        assert source.current(raw, "preview", nonce) == {
+            "binding_sha256": digest(raw),
+            "phase": "preview",
+            "nonce": nonce,
+            "current": True,
+            "expires": int(pas.now.timestamp()) + 1,
+        }
+
+    pas.preview_hook = check_pending
+    prepared = pas.create_and_preview()
+    assert not source.current(raw, "preview", nonce)["current"]
+    assert not source.current(raw, "send", str(uuid4()))["current"]
+    assert not source.current(
+        canonical(pas.binding.model_dump() | {"root": str(uuid4())}), "preview", str(uuid4())
+    )["current"]
     pas.confirm(prepared)
-    assert source.current(pas.binding, "send", str(uuid4())).current
+    assert source.current(raw, "send", str(uuid4()))["current"]
     pas.continuity = False
-    assert not source.current(pas.binding, "disclose", str(uuid4())).current
+    assert not source.current(raw, "disclose", str(uuid4()))["current"]
     with pytest.raises(DomainError) as error:
         pas.observe()
     assert error.value.status_code == 503
@@ -693,3 +748,26 @@ def test_preview_or_terminal_key_revocation_blocks_only_current_authority(plan_f
         pas.observe()
     assert pas.confirm_count() == 1
     assert pas.read_count() == 0
+
+
+def test_terminal_expiry_during_final_authority_check_quarantines_attempt(plan_fixture):
+    pas = FakePAS(plan_fixture)
+    prepared = pas.create_and_preview()
+    pas.confirm(prepared)
+    pas.status_kind = "completed"
+    pas.terminal_lifetime = 1
+    make_journal = pas.journal
+
+    def observing(session):
+        journal = make_journal(session)
+        journal.legacy.clock = lambda: pas.now
+        return journal
+
+    pas.journal = observing
+    pas.detail_hook = lambda: setattr(pas, "now", pas.now + timedelta(seconds=1))
+    assert pas.observe().state == "quarantined"
+    reads = pas.read_count()
+    with pytest.raises(DomainError):
+        pas.observe()
+    assert pas.read_count() == reads == 2
+    assert pas.confirm_count() == 1
