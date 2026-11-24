@@ -1,0 +1,7 @@
+waiting for server to start.... done
+server started
+/tmp/pas-dispatch-venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+legacy-create-distinct-opaque-owner (0, 0) {'result': {'code': 'not_found', 'error': 404}, 'pas_create_status': 201, 'opaque_owner_ids_equal': False}
+waiting for server to shut down.... done
+server stopped

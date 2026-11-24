@@ -1,0 +1,31 @@
+/workspace/travel-app/backend/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 0001, Initial travel schema.
+INFO  [alembic.runtime.migration] Running upgrade 0001 -> 0002, Add Phase 1 ordering constraints.
+INFO  [alembic.runtime.migration] Running upgrade 0002 -> 0003, Add Phase 2 reservations and saved places.
+INFO  [alembic.runtime.migration] Running upgrade 0003 -> 0004, Retain source attribution for imported provider places.
+INFO  [alembic.runtime.migration] Running upgrade 0004 -> 0005, Repair moved item dates and enforce place/order integrity.
+INFO  [alembic.runtime.migration] Running upgrade 0005 -> 0006, Add monotonic trip and shared-place revisions.
+INFO  [alembic.runtime.migration] Running upgrade 0006 -> 0007, Add the owner-scoped itinerary proposal lifecycle.
+INFO  [alembic.runtime.migration] Running upgrade 0007 -> 0008, Persist the accepted upstream revision and per-operation evidence support.
+INFO  [alembic.runtime.migration] Running upgrade 0008 -> 0009, Add verified identities, opaque sessions, OAuth attempts, and migration audit.
+INFO  [alembic.runtime.migration] Running upgrade 0009 -> 0010, Durable import and opaque attachment metadata.
+INFO  [alembic.runtime.migration] Running upgrade 0010 -> 0011, Retain durable import identity after source bytes are removed.
+INFO  [alembic.runtime.migration] Running upgrade 0011 -> 0012, Durable booking extraction and idempotent confirmation lifecycle.
+INFO  [alembic.runtime.migration] Running upgrade 0012 -> 0013, Add extracted-text identity and durable upstream deletion intents.
+INFO  [alembic.runtime.migration] Running upgrade 0013 -> 0014, Extend the private source lifecycle for trip and reservation attachments.
+INFO  [alembic.runtime.migration] Running upgrade 0014 -> 0015, Add shared provider admission counters.
+INFO  [alembic.runtime.migration] Running upgrade 0015 -> 0016, Bind Personal AI sidecar conversations to their Travel trip anchor.
+INFO  [alembic.runtime.migration] Running upgrade 0016 -> 0017, Add explicit, revocable Travel-to-Shopping trip sharing.
+INFO  [alembic.runtime.migration] Running upgrade 0017 -> 0018, Retain upstream authentication time without backfilling unknown sessions.
+INFO  [alembic.runtime.migration] Running upgrade 0018 -> 0019, Persist immutable Travel source commands with owner erasure cascade.
+INFO  [alembic.runtime.migration] Running upgrade 0019 -> 0020, Retain an owner erasure marker and serialize canonical writes with its freeze.
+INFO  [alembic.runtime.migration] Running upgrade 0020 -> 0021, Reserve private PAS conversation bindings and original preview keys.
+INFO  [alembic.runtime.migration] Running upgrade 0021 -> 0022, Keep bindings without an authenticated create receipt quarantined.
+INFO  [alembic.runtime.migration] Running upgrade 0022 -> 0023, Add an immutable original-key submission marker to private Travel plans.
+request id=b1aa5487-726e-43a8-9ced-853e4661867a method=GET route=/health status=200 duration_ms=2.7
+request id=9e6b36eb-b6eb-4466-b7ec-e33ab35addbd method=POST route=unmatched status=404 duration_ms=130.8
+/workspace/step4-travel-lane/travel/backend/verification/step4_travel/travel_host.py:230: DeprecationWarning: This process (pid=9546) is multi-threaded, use of fork() may lead to deadlocks in the child.
+  pid = os.fork()

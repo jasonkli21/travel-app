@@ -1,0 +1,39 @@
+waiting for server to start.... done
+server started
+/tmp/pas-dispatch-venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+success-current-get (1, 1) {'state': 'completed', 'receipt': {'attempt': '921311c2-8e84-527f-8646-42fd1abb9679', 'audience': 'pas-fixture', 'binding_sha256': 'e02d134546b214c9559245ba104895473d8bcefb9b8b80977f3278d6f0760dfa', 'body_sha256': '060ada25be4759b869f0631747c19b872eb1e935442da4fda4f05eb6d1566b59', 'expires': 1795506961, 'issuer': 'runtime-fixture', 'kid': 'terminal', 'message_id': 'f911c901-269e-40c5-84de-46aac69ff66d', 'purpose': 'terminal', 'result_sha256': '4e12d6a24184e2a93c78b573fdca5edd066d046bfb647af01af58dcc63f5c655', 'root': '39964da5-9ac0-5fdc-8eac-983c2a3e1649', 'v': 'pas-dispatch/1'}, 'confirmation_sha256': '060ada25be4759b869f0631747c19b872eb1e935442da4fda4f05eb6d1566b59', 'terminal_signature': 'rPQqQzynJod64tA6AOx8IV3PtUlFynj6uWEUIDfctTAdZOsV4fzzNtEnW0BdGf8DRP8T1auEaihY2rllEfz-Bw', 'committed_at': '1795506917', 'durable': {'state': 'completed', 'body_sha256': '060ada25be4759b869f0631747c19b872eb1e935442da4fda4f05eb6d1566b59', 'attempt': '921311c2-8e84-527f-8646-42fd1abb9679', 'terminal': True, 'root': '39964da5-9ac0-5fdc-8eac-983c2a3e1649', 'native_root_state': 'fenced', 'independent_witness': True, 'runtime_state': 'send_started', 'retained_fence': True}}
+revoked-current-get (0, 0) {'state': 'withheld', 'denial': 404}
+denial-acl (0, 0) {'result': {'code': 'not_found', 'error': 404}}
+denial-source (0, 0) {'result': {'code': 'not_found', 'error': 404}}
+denial-pas-source (0, 0) {'result': {'message_id': None, 'result': None, 'state': 'unknown'}}
+denial-memory (0, 0) {'result': {'message_id': None, 'result': None, 'state': 'unknown'}}
+denial-branch (0, 0) {'result': {'message_id': None, 'result': None, 'state': 'unknown'}}
+denial-model (0, 0) {'result': {'message_id': None, 'result': None, 'state': 'unknown'}}
+denial-recipient (0, 0) {'result': {'message_id': None, 'result': None, 'state': 'unknown'}}
+denial-expiry (0, 0) {'result': {'code': 'private_dispatch_expired', 'error': 410}}
+denial-confirmation (0, 0) {'result': {'code': 'private_plan_conflict', 'error': 409}}
+same-key-concurrent (1, 1) {'result': {'message_id': 'fac0f1c0-f24f-4e99-bedb-1c5d6a81b815', 'result': 'Paired synthetic itinerary response.', 'state': 'completed'}, 'callers': [{'message_id': None, 'result': None, 'state': 'unknown'}, {'message_id': None, 'result': None, 'state': 'unknown'}], 'durable': {'state': 'completed', 'body_sha256': '6c629a84752e40e658413c221c9cc3da2c32a7d3e23a378d7884ac9b61946037', 'attempt': 'd14fc01c-6fd2-523b-9a10-4f280325c4f2', 'terminal': True, 'root': 'a616e659-6410-5789-a0bc-82201e204bc9', 'native_root_state': 'fenced', 'independent_witness': True, 'runtime_state': 'send_started', 'retained_fence': True}}
+travel-before-commit (0, 0) {'journal_row': False, 'interruption': 'Travel worker exited after native row flush before commit', 'worker': {'exit_code': 79, 'pid': 7022}}
+travel-after-commit-before-pas (0, 0) {'journal_row': True, 'observation': {'message_id': None, 'result': None, 'state': 'unknown'}, 'replay': {'message_id': None, 'result': None, 'state': 'unknown'}, 'interruption': 'Travel worker exited after commit before confirmation transport', 'worker': {'exit_code': 79, 'pid': 7044}}
+/workspace/step4-travel-lane/travel/backend/verification/step4_travel/run_pair.py:339: DeprecationWarning: This process (pid=6627) is multi-threaded, use of fork() may lead to deadlocks in the child.
+  pid = os.fork()
+after-independent-claim (0, 0) {'observation': {'message_id': None, 'result': None, 'state': 'claimed'}, 'durable': {'state': 'claimed', 'body_sha256': 'bb074965dd644e50445887441451ba0f30924d1d061accb9d24f01cb687cff1f', 'attempt': '81ba3570-88bb-582c-82ea-96b708aa1ab2', 'terminal': False, 'root': '19c22974-b8b5-5452-b2f4-94faa842c7a6', 'native_root_state': 'fenced', 'independent_witness': True, 'runtime_state': 'claimed_pre_send', 'retained_fence': False}, 'worker': {'pid': 7083, 'exit_code': 79}}
+after-send-start (0, 0) {'observation': {'message_id': None, 'result': None, 'state': 'send_started'}, 'durable': {'state': 'send_started', 'body_sha256': '01f53d67556fa7ada7714964da7700e1b7d14d8d7d1e5d49f3d3cf6acd91992b', 'attempt': '43057c90-1fe6-593c-bd8f-3532b096bbad', 'terminal': False, 'root': '87516a2c-4003-564f-a1ad-b5ffed1f1207', 'native_root_state': 'fenced', 'independent_witness': True, 'runtime_state': 'send_started', 'retained_fence': True}, 'worker': {'pid': 7146, 'exit_code': 79}}
+receiver-disconnect (1, 1) {'observation': {'message_id': None, 'result': None, 'state': 'send_started'}, 'durable': {'state': 'send_started', 'body_sha256': '1caae5ba69e9fac10d975676fb0c70d44f995818d9fd321e335abd388f44bf1d', 'attempt': '4dc3f0bc-976f-5644-a79b-2635813fcb09', 'terminal': False, 'root': 'b27733a6-2142-52ef-a9fd-65b4acc4fd94', 'native_root_state': 'fenced', 'independent_witness': True, 'runtime_state': 'send_started', 'retained_fence': True}}
+receiver-wrong-attempt (1, 1) {'observation': {'message_id': None, 'result': None, 'state': 'send_started'}, 'durable': {'state': 'send_started', 'body_sha256': 'baf40e81225ee9a045cb649671339834ebb3a90bd8487518be86b3354f66383c', 'attempt': 'ce8c329d-bb4d-5ac3-9122-5722bca3a3c3', 'terminal': False, 'root': 'ab3bf951-178e-5775-8990-123c60f26807', 'native_root_state': 'fenced', 'independent_witness': True, 'runtime_state': 'send_started', 'retained_fence': True}}
+revoke-before-fence (0, 0) {'state': 'withheld', 'durable': {'state': 'claimed', 'body_sha256': 'e10e52b3b6edf6f09f87c9181c009e920e1ed95c131de03fc9de9f2df55c5eaf', 'attempt': '6a7fcfd5-2817-5617-b0dd-299465075852', 'terminal': False, 'root': 'df36f05f-d39b-5d4f-a36a-d6792d96cd2e', 'native_root_state': 'fenced', 'independent_witness': True, 'runtime_state': 'claimed_pre_send', 'retained_fence': False}}
+fence-first-revoke (1, 1) {'state': 'withheld', 'durable': {'state': 'send_started', 'body_sha256': '95d01417a0c95573519dc1f877b8875eec621f52801cb62002df1748208148fa', 'attempt': '6e5286fa-b44a-5836-932c-9f7d2fd4af3a', 'terminal': False, 'root': 'a775c6ce-df31-505f-9fdb-4af73c9496c1', 'native_root_state': 'fenced', 'independent_witness': True, 'runtime_state': 'send_started', 'retained_fence': True}}
+revoke-after-status (0, 0) {'observation': {'message_id': None, 'result': None, 'state': 'unknown'}, 'travel_quarantined': True}
+revoke-after-detail (0, 0) {'observation': {'message_id': None, 'result': None, 'state': 'unknown'}, 'travel_quarantined': True}
+after-native-pas-root-before-witness (0, 0) {'state': 'unavailable', 'durable': {'state': 'claimed', 'body_sha256': '0d5fcc29f335bcbcc7cce189e24ed9b8c278f3cec9738a1ee0a0e543889172db', 'attempt': 'c2219163-b572-5443-b216-0703119e0484', 'terminal': False, 'root': '1c5fd111-f4f5-5c76-bf9e-c95f5084041d', 'native_root_state': 'fenced', 'independent_witness': False, 'runtime_state': None, 'retained_fence': False}, 'worker': {'pid': 7526, 'exit_code': 79}}
+/tmp/pas-dispatch-venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+Traceback (most recent call last):
+  File "/workspace/step4-travel-lane/travel/backend/verification/step4_travel/run_pair.py", line 62, in <module>
+    TRAVEL_PYTHON = os.environ["TRAVEL_PAIR_PYTHON"]
+                    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen os>", line 714, in __getitem__
+KeyError: 'TRAVEL_PAIR_PYTHON'
+waiting for server to shut down.... done
+server stopped

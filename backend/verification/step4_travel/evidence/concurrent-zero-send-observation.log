@@ -1,0 +1,27 @@
+waiting for server to start.... done
+server started
+/tmp/pas-dispatch-venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+FIXTURE_NETWORK_EGRESS_BLOCKED socket.gethostbyaddr
+success-current-get (1, 1) {'state': 'completed', 'receipt': {'attempt': '07b2872f-caa9-5d10-99b4-14c95a58c58a', 'audience': 'pas-fixture', 'binding_sha256': '4dd72ead1014240dff31133dc4e94051d97b54c2540e5ce78b2a7df7e05974be', 'body_sha256': 'fa59ab93cd2980334ab38f91148f00abf42a1952a1e9943db2f010ef80b81aeb', 'expires': 1795507199, 'issuer': 'runtime-fixture', 'kid': 'terminal', 'message_id': '95a3a326-769a-4cf5-91d8-28f5436fd175', 'purpose': 'terminal', 'result_sha256': '4e12d6a24184e2a93c78b573fdca5edd066d046bfb647af01af58dcc63f5c655', 'root': '9d5b8603-0185-582a-b6fd-9cdb7695e216', 'v': 'pas-dispatch/1'}, 'confirmation_sha256': 'fa59ab93cd2980334ab38f91148f00abf42a1952a1e9943db2f010ef80b81aeb', 'terminal_signature': 'L73s0KKoKWApYsbnNnAr7hKfhNQyEOxLpKbyUS6FGErXqxfMJrUldPP3Rsk6vD7KseW_P59-d-e7JYM_iFJxCg', 'committed_at': '1795507156', 'durable': {'state': 'completed', 'body_sha256': 'fa59ab93cd2980334ab38f91148f00abf42a1952a1e9943db2f010ef80b81aeb', 'attempt': '07b2872f-caa9-5d10-99b4-14c95a58c58a', 'terminal': True, 'root': '9d5b8603-0185-582a-b6fd-9cdb7695e216', 'native_root_state': 'fenced', 'independent_witness': True, 'runtime_state': 'send_started', 'retained_fence': True}, 'preview_payload_sha256': '9da69db49c6a76ebf6c5ddf5d2b790bd269d2f104e5b3dbec193ce15884c129e'}
+revoked-current-get (0, 0) {'state': 'withheld', 'denial': 404}
+denial-acl (0, 0) {'result': {'code': 'not_found', 'error': 404}}
+denial-source (0, 0) {'result': {'code': 'not_found', 'error': 404}}
+denial-pas-source (0, 0) {'result': {'message_id': None, 'result': None, 'state': 'unknown'}}
+denial-memory (0, 0) {'result': {'message_id': None, 'result': None, 'state': 'unknown'}}
+denial-branch (0, 0) {'result': {'message_id': None, 'result': None, 'state': 'unknown'}}
+denial-model (0, 0) {'result': {'message_id': None, 'result': None, 'state': 'unknown'}}
+denial-recipient (0, 0) {'result': {'message_id': None, 'result': None, 'state': 'unknown'}}
+denial-expiry (0, 0) {'result': {'code': 'private_dispatch_expired', 'error': 410}}
+denial-confirmation (0, 0) {'result': {'code': 'private_plan_conflict', 'error': 409}}
+Traceback (most recent call last):
+  File "/workspace/step4-travel-lane/travel/backend/verification/step4_travel/run_pair.py", line 862, in <module>
+    main()
+  File "/workspace/step4-travel-lane/travel/backend/verification/step4_travel/run_pair.py", line 534, in main
+    run_cases(**locals())
+  File "/workspace/step4-travel-lane/travel/backend/verification/step4_travel/run_pair.py", line 686, in run_cases
+    assert observed["state"] == "completed", (observed, concurrently_observed, requests)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ({'message_id': None, 'result': None, 'state': 'unknown'}, [{'message_id': None, 'result': None, 'state': 'unknown'}, {'message_id': None, 'result': None, 'state': 'unknown'}], [{'method': 'POST', 'path': '/private/application-plan/v1/conversations/e5bbd020-be7e-5452-8900-0a34ca2a0f93/continue', 'status': 404}])
+waiting for server to shut down.... done
+server stopped

@@ -1,0 +1,1560 @@
+{
+  "pas": {
+    "pid": 6627,
+    "port": 41575,
+    "ordinary": {
+      "health": 200,
+      "create": 404,
+      "preview": 404,
+      "continue": 404
+    }
+  },
+  "travel": {
+    "ordinary": {
+      "health": 200,
+      "source": 404
+    },
+    "pid": 6641,
+    "port": 43577,
+    "reverse": 44745
+  },
+  "receiver": {
+    "pid": 6646,
+    "port": 43851
+  },
+  "native_pas": {
+    "routing_roots": "inference_route_roots",
+    "principal_and_memory": "PostgreSQL"
+  },
+  "native_travel": {
+    "schema": "0023",
+    "journal": "private_plan_confirmations"
+  },
+  "runtime_fixture_dir": "/dev/shm/step4-travel-runtime-w2qcvboq",
+  "network": "numeric loopback, pinned TLS in both app directions, PostgreSQL Unix socket, receiver HTTP",
+  "observations": {
+    "success-current-get": {
+      "issued": [
+        {
+          "attempt": "921311c2-8e84-527f-8646-42fd1abb9679",
+          "sha256": "08df728bf408055e9cbf1341b2fb17db2bc8757d0bb1d3ee64131bc5d87d2040",
+          "bytes": 2487
+        }
+      ],
+      "received": [
+        {
+          "attempt": "921311c2-8e84-527f-8646-42fd1abb9679",
+          "bytes": 2487,
+          "method": "POST",
+          "path": "/dispatch",
+          "sha256": "08df728bf408055e9cbf1341b2fb17db2bc8757d0bb1d3ee64131bc5d87d2040"
+        }
+      ],
+      "pas_http": [
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations",
+          "status": 201
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/aafa61ed-575b-532d-8e95-b7c9e0c4c91b/context-preview",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/aafa61ed-575b-532d-8e95-b7c9e0c4c91b/continue",
+          "status": 202
+        },
+        {
+          "method": "GET",
+          "path": "/v1/conversations/aafa61ed-575b-532d-8e95-b7c9e0c4c91b/continuations/e91f5f78-1bd3-4a1d-ae54-b2f3d596dcc9",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/v1/conversations/aafa61ed-575b-532d-8e95-b7c9e0c4c91b",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/v1/conversations/aafa61ed-575b-532d-8e95-b7c9e0c4c91b/continuations/e91f5f78-1bd3-4a1d-ae54-b2f3d596dcc9",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/v1/conversations/aafa61ed-575b-532d-8e95-b7c9e0c4c91b/continuations/e91f5f78-1bd3-4a1d-ae54-b2f3d596dcc9",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/v1/conversations/aafa61ed-575b-532d-8e95-b7c9e0c4c91b",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/v1/conversations/aafa61ed-575b-532d-8e95-b7c9e0c4c91b",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/v1/conversations/aafa61ed-575b-532d-8e95-b7c9e0c4c91b/continuations/e91f5f78-1bd3-4a1d-ae54-b2f3d596dcc9",
+          "status": 404
+        },
+        {
+          "method": "GET",
+          "path": "/v1/conversations/aafa61ed-575b-532d-8e95-b7c9e0c4c91b/continuations/e91f5f78-1bd3-4a1d-ae54-b2f3d596dcc9",
+          "status": 404
+        }
+      ],
+      "state": "completed",
+      "receipt": {
+        "attempt": "921311c2-8e84-527f-8646-42fd1abb9679",
+        "audience": "pas-fixture",
+        "binding_sha256": "e02d134546b214c9559245ba104895473d8bcefb9b8b80977f3278d6f0760dfa",
+        "body_sha256": "060ada25be4759b869f0631747c19b872eb1e935442da4fda4f05eb6d1566b59",
+        "expires": 1795506961,
+        "issuer": "runtime-fixture",
+        "kid": "terminal",
+        "message_id": "f911c901-269e-40c5-84de-46aac69ff66d",
+        "purpose": "terminal",
+        "result_sha256": "4e12d6a24184e2a93c78b573fdca5edd066d046bfb647af01af58dcc63f5c655",
+        "root": "39964da5-9ac0-5fdc-8eac-983c2a3e1649",
+        "v": "pas-dispatch/1"
+      },
+      "confirmation_sha256": "060ada25be4759b869f0631747c19b872eb1e935442da4fda4f05eb6d1566b59",
+      "terminal_signature": "rPQqQzynJod64tA6AOx8IV3PtUlFynj6uWEUIDfctTAdZOsV4fzzNtEnW0BdGf8DRP8T1auEaihY2rllEfz-Bw",
+      "committed_at": "1795506917",
+      "durable": {
+        "state": "completed",
+        "body_sha256": "060ada25be4759b869f0631747c19b872eb1e935442da4fda4f05eb6d1566b59",
+        "attempt": "921311c2-8e84-527f-8646-42fd1abb9679",
+        "terminal": true,
+        "root": "39964da5-9ac0-5fdc-8eac-983c2a3e1649",
+        "native_root_state": "fenced",
+        "independent_witness": true,
+        "runtime_state": "send_started",
+        "retained_fence": true
+      }
+    },
+    "revoked-current-get": {
+      "issued": [],
+      "received": [],
+      "pas_http": [
+        {
+          "method": "GET",
+          "path": "/v1/conversations/aafa61ed-575b-532d-8e95-b7c9e0c4c91b/continuations/e91f5f78-1bd3-4a1d-ae54-b2f3d596dcc9",
+          "status": 404
+        },
+        {
+          "method": "GET",
+          "path": "/v1/conversations/aafa61ed-575b-532d-8e95-b7c9e0c4c91b",
+          "status": 404
+        }
+      ],
+      "state": "withheld",
+      "denial": 404
+    },
+    "denial-acl": {
+      "issued": [],
+      "received": [],
+      "pas_http": [
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations",
+          "status": 201
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/8fe9e698-0fcf-59ae-a336-f9dfbd13b18e/context-preview",
+          "status": 200
+        }
+      ],
+      "result": {
+        "code": "not_found",
+        "error": 404
+      }
+    },
+    "denial-source": {
+      "issued": [],
+      "received": [],
+      "pas_http": [
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations",
+          "status": 201
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/1b06e4fa-7578-529e-b7a8-a17270eb650a/context-preview",
+          "status": 200
+        }
+      ],
+      "result": {
+        "code": "not_found",
+        "error": 404
+      }
+    },
+    "denial-pas-source": {
+      "issued": [],
+      "received": [],
+      "pas_http": [
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations",
+          "status": 201
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/7d0d6927-fbfb-5778-b287-9f49f178a20a/context-preview",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/7d0d6927-fbfb-5778-b287-9f49f178a20a/continue",
+          "status": 404
+        }
+      ],
+      "result": {
+        "message_id": null,
+        "result": null,
+        "state": "unknown"
+      }
+    },
+    "denial-memory": {
+      "issued": [],
+      "received": [],
+      "pas_http": [
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations",
+          "status": 201
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/d4470d08-6229-5887-8d00-dcf1afa5c115/context-preview",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/d4470d08-6229-5887-8d00-dcf1afa5c115/continue",
+          "status": 404
+        }
+      ],
+      "result": {
+        "message_id": null,
+        "result": null,
+        "state": "unknown"
+      }
+    },
+    "denial-branch": {
+      "issued": [],
+      "received": [],
+      "pas_http": [
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations",
+          "status": 201
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/876264cf-4cbb-5349-bad9-ab398fc27b74/context-preview",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/876264cf-4cbb-5349-bad9-ab398fc27b74/continue",
+          "status": 404
+        }
+      ],
+      "result": {
+        "message_id": null,
+        "result": null,
+        "state": "unknown"
+      }
+    },
+    "denial-model": {
+      "issued": [],
+      "received": [],
+      "pas_http": [
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations",
+          "status": 201
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/defde3ab-f55b-5340-b855-5635767eabdc/context-preview",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/defde3ab-f55b-5340-b855-5635767eabdc/continue",
+          "status": 404
+        }
+      ],
+      "result": {
+        "message_id": null,
+        "result": null,
+        "state": "unknown"
+      }
+    },
+    "denial-recipient": {
+      "issued": [],
+      "received": [],
+      "pas_http": [
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations",
+          "status": 201
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/dc861e4a-5266-59e3-928d-f731b98476d1/context-preview",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/dc861e4a-5266-59e3-928d-f731b98476d1/continue",
+          "status": 404
+        }
+      ],
+      "result": {
+        "message_id": null,
+        "result": null,
+        "state": "unknown"
+      }
+    },
+    "denial-expiry": {
+      "issued": [],
+      "received": [],
+      "pas_http": [
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations",
+          "status": 201
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/f3dcc6e1-94e7-5900-97f3-e26e9c49885c/context-preview",
+          "status": 200
+        }
+      ],
+      "result": {
+        "code": "private_dispatch_expired",
+        "error": 410
+      }
+    },
+    "denial-confirmation": {
+      "issued": [],
+      "received": [],
+      "pas_http": [
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations",
+          "status": 201
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/e9c51960-2948-5928-9d25-10c522f05b4e/context-preview",
+          "status": 200
+        }
+      ],
+      "result": {
+        "code": "private_plan_conflict",
+        "error": 409
+      }
+    },
+    "same-key-concurrent": {
+      "issued": [
+        {
+          "attempt": "d14fc01c-6fd2-523b-9a10-4f280325c4f2",
+          "sha256": "e900c12e597e45003bbb090e2178a99099e9e1f84d57595207314c8c37a536ac",
+          "bytes": 2487
+        }
+      ],
+      "received": [
+        {
+          "attempt": "d14fc01c-6fd2-523b-9a10-4f280325c4f2",
+          "bytes": 2487,
+          "method": "POST",
+          "path": "/dispatch",
+          "sha256": "e900c12e597e45003bbb090e2178a99099e9e1f84d57595207314c8c37a536ac"
+        }
+      ],
+      "pas_http": [
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations",
+          "status": 201
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/c45ce1ff-b799-5e81-a7a4-8d1a89e30a3c/context-preview",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/v1/conversations/c45ce1ff-b799-5e81-a7a4-8d1a89e30a3c/continuations/25705167-4a84-4f44-ab99-1a9b2b27826d",
+          "status": 404
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/c45ce1ff-b799-5e81-a7a4-8d1a89e30a3c/continue",
+          "status": 202
+        },
+        {
+          "method": "GET",
+          "path": "/v1/conversations/c45ce1ff-b799-5e81-a7a4-8d1a89e30a3c/continuations/25705167-4a84-4f44-ab99-1a9b2b27826d",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/v1/conversations/c45ce1ff-b799-5e81-a7a4-8d1a89e30a3c",
+          "status": 200
+        }
+      ],
+      "result": {
+        "message_id": "fac0f1c0-f24f-4e99-bedb-1c5d6a81b815",
+        "result": "Paired synthetic itinerary response.",
+        "state": "completed"
+      },
+      "callers": [
+        {
+          "message_id": null,
+          "result": null,
+          "state": "unknown"
+        },
+        {
+          "message_id": null,
+          "result": null,
+          "state": "unknown"
+        }
+      ],
+      "durable": {
+        "state": "completed",
+        "body_sha256": "6c629a84752e40e658413c221c9cc3da2c32a7d3e23a378d7884ac9b61946037",
+        "attempt": "d14fc01c-6fd2-523b-9a10-4f280325c4f2",
+        "terminal": true,
+        "root": "a616e659-6410-5789-a0bc-82201e204bc9",
+        "native_root_state": "fenced",
+        "independent_witness": true,
+        "runtime_state": "send_started",
+        "retained_fence": true
+      }
+    },
+    "travel-before-commit": {
+      "issued": [],
+      "received": [],
+      "pas_http": [
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations",
+          "status": 201
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/961224a4-6505-584a-930c-126fff9ec23f/context-preview",
+          "status": 200
+        }
+      ],
+      "journal_row": false,
+      "interruption": "Travel worker exited after native row flush before commit",
+      "worker": {
+        "exit_code": 79,
+        "pid": 7022
+      }
+    },
+    "travel-after-commit-before-pas": {
+      "issued": [],
+      "received": [],
+      "pas_http": [
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations",
+          "status": 201
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/0188ec39-c0f7-54f1-a158-4a6f95a3d4ac/context-preview",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/v1/conversations/0188ec39-c0f7-54f1-a158-4a6f95a3d4ac/continuations/0ca622d2-0eff-495a-8976-7e17d19ae679",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/v1/conversations/0188ec39-c0f7-54f1-a158-4a6f95a3d4ac/continuations/0ca622d2-0eff-495a-8976-7e17d19ae679",
+          "status": 200
+        }
+      ],
+      "journal_row": true,
+      "observation": {
+        "message_id": null,
+        "result": null,
+        "state": "unknown"
+      },
+      "replay": {
+        "message_id": null,
+        "result": null,
+        "state": "unknown"
+      },
+      "interruption": "Travel worker exited after commit before confirmation transport",
+      "worker": {
+        "exit_code": 79,
+        "pid": 7044
+      }
+    },
+    "after-independent-claim": {
+      "issued": [],
+      "received": [],
+      "pas_http": [
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations",
+          "status": 201
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/71e76eaa-cacb-5187-a28a-bb9ab1ba7f32/context-preview",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/71e76eaa-cacb-5187-a28a-bb9ab1ba7f32/continue",
+          "status": null,
+          "worker": {
+            "pid": 7083,
+            "exit_code": 79
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/v1/conversations/71e76eaa-cacb-5187-a28a-bb9ab1ba7f32/continuations/ac9119a6-a3bd-40e8-8a73-d4a92d97483f",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/v1/conversations/71e76eaa-cacb-5187-a28a-bb9ab1ba7f32/continuations/ac9119a6-a3bd-40e8-8a73-d4a92d97483f",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/71e76eaa-cacb-5187-a28a-bb9ab1ba7f32/continue",
+          "status": 202
+        },
+        {
+          "method": "GET",
+          "path": "/v1/conversations/71e76eaa-cacb-5187-a28a-bb9ab1ba7f32",
+          "status": 404
+        }
+      ],
+      "observation": {
+        "message_id": null,
+        "result": null,
+        "state": "claimed"
+      },
+      "durable": {
+        "state": "claimed",
+        "body_sha256": "bb074965dd644e50445887441451ba0f30924d1d061accb9d24f01cb687cff1f",
+        "attempt": "81ba3570-88bb-582c-82ea-96b708aa1ab2",
+        "terminal": false,
+        "root": "19c22974-b8b5-5452-b2f4-94faa842c7a6",
+        "native_root_state": "fenced",
+        "independent_witness": true,
+        "runtime_state": "claimed_pre_send",
+        "retained_fence": false
+      },
+      "worker": {
+        "pid": 7083,
+        "exit_code": 79
+      }
+    },
+    "after-send-start": {
+      "issued": [],
+      "received": [],
+      "pas_http": [
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations",
+          "status": 201
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/f7fc14aa-bcd1-5e60-a685-958b4e90d45f/context-preview",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/f7fc14aa-bcd1-5e60-a685-958b4e90d45f/continue",
+          "status": null,
+          "worker": {
+            "pid": 7146,
+            "exit_code": 79
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/v1/conversations/f7fc14aa-bcd1-5e60-a685-958b4e90d45f/continuations/65d5ff90-cc78-45cf-aba7-bd5203c579c1",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/v1/conversations/f7fc14aa-bcd1-5e60-a685-958b4e90d45f/continuations/65d5ff90-cc78-45cf-aba7-bd5203c579c1",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/f7fc14aa-bcd1-5e60-a685-958b4e90d45f/continue",
+          "status": 202
+        },
+        {
+          "method": "GET",
+          "path": "/v1/conversations/f7fc14aa-bcd1-5e60-a685-958b4e90d45f",
+          "status": 404
+        }
+      ],
+      "observation": {
+        "message_id": null,
+        "result": null,
+        "state": "send_started"
+      },
+      "durable": {
+        "state": "send_started",
+        "body_sha256": "01f53d67556fa7ada7714964da7700e1b7d14d8d7d1e5d49f3d3cf6acd91992b",
+        "attempt": "43057c90-1fe6-593c-bd8f-3532b096bbad",
+        "terminal": false,
+        "root": "87516a2c-4003-564f-a1ad-b5ffed1f1207",
+        "native_root_state": "fenced",
+        "independent_witness": true,
+        "runtime_state": "send_started",
+        "retained_fence": true
+      },
+      "worker": {
+        "pid": 7146,
+        "exit_code": 79
+      }
+    },
+    "receiver-disconnect": {
+      "issued": [
+        {
+          "attempt": "4dc3f0bc-976f-5644-a79b-2635813fcb09",
+          "sha256": "9bca966f5496d763e5197e4b1055b5d611fae8b352d5aace5c8066b4caa04ef3",
+          "bytes": 2487
+        }
+      ],
+      "received": [
+        {
+          "attempt": "4dc3f0bc-976f-5644-a79b-2635813fcb09",
+          "bytes": 2487,
+          "method": "POST",
+          "path": "/dispatch",
+          "sha256": "9bca966f5496d763e5197e4b1055b5d611fae8b352d5aace5c8066b4caa04ef3"
+        }
+      ],
+      "pas_http": [
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations",
+          "status": 201
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/7293c77c-8dbd-5d92-83a7-2ad81df2f358/context-preview",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/7293c77c-8dbd-5d92-83a7-2ad81df2f358/continue",
+          "status": 503
+        },
+        {
+          "method": "GET",
+          "path": "/v1/conversations/7293c77c-8dbd-5d92-83a7-2ad81df2f358/continuations/b2da50e1-503f-4c1e-ad96-02c0c6ed21a2",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/v1/conversations/7293c77c-8dbd-5d92-83a7-2ad81df2f358/continuations/b2da50e1-503f-4c1e-ad96-02c0c6ed21a2",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/7293c77c-8dbd-5d92-83a7-2ad81df2f358/continue",
+          "status": 202
+        },
+        {
+          "method": "GET",
+          "path": "/v1/conversations/7293c77c-8dbd-5d92-83a7-2ad81df2f358",
+          "status": 404
+        }
+      ],
+      "observation": {
+        "message_id": null,
+        "result": null,
+        "state": "send_started"
+      },
+      "durable": {
+        "state": "send_started",
+        "body_sha256": "1caae5ba69e9fac10d975676fb0c70d44f995818d9fd321e335abd388f44bf1d",
+        "attempt": "4dc3f0bc-976f-5644-a79b-2635813fcb09",
+        "terminal": false,
+        "root": "b27733a6-2142-52ef-a9fd-65b4acc4fd94",
+        "native_root_state": "fenced",
+        "independent_witness": true,
+        "runtime_state": "send_started",
+        "retained_fence": true
+      }
+    },
+    "receiver-wrong-attempt": {
+      "issued": [
+        {
+          "attempt": "ce8c329d-bb4d-5ac3-9122-5722bca3a3c3",
+          "sha256": "fe2dc26c910451e9f1075e81d96ffdc5804f7d06fb2909e50f2d5ad3c91d00f1",
+          "bytes": 2487
+        }
+      ],
+      "received": [
+        {
+          "attempt": "ce8c329d-bb4d-5ac3-9122-5722bca3a3c3",
+          "bytes": 2487,
+          "method": "POST",
+          "path": "/dispatch",
+          "sha256": "fe2dc26c910451e9f1075e81d96ffdc5804f7d06fb2909e50f2d5ad3c91d00f1"
+        }
+      ],
+      "pas_http": [
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations",
+          "status": 201
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/b150958d-b32d-55c8-b318-41577fd45563/context-preview",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/b150958d-b32d-55c8-b318-41577fd45563/continue",
+          "status": 503
+        },
+        {
+          "method": "GET",
+          "path": "/v1/conversations/b150958d-b32d-55c8-b318-41577fd45563/continuations/7d3a988a-31d1-41c1-b8a5-ddf14db6f3c4",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/v1/conversations/b150958d-b32d-55c8-b318-41577fd45563/continuations/7d3a988a-31d1-41c1-b8a5-ddf14db6f3c4",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/b150958d-b32d-55c8-b318-41577fd45563/continue",
+          "status": 202
+        },
+        {
+          "method": "GET",
+          "path": "/v1/conversations/b150958d-b32d-55c8-b318-41577fd45563",
+          "status": 404
+        }
+      ],
+      "observation": {
+        "message_id": null,
+        "result": null,
+        "state": "send_started"
+      },
+      "durable": {
+        "state": "send_started",
+        "body_sha256": "baf40e81225ee9a045cb649671339834ebb3a90bd8487518be86b3354f66383c",
+        "attempt": "ce8c329d-bb4d-5ac3-9122-5722bca3a3c3",
+        "terminal": false,
+        "root": "ab3bf951-178e-5775-8990-123c60f26807",
+        "native_root_state": "fenced",
+        "independent_witness": true,
+        "runtime_state": "send_started",
+        "retained_fence": true
+      }
+    },
+    "revoke-before-fence": {
+      "issued": [],
+      "received": [],
+      "pas_http": [
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations",
+          "status": 201
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/de20f02c-bd26-5433-bb28-e88978345364/context-preview",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/de20f02c-bd26-5433-bb28-e88978345364/continue",
+          "status": 503
+        },
+        {
+          "method": "GET",
+          "path": "/v1/conversations/de20f02c-bd26-5433-bb28-e88978345364/continuations/d9fc9754-8e57-49f3-8678-19bde474b6cb",
+          "status": 404
+        },
+        {
+          "method": "GET",
+          "path": "/v1/conversations/de20f02c-bd26-5433-bb28-e88978345364",
+          "status": 404
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/de20f02c-bd26-5433-bb28-e88978345364/continue",
+          "status": 404
+        }
+      ],
+      "state": "withheld",
+      "durable": {
+        "state": "claimed",
+        "body_sha256": "e10e52b3b6edf6f09f87c9181c009e920e1ed95c131de03fc9de9f2df55c5eaf",
+        "attempt": "6a7fcfd5-2817-5617-b0dd-299465075852",
+        "terminal": false,
+        "root": "df36f05f-d39b-5d4f-a36a-d6792d96cd2e",
+        "native_root_state": "fenced",
+        "independent_witness": true,
+        "runtime_state": "claimed_pre_send",
+        "retained_fence": false
+      }
+    },
+    "fence-first-revoke": {
+      "issued": [
+        {
+          "attempt": "6e5286fa-b44a-5836-932c-9f7d2fd4af3a",
+          "sha256": "6752a8666bad7dfad1ab034127ae9a26f3cfd55cab6078f1af56e420b1d920c8",
+          "bytes": 2487
+        }
+      ],
+      "received": [
+        {
+          "attempt": "6e5286fa-b44a-5836-932c-9f7d2fd4af3a",
+          "bytes": 2487,
+          "method": "POST",
+          "path": "/dispatch",
+          "sha256": "6752a8666bad7dfad1ab034127ae9a26f3cfd55cab6078f1af56e420b1d920c8"
+        }
+      ],
+      "pas_http": [
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations",
+          "status": 201
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/3991f7e9-6bef-56ed-9f12-0c058b6c3453/context-preview",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/3991f7e9-6bef-56ed-9f12-0c058b6c3453/continue",
+          "status": 503
+        },
+        {
+          "method": "GET",
+          "path": "/v1/conversations/3991f7e9-6bef-56ed-9f12-0c058b6c3453/continuations/f1aa2b98-9162-4aab-ab1c-cee8e596f2db",
+          "status": 404
+        },
+        {
+          "method": "GET",
+          "path": "/v1/conversations/3991f7e9-6bef-56ed-9f12-0c058b6c3453",
+          "status": 404
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/3991f7e9-6bef-56ed-9f12-0c058b6c3453/continue",
+          "status": 404
+        }
+      ],
+      "state": "withheld",
+      "durable": {
+        "state": "send_started",
+        "body_sha256": "95d01417a0c95573519dc1f877b8875eec621f52801cb62002df1748208148fa",
+        "attempt": "6e5286fa-b44a-5836-932c-9f7d2fd4af3a",
+        "terminal": false,
+        "root": "a775c6ce-df31-505f-9fdb-4af73c9496c1",
+        "native_root_state": "fenced",
+        "independent_witness": true,
+        "runtime_state": "send_started",
+        "retained_fence": true
+      }
+    },
+    "revoke-after-status": {
+      "issued": [],
+      "received": [],
+      "pas_http": [
+        {
+          "method": "GET",
+          "path": "/v1/conversations/c0ec180d-bb75-56d9-a803-ca449cffa27a/continuations/f98125f1-d08b-45e2-819d-5f244d2e274f",
+          "status": 200
+        }
+      ],
+      "observation": {
+        "message_id": null,
+        "result": null,
+        "state": "unknown"
+      },
+      "travel_quarantined": true
+    },
+    "revoke-after-detail": {
+      "issued": [],
+      "received": [],
+      "pas_http": [
+        {
+          "method": "GET",
+          "path": "/v1/conversations/8b89e193-5568-5a56-965a-db959a34e65e/continuations/094afb89-f709-4719-a292-b57231448305",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/v1/conversations/8b89e193-5568-5a56-965a-db959a34e65e",
+          "status": 200
+        }
+      ],
+      "observation": {
+        "message_id": null,
+        "result": null,
+        "state": "unknown"
+      },
+      "travel_quarantined": true
+    },
+    "after-native-pas-root-before-witness": {
+      "issued": [],
+      "received": [],
+      "pas_http": [
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations",
+          "status": 201
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/aaec46b4-4db5-5de9-afee-ae7204b73bcf/context-preview",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/aaec46b4-4db5-5de9-afee-ae7204b73bcf/continue",
+          "status": null,
+          "worker": {
+            "pid": 7526,
+            "exit_code": 79
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/v1/conversations/aaec46b4-4db5-5de9-afee-ae7204b73bcf/continuations/e9482991-3a31-4698-ad68-fe33bb759dc1",
+          "status": 503
+        },
+        {
+          "method": "GET",
+          "path": "/v1/conversations/aaec46b4-4db5-5de9-afee-ae7204b73bcf/continuations/e9482991-3a31-4698-ad68-fe33bb759dc1",
+          "status": 503
+        },
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations/aaec46b4-4db5-5de9-afee-ae7204b73bcf/continue",
+          "status": 503
+        }
+      ],
+      "state": "unavailable",
+      "durable": {
+        "state": "claimed",
+        "body_sha256": "0d5fcc29f335bcbcc7cce189e24ed9b8c278f3cec9738a1ee0a0e543889172db",
+        "attempt": "c2219163-b572-5443-b216-0703119e0484",
+        "terminal": false,
+        "root": "1c5fd111-f4f5-5c76-bf9e-c95f5084041d",
+        "native_root_state": "fenced",
+        "independent_witness": false,
+        "runtime_state": null,
+        "retained_fence": false
+      },
+      "worker": {
+        "pid": 7526,
+        "exit_code": 79
+      }
+    }
+  },
+  "source_callbacks": [
+    {
+      "phase": "preview",
+      "current": true,
+      "nonce": "b81e50ab-ded4-4bd1-9d86-fa06ebb816a9"
+    },
+    {
+      "phase": "confirm",
+      "current": true,
+      "nonce": "46b1676e-36bf-463c-af28-d430b4f7e4a0"
+    },
+    {
+      "phase": "release",
+      "current": true,
+      "nonce": "d4c34b33-5713-41e8-9186-147af4bd04d8"
+    },
+    {
+      "phase": "send",
+      "current": true,
+      "nonce": "9d92c678-452d-49ee-8222-4e7aa3a433b4"
+    },
+    {
+      "phase": "send",
+      "current": true,
+      "nonce": "013b80fe-d26a-498b-937d-b2380fe0c2ea"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "bf8c420f-0f7e-4964-b104-81703cdebe3b"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "ca617207-0b06-4122-b4dd-02d01f6b5d48"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "24a23f5d-dbfc-4598-88c0-d31b269e98b4"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "6091de6b-d1db-4f3a-8099-9f5c381391d1"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "72ac189a-7482-4087-8318-26590020634a"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "90197b93-1a27-4f4d-aba7-e46dd26526ed"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "7f5823bb-4c0e-4395-9b3a-61a3f4030806"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "646cad84-4bd2-4a81-9e44-b3d110a62069"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "f5483fa9-5759-41aa-95ce-32eea1a816cf"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "61ce2cfd-4415-4eac-bf73-cf5530b03498"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "27e0cffd-ccb5-44c8-bbfd-90ca56ca6f5c"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "d632bc5f-4615-447b-9f4a-8ab2bd5e006e"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "1b3a0648-3c1c-46d8-85d9-acb65a5bd275"
+    },
+    {
+      "phase": "preview",
+      "current": true,
+      "nonce": "3213922b-1d1b-4a52-a811-3f0ff40a9a43"
+    },
+    {
+      "phase": "preview",
+      "current": true,
+      "nonce": "326182e8-a620-4484-86bc-870d4be246fb"
+    },
+    {
+      "phase": "preview",
+      "current": true,
+      "nonce": "cdbbe3a7-ffc6-467f-869c-9c3ceb02907e"
+    },
+    {
+      "phase": "preview",
+      "current": true,
+      "nonce": "bd53cd6c-c8c5-4213-9b8f-61e7d16fd149"
+    },
+    {
+      "phase": "preview",
+      "current": true,
+      "nonce": "a6e73a9e-ac60-4edb-986b-d532424a41ca"
+    },
+    {
+      "phase": "preview",
+      "current": true,
+      "nonce": "d00d08af-b458-4a00-93d2-6799280475bc"
+    },
+    {
+      "phase": "preview",
+      "current": true,
+      "nonce": "b4bdfb70-6823-4218-9e04-b052583d30bf"
+    },
+    {
+      "phase": "preview",
+      "current": true,
+      "nonce": "d348e837-a6ee-4639-8229-b8c87717185d"
+    },
+    {
+      "phase": "preview",
+      "current": true,
+      "nonce": "707f0667-5542-4138-9fc7-3f449463a057"
+    },
+    {
+      "phase": "preview",
+      "current": true,
+      "nonce": "f220d522-8287-476f-876d-d50e59759fe8"
+    },
+    {
+      "phase": "confirm",
+      "current": true,
+      "nonce": "4c5f0a48-757f-4d04-8c50-380a9f7be0c9"
+    },
+    {
+      "phase": "release",
+      "current": true,
+      "nonce": "ceea8c7e-23dc-4532-b658-e7c1cb2fb47e"
+    },
+    {
+      "phase": "send",
+      "current": true,
+      "nonce": "998fde43-1952-4553-8546-6df70050bfb6"
+    },
+    {
+      "phase": "send",
+      "current": true,
+      "nonce": "d0cb6aaa-c7b1-4c5f-b5a4-aa6d07363090"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "9389f2ac-dfe4-499f-8f2e-c0143eb5d1d2"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "20e00ea1-2f6c-4763-b508-ca5e59cdf317"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "0cb13a8a-506a-4e1b-95ac-0a1d63bb835e"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "79f7ebcf-af6f-4224-bc1e-9c2d6b9520ef"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "f1a1e98e-cd39-49b1-992d-d7d6c82927a8"
+    },
+    {
+      "phase": "preview",
+      "current": true,
+      "nonce": "8eea5293-d3fd-48ed-bacd-9aa286da687f"
+    },
+    {
+      "phase": "preview",
+      "current": true,
+      "nonce": "27be0d2b-e8df-4792-afad-3d328b03f0c3"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "eb8020ad-4e94-47a7-850a-5fbc1f4a9082"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "400a7325-234b-4caa-940c-8f14dce87f79"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "2855b45d-b8de-4cd9-8f60-c36e63778a46"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "a99e301e-d910-4112-98a5-83b6f4afb8fa"
+    },
+    {
+      "phase": "preview",
+      "current": true,
+      "nonce": "cfe6b92c-90fd-4884-9a3b-693a5b32addd"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "13a2c6cb-1c14-4b68-921e-190a56413952"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "1346e1c0-f35f-4c54-a01d-e4b5c592fb07"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "6ab5eb64-6a62-46a1-b7e5-7a559dd2702a"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "f5068c0b-7327-4a45-94fa-aa8bcd359b94"
+    },
+    {
+      "phase": "confirm",
+      "current": true,
+      "nonce": "090811f0-7dcf-454d-86f2-56b1e205039f"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "99de1fd4-34c2-4622-b915-2433f3abe63a"
+    },
+    {
+      "phase": "preview",
+      "current": true,
+      "nonce": "7322f6c2-de5c-49e3-881c-8becd0b28ecc"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "74acb077-e1dc-4e40-91ae-a630371c9267"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "8e20d85b-2ed5-45cc-a86a-78cd634332b8"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "5af61262-df2d-49eb-a7ae-93cbe28089f0"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "9b225659-199a-4e09-91c3-d09b8646a27a"
+    },
+    {
+      "phase": "confirm",
+      "current": true,
+      "nonce": "211578a5-ec94-4b69-abc6-a0f8fdb627d7"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "2647c1df-2fc4-443d-9911-76d4f560d76d"
+    },
+    {
+      "phase": "preview",
+      "current": true,
+      "nonce": "b712f66b-741a-414e-ac24-7e19bcd81a2a"
+    },
+    {
+      "phase": "confirm",
+      "current": true,
+      "nonce": "02d7ee04-3c76-4bc2-9a18-dd7cd4c356e4"
+    },
+    {
+      "phase": "release",
+      "current": true,
+      "nonce": "61c5d65a-2d53-409d-83bd-e5ec2740740d"
+    },
+    {
+      "phase": "send",
+      "current": true,
+      "nonce": "a99765fe-478a-4114-8159-d9e011c667a9"
+    },
+    {
+      "phase": "send",
+      "current": true,
+      "nonce": "0babea34-88f9-4f49-9b06-63caa1722ef7"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "5ba26d8c-f108-415d-a18a-9c0074214316"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "38aca3c9-a725-48cf-a390-9226c8c16b0c"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "0959cfbd-9601-4210-8b12-69a0e0221876"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "75f6c02c-7bda-401d-8627-ad3f1af79c0b"
+    },
+    {
+      "phase": "confirm",
+      "current": true,
+      "nonce": "13b536d4-c943-4af3-8ae9-22ca4e555a26"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "81901687-27c7-4801-9316-f097ecc33bf1"
+    },
+    {
+      "phase": "preview",
+      "current": true,
+      "nonce": "5e19bb46-c361-4d9f-a59a-ee344ca93aaf"
+    },
+    {
+      "phase": "confirm",
+      "current": true,
+      "nonce": "1c84e1da-763e-4747-b19f-ea6470ffb494"
+    },
+    {
+      "phase": "release",
+      "current": true,
+      "nonce": "ed2e0fc6-fcc4-41c1-a9b6-440c67e7bbdf"
+    },
+    {
+      "phase": "send",
+      "current": true,
+      "nonce": "ea3fd90d-41d4-4f04-81ff-7b4cf95c8be3"
+    },
+    {
+      "phase": "send",
+      "current": true,
+      "nonce": "f69854cb-c171-4f20-9a0d-019e107aba34"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "07039915-a99e-4ebd-b293-9d04768f73ac"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "99aed7ef-a4ad-41fd-81cb-937d365727d2"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "0cdd2775-7cfd-4b72-86d1-f467e916a1c7"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "b5617374-2092-4a09-b9b7-8656efd0c386"
+    },
+    {
+      "phase": "confirm",
+      "current": true,
+      "nonce": "9230b81f-1eb1-4bd9-91b8-7a30aa17fb72"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "37865c1c-c136-4dad-b249-14aefa434939"
+    },
+    {
+      "phase": "preview",
+      "current": true,
+      "nonce": "b63cad12-92fc-4010-9f3f-83018cc26faf"
+    },
+    {
+      "phase": "confirm",
+      "current": true,
+      "nonce": "a3cea80f-58ff-4f22-a15f-f91677973489"
+    },
+    {
+      "phase": "release",
+      "current": true,
+      "nonce": "dd1185d5-2a6b-4ce0-84db-cec3fcc16730"
+    },
+    {
+      "phase": "send",
+      "current": false,
+      "nonce": "33b1e7bf-76e3-46f8-ae9c-4681930d77fa"
+    },
+    {
+      "phase": "disclose",
+      "current": false,
+      "nonce": "fc2049f7-aa19-4308-b256-ac5f617fa632"
+    },
+    {
+      "phase": "disclose",
+      "current": false,
+      "nonce": "76e74c04-a2c9-4cdb-ac4b-4ddf637084cd"
+    },
+    {
+      "phase": "confirm",
+      "current": false,
+      "nonce": "121811e8-3d39-4163-b9f8-5003ebdbfe5e"
+    },
+    {
+      "phase": "preview",
+      "current": true,
+      "nonce": "f9c7c4d3-c132-4cc8-8a21-2baf6a861cb4"
+    },
+    {
+      "phase": "confirm",
+      "current": true,
+      "nonce": "d3906c1a-0d50-4e12-abd9-3623221b0f90"
+    },
+    {
+      "phase": "release",
+      "current": true,
+      "nonce": "d2c9a361-82eb-4728-a776-acde1ccfaaf4"
+    },
+    {
+      "phase": "send",
+      "current": true,
+      "nonce": "eb4c20c8-2232-4daa-8aa3-493be3818301"
+    },
+    {
+      "phase": "send",
+      "current": true,
+      "nonce": "4408aeca-96fd-463f-b3e0-434156223291"
+    },
+    {
+      "phase": "disclose",
+      "current": false,
+      "nonce": "7f5c4fe5-b3c7-486d-a98b-be0a6cca93c2"
+    },
+    {
+      "phase": "disclose",
+      "current": false,
+      "nonce": "b456f6c5-b716-4f23-98ed-8c64ec9ef747"
+    },
+    {
+      "phase": "disclose",
+      "current": false,
+      "nonce": "82c0f4a6-278b-4ccd-87c9-8e6edf6240fd"
+    },
+    {
+      "phase": "confirm",
+      "current": false,
+      "nonce": "03a812f6-106e-4ec0-b7c9-6925a042efbc"
+    },
+    {
+      "phase": "preview",
+      "current": true,
+      "nonce": "b116540b-8ec4-4b1b-9eda-b5cf504399fd"
+    },
+    {
+      "phase": "confirm",
+      "current": true,
+      "nonce": "f289dfff-db44-486f-a8b7-6889a4e3b096"
+    },
+    {
+      "phase": "release",
+      "current": true,
+      "nonce": "d1df526e-5a92-421a-b6a2-c562532731fc"
+    },
+    {
+      "phase": "send",
+      "current": true,
+      "nonce": "9cdf3efc-662c-40c7-a10c-d49fc26c2a4c"
+    },
+    {
+      "phase": "send",
+      "current": true,
+      "nonce": "6eaf8c4e-9168-4ab9-864f-9a836050691c"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "6bd732f3-053b-4ef3-8824-acc03179ac6b"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "f3d99620-88fb-43d9-87a8-7832afa89bcd"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "d3a4eb21-3e5e-4d53-9b51-87ef792434c9"
+    },
+    {
+      "phase": "preview",
+      "current": true,
+      "nonce": "8389a786-1ebe-4dc8-a72a-f113f7b0060f"
+    },
+    {
+      "phase": "confirm",
+      "current": true,
+      "nonce": "2e49c016-df24-42ae-98a2-a6aa10fe385c"
+    },
+    {
+      "phase": "release",
+      "current": true,
+      "nonce": "405ae250-72e3-49a1-9601-7ae11cdf577c"
+    },
+    {
+      "phase": "send",
+      "current": true,
+      "nonce": "f23456a8-be8f-4fc4-8a13-3d1af7e8efc7"
+    },
+    {
+      "phase": "send",
+      "current": true,
+      "nonce": "7180fcc5-936d-4382-a1f4-a6466f26aab8"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "fc2a59e9-4c5e-4221-a9f7-fd4631735e03"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "824b5a1a-cd00-43dd-bf1f-485c40afa385"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "6574a058-74c7-4165-b1d6-257098bf5fee"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "7402f4cf-1f22-4e87-b13a-56b30899cafa"
+    },
+    {
+      "phase": "disclose",
+      "current": true,
+      "nonce": "dc0c50eb-7e36-491f-a2fb-b65a3907397c"
+    },
+    {
+      "phase": "preview",
+      "current": true,
+      "nonce": "7032571d-f1e5-4209-8b6a-0b947428badf"
+    }
+  ]
+}

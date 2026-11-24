@@ -1,0 +1,69 @@
+{
+  "pas": {
+    "pid": 10785,
+    "port": 34409,
+    "ordinary": {
+      "health": 200,
+      "create": 404,
+      "preview": 404,
+      "continue": 404
+    }
+  },
+  "travel": {
+    "ordinary": {
+      "health": 200,
+      "source": 404
+    },
+    "pid": 10799,
+    "port": 46537,
+    "reverse": 45295
+  },
+  "receiver": {
+    "pid": 10804,
+    "port": 45527
+  },
+  "native_postgresql": {
+    "pid": 10773,
+    "port": 56678,
+    "version": "16.2"
+  },
+  "native_pas": {
+    "routing_roots": "inference_route_roots",
+    "principal_and_memory": "PostgreSQL"
+  },
+  "native_travel": {
+    "schema": "0023",
+    "journal": "private_plan_confirmations"
+  },
+  "runtime_fixture_dir": "/dev/shm/step4-travel-runtime-e372xvf8",
+  "network": "numeric loopback, pinned TLS in both app directions, Travel PostgreSQL Unix socket, PAS PostgreSQL IPv4 loopback, receiver HTTP",
+  "provider_totals": {
+    "issued": 0,
+    "received": 0
+  },
+  "python_blocked_egress_attempts": {
+    "pas": [],
+    "travel": [],
+    "receiver": []
+  },
+  "observations": {
+    "legacy-create-distinct-opaque-owner": {
+      "issued": [],
+      "received": [],
+      "pas_http": [
+        {
+          "method": "POST",
+          "path": "/private/application-plan/v1/conversations",
+          "status": 201
+        }
+      ],
+      "result": {
+        "code": "not_found",
+        "error": 404
+      },
+      "pas_create_status": 201,
+      "opaque_owner_ids_equal": false
+    }
+  },
+  "source_callbacks": []
+}
